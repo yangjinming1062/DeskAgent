@@ -10,6 +10,8 @@ import {
   type DesktopUiThemeBroadcast,
   type DesktopUpdateEvent,
   IPC,
+  type IpcEventChannel,
+  type IpcEventContract,
   type MediaSttPayload,
   type MediaTtsPayload,
   type RunnerConfigPatch,
@@ -25,6 +27,21 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent, webUtils } from 'ele
 contextBridge.exposeInMainWorld('spiritagentWebUtils', {
   getPathForFile: (file: File): string => webUtils.getPathForFile(file)
 })
+
+// 订阅主进程单方向事件：listener 解构 payload，丢弃 IpcRendererEvent；
+// 返回卸载函数，调用方可在 useEffect 清理时调它取消订阅。
+function subscribe<C extends IpcEventChannel>(
+  channel: C,
+  callback: (...payload: IpcEventContract[C]) => void
+): () => void {
+  const listener = (_event: IpcRendererEvent, ...payload: IpcEventContract[C]): void => {
+    ;(callback as (...args: unknown[]) => void)(...payload)
+  }
+
+  ipcRenderer.on(channel, listener)
+
+  return () => ipcRenderer.removeListener(channel, listener)
+}
 
 contextBridge.exposeInMainWorld('spiritagent', {
   activate: (payload: DesktopActivatePayload) => ipcRenderer.invoke(IPC.invoke.authActivate, payload),
@@ -49,72 +66,17 @@ contextBridge.exposeInMainWorld('spiritagent', {
     stt: (payload: MediaSttPayload) => ipcRenderer.invoke(IPC.invoke.mediaStt, payload),
     tts: (payload: MediaTtsPayload) => ipcRenderer.invoke(IPC.invoke.mediaTts, payload)
   },
-  onAuthChanged: (callback: (payload: DesktopAuthBroadcast) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: DesktopAuthBroadcast) => callback(payload)
-    ipcRenderer.on(IPC.event.authChanged, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.authChanged, listener)
-  },
-  onBootProgress: (callback: (payload: DesktopBootProgress) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: DesktopBootProgress) => callback(payload)
-    ipcRenderer.on(IPC.event.bootProgress, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.bootProgress, listener)
-  },
-  onPowerResume: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on(IPC.event.powerResume, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.powerResume, listener)
-  },
-  onRunnerStatus: (callback: (payload: DesktopRunnerStatusEvent) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: DesktopRunnerStatusEvent) => callback(payload)
-    ipcRenderer.on(IPC.event.runnerStatus, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.runnerStatus, listener)
-  },
-  onSessionExpired: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on(IPC.event.authSessionExpired, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.authSessionExpired, listener)
-  },
-  onTrayActivate: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on(IPC.event.trayActivate, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.trayActivate, listener)
-  },
-  onTrayLogout: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on(IPC.event.trayLogout, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.trayLogout, listener)
-  },
-  onTrayOpenChat: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on(IPC.event.trayOpenChat, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.trayOpenChat, listener)
-  },
-  onTrayResetPosition: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on(IPC.event.trayResetPosition, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.trayResetPosition, listener)
-  },
-  onPrefsHydrated: (callback: (payload: DesktopPrefsHydrated) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: DesktopPrefsHydrated) => callback(payload)
-    ipcRenderer.on(IPC.event.prefsHydrated, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.prefsHydrated, listener)
-  },
-  onUiThemeChanged: (callback: (payload: DesktopUiThemeBroadcast) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: DesktopUiThemeBroadcast) => callback(payload)
-    ipcRenderer.on(IPC.event.uiThemeChanged, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.uiThemeChanged, listener)
-  },
+  onAuthChanged: (cb: (payload: DesktopAuthBroadcast) => void) => subscribe(IPC.event.authChanged, cb),
+  onBootProgress: (cb: (payload: DesktopBootProgress) => void) => subscribe(IPC.event.bootProgress, cb),
+  onPowerResume: (cb: () => void) => subscribe(IPC.event.powerResume, cb),
+  onRunnerStatus: (cb: (payload: DesktopRunnerStatusEvent) => void) => subscribe(IPC.event.runnerStatus, cb),
+  onSessionExpired: (cb: () => void) => subscribe(IPC.event.authSessionExpired, cb),
+  onTrayActivate: (cb: () => void) => subscribe(IPC.event.trayActivate, cb),
+  onTrayLogout: (cb: () => void) => subscribe(IPC.event.trayLogout, cb),
+  onTrayOpenChat: (cb: () => void) => subscribe(IPC.event.trayOpenChat, cb),
+  onTrayResetPosition: (cb: () => void) => subscribe(IPC.event.trayResetPosition, cb),
+  onPrefsHydrated: (cb: (payload: DesktopPrefsHydrated) => void) => subscribe(IPC.event.prefsHydrated, cb),
+  onUiThemeChanged: (cb: (payload: DesktopUiThemeBroadcast) => void) => subscribe(IPC.event.uiThemeChanged, cb),
   readFileDataUrl: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readFileDataUrl, filePath),
   readImageForAttach: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readImageForAttach, filePath),
   uploadVideoForAttach: (payload: AttachmentVideoUploadPayload) =>
@@ -139,18 +101,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
   showToolWindow: () => ipcRenderer.invoke(IPC.invoke.windowShowTool),
   shortcuts: {
     get: () => ipcRenderer.invoke(IPC.invoke.shortcutsGet),
-    onChanged: (callback: (payload: DesktopShortcutsState) => void) => {
-      const listener = (_event: IpcRendererEvent, payload: DesktopShortcutsState) => callback(payload)
-      ipcRenderer.on(IPC.event.shortcutsChanged, listener)
-
-      return () => ipcRenderer.removeListener(IPC.event.shortcutsChanged, listener)
-    },
-    onToggleChat: (callback: () => void) => {
-      const listener = () => callback()
-      ipcRenderer.on(IPC.event.shortcutToggleChat, listener)
-
-      return () => ipcRenderer.removeListener(IPC.event.shortcutToggleChat, listener)
-    },
+    onChanged: (cb: (payload: DesktopShortcutsState) => void) => subscribe(IPC.event.shortcutsChanged, cb),
+    onToggleChat: (cb: () => void) => subscribe(IPC.event.shortcutToggleChat, cb),
     reset: () => ipcRenderer.invoke(IPC.invoke.shortcutsReset),
     set: (payload: DesktopShortcutsSetPayload) => ipcRenderer.invoke(IPC.invoke.shortcutsSet, payload)
   },
@@ -172,12 +124,7 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   update: {
     check: () => ipcRenderer.invoke(IPC.invoke.updateCheck),
-    onEvent: (callback: (payload: DesktopUpdateEvent) => void) => {
-      const listener = (_event: IpcRendererEvent, payload: DesktopUpdateEvent) => callback(payload)
-      ipcRenderer.on(IPC.event.updateEvent, listener)
-
-      return () => ipcRenderer.removeListener(IPC.event.updateEvent, listener)
-    }
+    onEvent: (cb: (payload: DesktopUpdateEvent) => void) => subscribe(IPC.event.updateEvent, cb)
   },
   writeClipboard: (text: string) => ipcRenderer.invoke(IPC.invoke.writeClipboard, text)
 })

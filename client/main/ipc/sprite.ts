@@ -1,10 +1,9 @@
-import fs from 'node:fs'
 import path from 'node:path'
 
 import { IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain, Screen } from 'electron'
 
-import { atomicWriteFile } from '../shared/utils'
+import { atomicWriteFile, safeReadJson } from '../shared/utils'
 
 const POSITION_FILE = 'companion-position.json'
 
@@ -21,22 +20,17 @@ export function readRestPosition(userDataDir?: string): null | RestPosition {
     return null
   }
 
-  try {
-    const raw = fs.readFileSync(path.join(userDataDir, POSITION_FILE), 'utf8')
-    const parsed = JSON.parse(raw) as { origin?: unknown; x?: unknown; y?: unknown }
+  const parsed = safeReadJson<{ origin?: unknown; x?: unknown; y?: unknown }>(path.join(userDataDir, POSITION_FILE))
 
-    if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-      const next: RestPosition = { x: parsed.x, y: parsed.y }
-      const o = parsed.origin as { x?: unknown; y?: unknown } | null
+  if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+    const next: RestPosition = { x: parsed.x, y: parsed.y }
+    const o = parsed.origin as { x?: unknown; y?: unknown } | null
 
-      if (o && typeof o.x === 'number' && typeof o.y === 'number') {
-        next.origin = { x: o.x, y: o.y }
-      }
-
-      return next
+    if (o && typeof o.x === 'number' && typeof o.y === 'number') {
+      next.origin = { x: o.x, y: o.y }
     }
-  } catch {
-    // 还没有保存过的位置
+
+    return next
   }
 
   return null

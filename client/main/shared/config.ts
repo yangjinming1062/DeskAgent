@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { atomicWriteFile } from './utils'
+import { atomicWriteFile, safeReadJson } from './utils'
 
 // $SPIRITAGENT_HOME/desktop-config.json 保存用户激活过的后端 URL
 //（与加密会话文件 `agent-session.json` 分离，便于在登出后仍然保留）。
@@ -23,14 +23,10 @@ export function readStoredBackendUrl(spiritagentHome: string | null | undefined)
     return null
   }
 
-  try {
-    const parsed = JSON.parse(fs.readFileSync(target, 'utf8'))
+  const parsed = safeReadJson<{ backendUrl?: unknown }>(target)
 
-    if (parsed && typeof parsed.backendUrl === 'string' && parsed.backendUrl.trim()) {
-      return parsed.backendUrl.trim()
-    }
-  } catch {
-    // 缺失 / 格式错乱 / 不可读
+  if (parsed && typeof parsed.backendUrl === 'string' && parsed.backendUrl.trim()) {
+    return parsed.backendUrl.trim()
   }
 
   return null

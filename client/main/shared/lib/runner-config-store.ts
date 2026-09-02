@@ -1,17 +1,20 @@
-import fs from 'node:fs'
 import path from 'node:path'
 
-import { atomicWriteFile } from '../utils'
+import { atomicWriteFile, errorMessage, safeReadJson } from '../utils'
 
 export const FILENAME = 'desktop-settings.json'
 
+// 内存数据：磁盘路径、当前镜像、首次读取懒标记。
 let _storePath: null | string = null
 let _config: Record<string, unknown> = {}
 let _loaded = false
+
+// 写锁：串行化 write/patch/mutate 之间的落盘与推送。
 let _writeLock: null | Promise<unknown> = null
-// 由 bridge 设置；登录前为 null。吞掉的错误表示 Runner 尚未连接。
+
+// 同步协调：由 bridge 设置的 pushTarget、config-sync.ts 的 cloudSync 委托，
+// 以及 applyCloudMirror 期间抑制本地变更通知的标志（防回环）。
 let _pushTarget: null | ((config: Record<string, unknown>) => Promise<unknown> | void) = null
-// 云同步协调器（config-sync.ts）设置的本地变更委托；applyCloudMirror 期间置抑制标志防回环。
 let _cloudSync: null | { onLocalChange: (config: Record<string, unknown>) => void } = null
 let _suppressCloudSync = false
 
@@ -32,15 +35,10 @@ function _load(): Record<string, unknown> {
     return _config
   }
 
-  try {
-    const raw = fs.readFileSync(_storePath, 'utf8')
-    const parsed = JSON.parse(raw)
+  const parsed = safeReadJson<Record<string, unknown>>(_storePath)
 
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      _config = parsed
-    }
-  } catch {
-    // ENOENT（首次运行）或 JSON 格式无效——从空配置开始。
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    _config = parsed
   }
 
   return _config
@@ -59,7 +57,7 @@ export function setCloudSync(delegate: null | { onLocalChange: (config: Record<s
   _cloudSync = delegate
 }
 
-async function _runLocked<T>(task: () => Promise<T>): Promise<T> {
+async function runLocked<T>(task: () => Promise<T>): Promise<T> {
   while (_writeLock) {
     await _writeLock.catch(() => {})
   }
@@ -105,7 +103,7 @@ export async function applyCloudMirror(sections: Record<string, unknown>): Promi
     return
   }
 
-  await _runLocked(async () => {
+  await runLocked(async () => {
     _load()
     _suppressCloudSync = true
 
@@ -122,7 +120,7 @@ export async function applyCloudMirror(sections: Record<string, unknown>): Promi
 }
 
 export async function write(obj: unknown): Promise<{ error?: string; ok: boolean }> {
-  return _runLocked(async () => {
+  return runLocked(async () => {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
       return { error: 'config must be a plain object', ok: false }
     }
@@ -142,7 +140,7 @@ export async function patch(
     return { error: 'path must be a non-empty array', ok: false }
   }
 
-  return _runLocked(async () => {
+  return runLocked(async () => {
     _load()
 
     if (_config) {
@@ -170,7 +168,7 @@ export async function mutate<T>(
   let mutated: T | undefined
 
   try {
-    await _runLocked(async () => {
+    await runLocked(async () => {
       _load()
       const snapshot = JSON.parse(JSON.stringify(_config ?? {}))
 
@@ -188,7 +186,7 @@ export async function mutate<T>(
 
     return { mutated, ok: true }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
 
     return { error: msg, ok: false }
   }

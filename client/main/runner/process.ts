@@ -3,6 +3,8 @@ import childProcess from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
 
+import { errorMessage } from '../shared/utils'
+
 import { resolveVenvPython } from './venv'
 
 const DEFAULT_GRACE_MS = 4_000
@@ -132,6 +134,37 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
 
   function getStatus(): RunnerProcessState {
     return { ...state }
+  }
+
+  // 平台分支：Windows 走 taskkill /T /F 强杀进程树，失败回退到 SIGTERM；
+  // POSIX 直接 SIGTERM。SIGKILL 兜底留给 stop() 的 grace 超时分支。
+  function requestGracefulKill(target: ChildProcess, graceMs: number): void {
+    if (process.platform === 'win32') {
+      childProcess.execFile(
+        'taskkill',
+        ['/PID', String(target.pid), '/T', '/F'],
+        { timeout: Math.max(100, graceMs - 100), windowsHide: true },
+        err => {
+          if (err) {
+            log(`[runner] taskkill failed for pid=${target.pid}: ${err.message}; falling back to SIGTERM`)
+
+            try {
+              target.kill('SIGTERM')
+            } catch (error: unknown) {
+              const msg = errorMessage(error)
+              log(`[runner] SIGTERM fallback failed: ${msg}`)
+            }
+          }
+        }
+      )
+    } else {
+      try {
+        target.kill('SIGTERM')
+      } catch (error: unknown) {
+        const msg = errorMessage(error)
+        log(`[runner] SIGTERM failed: ${msg}`)
+      }
+    }
   }
 
   function buildArgs({ authToken, endpointPath, extraArgs }: RunnerProcessStartArgs): string[] {
@@ -279,32 +312,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
         }
       }
 
-      if (process.platform === 'win32') {
-        childProcess.execFile(
-          'taskkill',
-          ['/PID', String(target.pid), '/T', '/F'],
-          { timeout: Math.max(100, stopGraceMs - 100), windowsHide: true },
-          err => {
-            if (err) {
-              log(`[runner] taskkill failed for pid=${target.pid}: ${err.message}; falling back to SIGTERM`)
-
-              try {
-                target.kill('SIGTERM')
-              } catch (error: unknown) {
-                const msg = error instanceof Error ? error.message : String(error)
-                log(`[runner] SIGTERM fallback failed: ${msg}`)
-              }
-            }
-          }
-        )
-      } else {
-        try {
-          target.kill('SIGTERM')
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error)
-          log(`[runner] SIGTERM failed: ${msg}`)
-        }
-      }
+      requestGracefulKill(target, stopGraceMs)
 
       const forceKillTimer = setTimeout(() => {
         if (settled) {
@@ -316,7 +324,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
         try {
           target.kill('SIGKILL')
         } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error)
+          const msg = errorMessage(error)
           log(`[runner] SIGKILL failed: ${msg}`)
         }
 

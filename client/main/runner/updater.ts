@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 
 import YAML from 'yaml'
 
-import { sleep } from '../shared/utils'
+import { errorMessage, sleep } from '../shared/utils'
 
 import { venvPythonFor } from './venv'
 
@@ -31,12 +31,12 @@ interface PendingRunnerSentinel {
   wheel_path: string
 }
 
-interface MinimalRunnerBridge {
+export interface MinimalRunnerBridge {
   start: (options: { backendSession?: unknown; readyTimeoutMs?: number }) => Promise<unknown>
   stop: (options: { reason: string }) => Promise<unknown>
 }
 
-interface RunnerUpdaterDeps {
+export interface RunnerUpdaterDeps {
   bridgeDeps: {
     spiritagentHome: string
     ensureBackendSession?: () => unknown
@@ -163,7 +163,7 @@ export class RunnerUpdater {
     try {
       sentinel = JSON.parse(await fsp.readFile(sentinelPath, 'utf8')) as PendingRunnerSentinel
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       this.log?.('error', '[updater] sentinel unreadable', msg)
 
       return { error: 'sentinel unreadable', ok: false }
@@ -236,16 +236,7 @@ export class RunnerUpdater {
           timeout: 300_000
         })
       } catch (err) {
-        if (rollbackMarker) {
-          try {
-            await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
-              maxBuffer: 16 * 1024 * 1024,
-              timeout: 300_000
-            })
-          } catch (rollbackErr) {
-            this.log?.('error', '[updater] pip rollback also failed', rollbackErr)
-          }
-        }
+        await this.tryRollbackPip(venvPython, rollbackMarker, 'pip-failed')
 
         return await fail('pip-failed', err)
       }
@@ -260,17 +251,7 @@ export class RunnerUpdater {
           { cwd: path.join(home, 'runner'), timeout: 30_000 }
         )
       } catch (err) {
-        if (rollbackMarker) {
-          try {
-            await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
-              maxBuffer: 16 * 1024 * 1024,
-              timeout: 300_000
-            })
-            this.log?.('info', `[updater] rolled back to ${rollbackMarker} after smoke-test failure`)
-          } catch (rollbackErr) {
-            this.log?.('error', '[updater] rollback after smoke-test failure also failed', rollbackErr)
-          }
-        }
+        await this.tryRollbackPip(venvPython, rollbackMarker, 'smoke-test-failed')
 
         return await fail('smoke-test-failed', err)
       }
@@ -283,17 +264,7 @@ export class RunnerUpdater {
           })
           startedNew = true
         } catch (err) {
-          if (rollbackMarker) {
-            try {
-              await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
-                maxBuffer: 16 * 1024 * 1024,
-                timeout: 300_000
-              })
-              this.log?.('info', `[updater] rolled back to ${rollbackMarker} after start failure`)
-            } catch (rollbackErr) {
-              this.log?.('error', '[updater] rollback after start failure also failed', rollbackErr)
-            }
-          }
+          await this.tryRollbackPip(venvPython, rollbackMarker, 'start-timeout')
 
           return await fail('start-timeout', err)
         }
@@ -316,6 +287,28 @@ export class RunnerUpdater {
           this.log?.('error', '[updater] post-update restart failed', err)
         }
       }
+    }
+  }
+
+  // 三个失败分支（pip-failed / smoke-test-failed / start-timeout）共用同一段回滚逻辑——
+  // 回退到升级前的 wheel 版本，仅在有 rollbackMarker 时执行。
+  private async tryRollbackPip(
+    venvPython: string,
+    rollbackMarker: string | null,
+    reason: 'pip-failed' | 'smoke-test-failed' | 'start-timeout'
+  ): Promise<void> {
+    if (!rollbackMarker) {
+      return
+    }
+
+    try {
+      await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
+        maxBuffer: 16 * 1024 * 1024,
+        timeout: 300_000
+      })
+      this.log?.('info', `[updater] rolled back to ${rollbackMarker} after ${reason} failure`)
+    } catch (rollbackErr) {
+      this.log?.('error', `[updater] rollback after ${reason} failure also failed`, rollbackErr)
     }
   }
 

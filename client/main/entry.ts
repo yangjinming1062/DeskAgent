@@ -1,10 +1,10 @@
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
-  type DesktopBootProgress,
+  type DesktopAuthBroadcast,
+  type DesktopAuthSnapshot,
   type DesktopPrefsHydrated,
   type DesktopShortcutsConfig,
   IPC,
@@ -29,14 +29,9 @@ import {
   Tray
 } from 'electron'
 import log from 'electron-log/main'
-// electron-updater 是 CJS 模块，没有 `autoUpdater` 这个 named export；用 default import 解构
-// 才能在 ESM 入口下加载（`import { autoUpdater }` 会让 Node ESM loader 抛
-// "Named export 'autoUpdater' not found"）。改回 default import + 解构。
-import electronUpdaterPkg from 'electron-updater'
-import type { UpdateInfo } from 'electron-updater'
 
-import type { BackendSession, SessionSnapshot } from './backend/session'
-import { createBackendSession } from './backend/session'
+import { createBackendHttp } from './backend/http'
+import { createBackendSession, type SessionSnapshot } from './backend/session'
 import { registerAuthIpc } from './ipc/auth'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerConnectionIpc } from './ipc/connection'
@@ -54,7 +49,10 @@ import { readRestPosition, registerSpriteIpc } from './ipc/sprite'
 import { registerSystemIpc } from './ipc/system'
 import { registerUiThemeIpc } from './ipc/ui-theme'
 import { registerUpdateIpc } from './ipc/update'
+import { createAutoUpdater } from './lifecycle/auto-updater'
+import { createBootProgressMachine } from './lifecycle/boot-progress'
 import { createDesktopLogger } from './lifecycle/desktop-log'
+import { createMenu } from './lifecycle/menu'
 import { detectRemoteDisplay } from './lifecycle/platform'
 import {
   destroyTray,
@@ -64,12 +62,14 @@ import {
   registerSingleInstanceForwarder,
   showMainWindow
 } from './lifecycle/tray'
-import type { RunnerBridge } from './runner/bridge'
+import { createContextMenuHelpers } from './lifecycle/window-context-menu-helpers'
+import { createWindowHandlers } from './lifecycle/window-handlers'
+import { createZoomPersistence } from './lifecycle/zoom-persistence'
 import { createRunnerBridge } from './runner/bridge'
+import { createBridgeDeps } from './runner/bridge-deps'
 import { createRunnerProcess } from './runner/process'
 import { createReverseRpc } from './runner/reverse-rpc'
 import { createRunnerWsServer } from './runner/rpc-ws'
-import { RunnerUpdater } from './runner/updater'
 import {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_CSP_POLICY,
@@ -81,11 +81,11 @@ import {
 } from './security/hardening'
 import { spiritagentHome } from './security/paths'
 import { buildClientContext } from './shared/client-context'
-import { readStoredBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
+import { readStoredBackendUrl } from './shared/config'
 import { createConfigSync } from './shared/lib/config-sync'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
-import { extensionForMimeType, mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
-import { atomicWriteFile, directoryExists, fileExists, sendToMain, sleep } from './shared/utils'
+import { mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
+import { atomicWriteFile, directoryExists, errorMessage, fileExists, sendToMain, sleep } from './shared/utils'
 
 const USER_DATA_OVERRIDE = process.env.SPIRITAGENT_DESKTOP_USER_DATA_DIR
 
@@ -126,7 +126,21 @@ const SPIRITAGENT_HOME = resolveSpiritAgentHome()
 fs.mkdirSync(SPIRITAGENT_HOME, { recursive: true })
 app.setPath('userData', SPIRITAGENT_HOME)
 
+const desktopLogger = createDesktopLogger({
+  isPackaged: IS_PACKAGED,
+  spiritagentHome: SPIRITAGENT_HOME
+})
+
+const rememberLog = (chunk: unknown): void => desktopLogger.rememberLog(chunk)
+
 runnerConfigStore.init({ spiritagentHome: SPIRITAGENT_HOME })
+
+const backendHttp = createBackendHttp({
+  app,
+  electronNet,
+  rememberLog: (chunk: string) => rememberLog(chunk),
+  spiritagentHome: SPIRITAGENT_HOME
+})
 
 // 云端配置同步协调器：backend user_settings 为真源，desktop-settings.json 是镜像
 // （terminal/spiritagent 等机密与设备相关节仅本机，见 shared/lib/config-sync.ts）。
@@ -147,12 +161,10 @@ const configSync = createConfigSync({
     syncShortcutsFromConfig()
 
     for (const win of [mainWindow, toolWindow]) {
-      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-        win.webContents.send(IPC.event.prefsHydrated, payload)
+      sendToMain(win, IPC.event.prefsHydrated, payload)
 
-        if (theme) {
-          win.webContents.send(IPC.event.uiThemeChanged, { theme })
-        }
+      if (theme) {
+        sendToMain(win, IPC.event.uiThemeChanged, { theme })
       }
     }
   }
@@ -185,7 +197,7 @@ if (process.platform === 'win32') {
 
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
-  applicationVersion: resolveSpiritAgentVersion(),
+  applicationVersion: backendHttp.resolveSpiritAgentVersion(),
   copyright: 'Copyright © 2026 SpiritAgent'
 })
 
@@ -232,26 +244,40 @@ function registerMediaProtocol(): void {
 let mainWindow: BrowserWindow | null = null
 let toolWindow: BrowserWindow | null = null
 let spriteBoundsListenerInstalled = false
-const RENDERER_RELOAD_WINDOW_MS = 60_000
-const RENDERER_RELOAD_MAX = 3
-let rendererReloadTimes: number[] = []
-let powerResumeRegistered = false
 
-const desktopLogger = createDesktopLogger({
-  spiritagentHome: SPIRITAGENT_HOME,
-  isPackaged: IS_PACKAGED
+const zoomPersistence = createZoomPersistence({ app, rememberLog })
+
+const contextMenuHelpers = createContextMenuHelpers({ app, electronNet })
+
+const menu = createMenu({
+  app,
+  appName: APP_NAME,
+  getMainWindow: () => mainWindow,
+  isMac: IS_MAC,
+  menu: Menu,
+  zoomPersistence
 })
 
-const rememberLog = (chunk: unknown): void => desktopLogger.rememberLog(chunk)
+const windowHandlers = createWindowHandlers({
+  clipboard,
+  contextMenuHelpers,
+  cspPolicies: { dev: DEV_CSP_POLICY, prod: DEFAULT_CSP_POLICY },
+  isDevServer: DEV_SERVER,
+  isMac: IS_MAC,
+  isPackaged: IS_PACKAGED,
+  menu: Menu,
+  openExternalUrl,
+  powerMonitor,
+  rememberLog: (chunk: string) => rememberLog(chunk),
+  sendPowerResume: () => sendToMain(mainWindow, IPC.event.powerResume),
+  session,
+  zoomPersistence
+})
 
-let bootProgressState: DesktopBootProgress = {
-  error: null,
-  message: 'Waiting to start SpiritAgent backend',
-  phase: 'idle',
-  progress: 0,
-  running: false,
-  timestamp: Date.now()
-}
+const bootProgress = createBootProgressMachine({
+  getMainWindow: () => mainWindow,
+  rememberLog: (chunk: string) => rememberLog(chunk)
+})
 
 function openExternalUrl(rawUrl: string): boolean {
   const raw = String(rawUrl || '').trim()
@@ -289,11 +315,11 @@ function openExternalUrl(rawUrl: string): boolean {
         try {
           shell.showItemInFolder(localPath)
         } catch (revealError) {
-          const msg = revealError instanceof Error ? revealError.message : String(revealError)
+          const msg = errorMessage(revealError)
           rememberLog(`[file] showItemInFolder failed: ${msg}`)
         }
       })
-      .catch(error => rememberLog(`[file] openPath rejected: ${error.message}`))
+      .catch(error => rememberLog(`[file] openPath rejected: ${errorMessage(error)}`))
 
     return true
   }
@@ -303,54 +329,9 @@ function openExternalUrl(rawUrl: string): boolean {
   }
 
   const url = parsed.toString()
-  shell.openExternal(url).catch(error => rememberLog(`[link] openExternal failed: ${error.message}`))
+  shell.openExternal(url).catch(error => rememberLog(`[link] openExternal failed: ${errorMessage(error)}`))
 
   return true
-}
-
-function clampBootProgress(value: unknown): number {
-  const numeric = Number(value)
-
-  if (!Number.isFinite(numeric)) {
-    return 0
-  }
-
-  return Math.max(0, Math.min(100, Math.round(numeric)))
-}
-
-function broadcastBootProgress(): void {
-  sendToMain(mainWindow, IPC.event.bootProgress, bootProgressState)
-}
-
-function updateBootProgress(update: Partial<DesktopBootProgress>, options: { allowDecrease?: boolean } = {}): void {
-  const nextProgressRaw =
-    typeof update.progress === 'number' ? clampBootProgress(update.progress) : bootProgressState.progress
-
-  const nextProgress = options.allowDecrease ? nextProgressRaw : Math.max(bootProgressState.progress, nextProgressRaw)
-
-  bootProgressState = {
-    ...bootProgressState,
-    ...update,
-    error: update.error === undefined ? bootProgressState.error : update.error,
-    progress: nextProgress,
-    timestamp: Date.now()
-  }
-
-  if (update.message) {
-    rememberLog(`[boot] ${update.message}`)
-  }
-
-  broadcastBootProgress()
-}
-
-async function advanceBootProgress(phase: string, message: string, progress: number): Promise<void> {
-  updateBootProgress({
-    error: null,
-    message,
-    phase,
-    progress,
-    running: true
-  })
 }
 
 function unpackedPathFor(filePath: string): string {
@@ -426,180 +407,6 @@ function resolveRendererHtml(htmlFileName = 'index.html'): string {
   return candidates[0]
 }
 
-function resolveSpiritAgentVersion(): string {
-  return app.getVersion()
-}
-
-async function fetchJson(
-  url: string,
-  token?: string,
-  options: { body?: unknown; method?: string; timeoutMs?: number } = {}
-): Promise<unknown> {
-  const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
-  const body = options.body !== undefined ? JSON.stringify(options.body) : undefined
-
-  const headers: Record<string, string> = {
-    ...(body ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  }
-
-  const res = await electronNet.fetch(url, {
-    body,
-    headers,
-    method: options.method || 'GET',
-    signal: AbortSignal.timeout(timeoutMs)
-  })
-
-  const text = await res.text().catch(() => '')
-
-  if (!res.ok) {
-    let pathname = url
-
-    try {
-      pathname = new URL(url).pathname
-    } catch {
-      /* ignore invalid url formatting in error */
-    }
-
-    throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
-  }
-
-  if (!text) {
-    return null
-  }
-
-  const looksHtml = /^\s*<(?:!doctype|html)/i.test(text)
-  const contentType = String(res.headers.get('content-type') || '')
-
-  if (looksHtml || contentType.includes('text/html')) {
-    throw new Error(
-      `Expected JSON from ${url} but got HTML (status ${res.status}). The endpoint is likely missing on the SpiritAgent backend.`
-    )
-  }
-
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new Error(`Invalid JSON from ${url} (status ${res.status}): ${text.slice(0, 200)}`)
-  }
-}
-
-function filenameFromUrl(rawUrl: string, fallback = 'image'): string {
-  try {
-    const parsed = new URL(rawUrl)
-    const base = path.basename(decodeURIComponent(parsed.pathname || ''))
-
-    return base && base.includes('.') ? base : fallback
-  } catch {
-    return fallback
-  }
-}
-
-async function resourceBufferFromUrl(rawUrl: string): Promise<{ buffer: Buffer; mimeType: string }> {
-  if (!rawUrl) {
-    throw new Error('Missing URL')
-  }
-
-  if (rawUrl.startsWith('data:')) {
-    const match = rawUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s)
-
-    if (!match) {
-      throw new Error('Invalid data URL')
-    }
-
-    const mimeType = match[1] || 'application/octet-stream'
-    const encoded = match[3] || ''
-    const buffer = match[2] ? Buffer.from(encoded, 'base64') : Buffer.from(decodeURIComponent(encoded), 'utf8')
-
-    return { buffer, mimeType }
-  }
-
-  if (rawUrl.startsWith('file:')) {
-    const filePath = fileURLToPath(rawUrl)
-    const buffer = await fs.promises.readFile(filePath)
-
-    return { buffer, mimeType: mimeTypeForPath(filePath) }
-  }
-
-  const res = await electronNet.fetch(rawUrl)
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch ${rawUrl}: ${res.status}`)
-  }
-
-  const arrayBuf = await res.arrayBuffer()
-
-  return {
-    buffer: Buffer.from(arrayBuf),
-    mimeType: res.headers.get('content-type') || 'application/octet-stream'
-  }
-}
-
-async function copyImageFromUrl(rawUrl: string): Promise<void> {
-  const { buffer } = await resourceBufferFromUrl(rawUrl)
-  const image = nativeImage.createFromBuffer(buffer)
-
-  if (image.isEmpty()) {
-    throw new Error('Could not read image')
-  }
-
-  clipboard.writeImage(image)
-}
-
-async function saveImageFromUrl(rawUrl: string): Promise<boolean> {
-  const { buffer, mimeType } = await resourceBufferFromUrl(rawUrl)
-  const fallbackName = filenameFromUrl(rawUrl, `image${extensionForMimeType(mimeType) || '.png'}`)
-
-  const result = await dialog.showSaveDialog(mainWindow!, {
-    defaultPath: fallbackName,
-    title: 'Save Image'
-  })
-
-  if (result.canceled || !result.filePath) {
-    return false
-  }
-
-  await fs.promises.writeFile(result.filePath, buffer)
-
-  return true
-}
-
-async function writeComposerImage(buffer: Buffer, ext = '.png'): Promise<string> {
-  const rawExt = String(ext || '.png')
-    .trim()
-    .toLowerCase()
-
-  const normalizedExt = rawExt.startsWith('.') ? rawExt : `.${rawExt}`
-  const safeExt = /^\.[a-z0-9]{1,5}$/.test(normalizedExt) ? normalizedExt : '.png'
-  const dir = path.join(app.getPath('userData'), 'composer-images')
-  await fs.promises.mkdir(dir, { recursive: true })
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
-  const random = crypto.randomBytes(3).toString('hex')
-  const filePath = path.join(dir, `composer_${stamp}_${random}${safeExt}`)
-  await fs.promises.writeFile(filePath, buffer)
-
-  return filePath
-}
-
-async function waitForSpiritAgent(baseUrl: string, token?: string): Promise<void> {
-  const deadline = Date.now() + 45_000
-  let lastError: unknown = null
-
-  while (Date.now() < deadline) {
-    try {
-      await fetchJson(`${baseUrl}/health`, token)
-
-      return
-    } catch (error) {
-      lastError = error
-      await sleep(500)
-    }
-  }
-
-  const lastErrorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? '')
-  throw new Error(`SpiritAgent backend did not become ready: ${lastErrorMsg || 'timeout'}`)
-}
-
 function getWindowButtonPosition(): { x: number; y: number } | null {
   if (!IS_MAC) {
     return null
@@ -631,489 +438,8 @@ function sameWindowButtonPosition(
   return !!a && !!b && a.x === b.x && a.y === b.y
 }
 
-function sendPowerResume(): void {
-  sendToMain(mainWindow, IPC.event.powerResume)
-}
-
-function registerPowerResumeListeners(): void {
-  if (powerResumeRegistered) {
-    return
-  }
-
-  powerResumeRegistered = true
-
-  try {
-    powerMonitor.on('resume', sendPowerResume)
-    powerMonitor.on('unlock-screen', sendPowerResume)
-  } catch {
-    // 尽力而为
-  }
-}
-
 function getAppIconPath(): null | string {
   return APP_ICON_PATHS.find(fileExists) || null
-}
-
-function buildApplicationMenu(): Menu {
-  const template: Electron.MenuItemConstructorOptions[] = []
-
-  if (IS_MAC) {
-    template.push({
-      label: APP_NAME,
-      submenu: [
-        { click: () => showAboutPanelFresh(), label: `About ${APP_NAME}` },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
-    })
-  }
-
-  template.push({
-    label: 'File',
-    submenu: [
-      IS_MAC
-        ? {
-            accelerator: 'CommandOrControl+W',
-            click: () => {
-              mainWindow?.close()
-            },
-            label: 'Close'
-          }
-        : { role: 'quit' }
-    ]
-  })
-  template.push({
-    label: 'Edit',
-    submenu: [
-      { role: 'undo' },
-      { role: 'redo' },
-      { type: 'separator' },
-      { role: 'cut' },
-      { role: 'copy' },
-      { role: 'paste' },
-      { role: 'delete' },
-      { role: 'selectAll' }
-    ]
-  })
-  template.push({
-    label: 'View',
-    submenu: [
-      { role: 'reload' },
-      { role: 'forceReload' },
-      { role: 'toggleDevTools' },
-      { type: 'separator' },
-      {
-        accelerator: 'CommandOrControl+0',
-        click: () => {
-          setAndPersistZoomLevel(mainWindow, 0)
-        },
-        label: 'Actual Size'
-      },
-      {
-        accelerator: 'CommandOrControl+Plus',
-        click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            setAndPersistZoomLevel(mainWindow, mainWindow.webContents.getZoomLevel() + 0.1)
-          }
-        },
-        label: 'Zoom In'
-      },
-      {
-        accelerator: 'CommandOrControl+-',
-        click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            setAndPersistZoomLevel(mainWindow, mainWindow.webContents.getZoomLevel() - 0.1)
-          }
-        },
-        label: 'Zoom Out'
-      },
-      { type: 'separator' },
-      { role: 'togglefullscreen' }
-    ]
-  })
-  template.push({
-    label: 'Window',
-    submenu: IS_MAC
-      ? [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }]
-      : [{ role: 'minimize' }, { role: 'close' }]
-  })
-
-  return Menu.buildFromTemplate(template)
-}
-
-function toggleDevTools(targetWin: BrowserWindow): void {
-  const { webContents } = targetWin
-
-  if (webContents.isDevToolsOpened()) {
-    webContents.closeDevTools()
-  } else {
-    webContents.openDevTools({ mode: 'detach' })
-  }
-}
-
-function installDevToolsShortcut(targetWin: BrowserWindow): void {
-  targetWin.webContents.on('before-input-event', (event, input) => {
-    const key = input.key.toLowerCase()
-
-    const isInspectShortcut =
-      input.key === 'F12' ||
-      (IS_MAC && input.meta && input.alt && key === 'i') ||
-      (!IS_MAC && input.control && input.shift && key === 'i')
-
-    if (!isInspectShortcut) {
-      return
-    }
-
-    event.preventDefault()
-    toggleDevTools(targetWin)
-  })
-}
-
-const ZOOM_FILE = 'desktop-zoom.json'
-
-function clampZoomLevel(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0
-  }
-
-  return Math.min(Math.max(value, -9), 9)
-}
-
-function readPersistedZoomLevel(): number | null {
-  try {
-    const filePath = path.join(app.getPath('userData'), ZOOM_FILE)
-    const raw = fs.readFileSync(filePath, 'utf8')
-    const parsed = JSON.parse(raw) as { zoomLevel?: unknown }
-
-    if (parsed && typeof parsed.zoomLevel === 'number') {
-      return clampZoomLevel(parsed.zoomLevel)
-    }
-  } catch {
-    // 尚未保存或文件损坏
-  }
-
-  return null
-}
-
-function writePersistedZoomLevel(zoomLevel: number): void {
-  try {
-    const filePath = path.join(app.getPath('userData'), ZOOM_FILE)
-    fs.writeFileSync(filePath, JSON.stringify({ zoomLevel }), 'utf8')
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error)
-    rememberLog(`[zoom] persist failed: ${msg}`)
-  }
-}
-
-function setAndPersistZoomLevel(targetWin: BrowserWindow | null, zoomLevel: number): void {
-  if (!targetWin || targetWin.isDestroyed()) {
-    return
-  }
-
-  const next = clampZoomLevel(zoomLevel)
-  targetWin.webContents.setZoomLevel(next)
-  writePersistedZoomLevel(next)
-}
-
-function restorePersistedZoomLevel(targetWin: BrowserWindow | null): void {
-  if (!targetWin || targetWin.isDestroyed()) {
-    return
-  }
-
-  const stored = readPersistedZoomLevel()
-
-  if (stored !== null) {
-    targetWin.webContents.setZoomLevel(stored)
-  }
-}
-
-function installZoomShortcuts(targetWin: BrowserWindow): void {
-  const ZOOM_STEP = 0.1
-  targetWin.webContents.on('before-input-event', (event, input) => {
-    const mod = IS_MAC ? input.meta : input.control
-
-    if (!mod || input.alt || input.shift) {
-      return
-    }
-
-    const key = input.key
-
-    if (key === '0') {
-      event.preventDefault()
-      setAndPersistZoomLevel(targetWin, 0)
-    } else if (key === '=' || key === '+') {
-      event.preventDefault()
-      setAndPersistZoomLevel(targetWin, targetWin.webContents.getZoomLevel() + ZOOM_STEP)
-    } else if (key === '-') {
-      event.preventDefault()
-      setAndPersistZoomLevel(targetWin, targetWin.webContents.getZoomLevel() - ZOOM_STEP)
-    }
-  })
-}
-
-function installContextMenu(targetWin: BrowserWindow): void {
-  targetWin.webContents.on('context-menu', (_event, params) => {
-    const template: Electron.MenuItemConstructorOptions[] = []
-    const hasSelection = Boolean(params.selectionText?.trim())
-    const hasImage = params.mediaType === 'image' && Boolean(params.srcURL)
-    const hasLink = Boolean(params.linkURL)
-    const isEditable = Boolean(params.isEditable)
-
-    if (hasImage) {
-      template.push(
-        {
-          enabled: !params.srcURL.startsWith('data:'),
-          label: 'Open Image',
-          click: () => {
-            if (params.srcURL && !params.srcURL.startsWith('data:')) {
-              openExternalUrl(params.srcURL)
-            }
-          }
-        },
-        {
-          label: 'Copy Image',
-          click: () => {
-            void copyImageFromUrl(params.srcURL).catch(error => rememberLog(`Copy image failed: ${error.message}`))
-          }
-        },
-        {
-          label: 'Copy Image Address',
-          click: () => clipboard.writeText(params.srcURL)
-        },
-        {
-          label: 'Save Image As...',
-          click: () => {
-            void saveImageFromUrl(params.srcURL).catch(error => rememberLog(`Save image failed: ${error.message}`))
-          }
-        }
-      )
-    }
-
-    if (hasLink) {
-      if (template.length) {
-        template.push({ type: 'separator' })
-      }
-
-      template.push(
-        {
-          label: 'Open Link',
-          click: () => openExternalUrl(params.linkURL)
-        },
-        {
-          label: 'Copy Link',
-          click: () => clipboard.writeText(params.linkURL)
-        }
-      )
-    }
-
-    const suggestions = Array.isArray(params.dictionarySuggestions) ? params.dictionarySuggestions : []
-
-    if (isEditable && params.misspelledWord && suggestions.length > 0) {
-      if (template.length) {
-        template.push({ type: 'separator' })
-      }
-
-      for (const suggestion of suggestions.slice(0, 5)) {
-        template.push({
-          label: suggestion,
-          click: () => targetWin.webContents.replaceMisspelling(suggestion)
-        })
-      }
-
-      template.push({ type: 'separator' })
-      template.push({
-        label: 'Add to dictionary',
-        click: () => targetWin.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
-      })
-    }
-
-    if (hasSelection || isEditable) {
-      if (template.length) {
-        template.push({ type: 'separator' })
-      }
-
-      if (isEditable) {
-        template.push(
-          { enabled: params.editFlags.canCut, role: 'cut' },
-          { enabled: params.editFlags.canCopy, role: 'copy' },
-          { enabled: params.editFlags.canPaste, role: 'paste' },
-          { type: 'separator' },
-          { enabled: params.editFlags.canSelectAll, role: 'selectAll' }
-        )
-      } else {
-        template.push({ enabled: params.editFlags.canCopy, role: 'copy' })
-      }
-    }
-
-    if (!template.length) {
-      template.push({ role: 'selectAll' })
-    }
-
-    Menu.buildFromTemplate(template).popup({ window: targetWin })
-  })
-}
-
-function isAudioCapturePermission(
-  permission: string,
-  details:
-    | Electron.PermissionRequest
-    | Electron.FilesystemPermissionRequest
-    | Electron.MediaAccessPermissionRequest
-    | Electron.OpenExternalPermissionRequest
-): boolean {
-  if (permission === 'audioCapture') {
-    return true
-  }
-
-  if (permission !== 'media') {
-    return false
-  }
-
-  const mediaTypes =
-    'mediaTypes' in details ? (details as { mediaTypes?: ReadonlyArray<string> }).mediaTypes : undefined
-
-  if (!Array.isArray(mediaTypes) || mediaTypes.length === 0) {
-    return true
-  }
-
-  return mediaTypes.includes('audio') && !mediaTypes.includes('video')
-}
-
-function installMediaPermissions(): void {
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
-    callback(isAudioCapturePermission(permission, details))
-  })
-
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission, _origin, details) => {
-    if ((permission as string) === 'media' || (permission as string) === 'audioCapture') {
-      const mediaType = details?.mediaType
-
-      if (mediaType === 'video') {
-        return false
-      }
-
-      return true
-    }
-
-    return false
-  })
-}
-
-function installContentSecurityPolicy(): void {
-  // dev 用放宽的 CSP（允许 inline + eval），让 Vite 的 React Fast Refresh
-  // preamble 与 HMR 跑得起来；生产仍锁 DEFAULT_CSP_POLICY。
-  const policy = IS_PACKAGED ? DEFAULT_CSP_POLICY : DEV_CSP_POLICY
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [policy]
-      }
-    })
-  })
-}
-
-const UPDATE_INITIAL_CHECK_DELAY_MS = 30_000
-
-let runnerUpdaterSingleton: RunnerUpdater | null = null
-
-function getRunnerUpdater(): RunnerUpdater {
-  if (runnerUpdaterSingleton) {
-    return runnerUpdaterSingleton
-  }
-
-  runnerUpdaterSingleton = new RunnerUpdater({
-    bridgeDeps,
-    fetchImpl: electronNet.fetch as unknown as typeof globalThis.fetch
-  })
-
-  return runnerUpdaterSingleton
-}
-
-function setupAutoUpdater(): void {
-  if (!app.isPackaged) {
-    return
-  }
-
-  // 从 default import 解构；不要用顶层 named import（见 electronUpdaterPkg 注释）。
-  const { autoUpdater } = electronUpdaterPkg
-
-  autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = false
-  autoUpdater.logger = log
-
-  const baseUrl = resolveNormalizedBackendUrl(SPIRITAGENT_HOME)
-
-  if (!baseUrl) {
-    log.info('no backend URL configured; auto-updater disabled until activation')
-
-    return
-  }
-
-  const updateBaseUrl = baseUrl + '/api/update'
-  const publicKeyPath = getBundledPublicKeyPath()
-
-  if (!publicKeyPath) {
-    log.warn('update.pub not found in extraResources; runner signature verification will fail')
-  }
-
-  autoUpdater.setFeedURL({
-    provider: 'generic',
-    url: updateBaseUrl
-  })
-
-  autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
-    log.info('desktop update downloaded; starting runner prefetch', info?.version)
-    getRunnerUpdater()
-      .prefetchRunnerAssets({
-        publicKeyPath,
-        updateBaseUrl,
-        version: info?.version || app.getVersion()
-      })
-      .catch(err => {
-        log.warn('runner prefetch failed:', err?.message || err)
-      })
-  })
-
-  const timer = setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((error: unknown) => {
-      const msg = error instanceof Error ? error.message : String(error)
-      log.warn('initial update check failed:', msg)
-    })
-  }, UPDATE_INITIAL_CHECK_DELAY_MS)
-
-  if (typeof timer.unref === 'function') {
-    timer.unref()
-  }
-}
-
-function getBundledPublicKeyPath(): null | string {
-  try {
-    const candidates = [
-      path.join(process.resourcesPath || '', 'update.pub'),
-      path.join(APP_ROOT, 'update.pub'),
-      path.join(import.meta.dirname, '..', 'update.pub'),
-      path.join(import.meta.dirname, 'update.pub'),
-      path.join(APP_ROOT, '..', 'scripts', 'release-keys', 'update.pub'),
-      path.resolve(APP_ROOT, '../../scripts/release-keys/update.pub')
-    ]
-
-    return candidates.find(candidate => fs.existsSync(candidate)) || null
-  } catch {
-    return null
-  }
-}
-
-async function resolveRemoteBackend(): Promise<null | { baseUrl: string }> {
-  const url = resolveNormalizedBackendUrl(SPIRITAGENT_HOME)
-
-  return url ? { baseUrl: url } : null
 }
 
 let getAuthToken = (): string | null => null
@@ -1123,25 +449,6 @@ let pendingBackend: Promise<SpiritAgentConnection> | null = null
 function resetBackendCache(): void {
   cachedBackend = null
   pendingBackend = null
-}
-
-async function mintWsTicket(baseUrl: string, token: string | null): Promise<string | null> {
-  if (!token) {
-    return null
-  }
-
-  try {
-    const res = (await fetchJson(`${baseUrl}/api/user/ws-ticket`, token, { method: 'POST', timeoutMs: 5000 })) as {
-      access_token?: string
-    }
-
-    return res?.access_token || null
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error)
-    rememberLog(`[ws-ticket] mint failed: ${msg}`)
-
-    return null
-  }
 }
 
 async function ensureBackend(): Promise<SpiritAgentConnection> {
@@ -1170,7 +477,7 @@ async function ensureBackend(): Promise<SpiritAgentConnection> {
         const liveWindowState = getWindowState()
         const wsBase = cachedBackend.baseUrl.replace(/^http/, 'ws')
         const token = getAuthToken()
-        const wsTicket = await mintWsTicket(cachedBackend.baseUrl, token)
+        const wsTicket = await backendHttp.mintWsTicket(cachedBackend.baseUrl, token)
         cachedBackend = {
           ...cachedBackend,
           ...liveWindowState,
@@ -1181,17 +488,17 @@ async function ensureBackend(): Promise<SpiritAgentConnection> {
         return cachedBackend
       }
 
-      await advanceBootProgress('backend.resolve', 'Resolving SpiritAgent backend', 8)
-      const remote = await resolveRemoteBackend()
+      bootProgress.advance('backend.resolve', 'Resolving SpiritAgent backend', 8)
+      const remote = await backendHttp.resolveRemoteBackend()
 
       if (!remote) {
         throw new Error('No remote SpiritAgent backend configured.')
       }
 
       const token = getAuthToken()
-      await advanceBootProgress('backend.remote', `Connecting to remote SpiritAgent backend at ${remote.baseUrl}`, 24)
-      await waitForSpiritAgent(remote.baseUrl, token || undefined)
-      updateBootProgress({
+      bootProgress.advance('backend.remote', `Connecting to remote SpiritAgent backend at ${remote.baseUrl}`, 24)
+      await backendHttp.waitForSpiritAgent(remote.baseUrl, token || undefined)
+      bootProgress.update({
         error: null,
         message: 'Remote SpiritAgent backend is ready',
         phase: 'backend.ready',
@@ -1199,7 +506,7 @@ async function ensureBackend(): Promise<SpiritAgentConnection> {
         running: true
       })
       const wsBase = remote.baseUrl.replace(/^http/, 'ws')
-      const wsTicket = await mintWsTicket(remote.baseUrl, token)
+      const wsTicket = await backendHttp.mintWsTicket(remote.baseUrl, token)
       cachedBackend = {
         baseUrl: remote.baseUrl,
         token,
@@ -1224,87 +531,6 @@ function rendererUrlFor(role: string): string {
   }
 
   return pathToFileURL(resolveRendererHtml(htmlFile)).toString()
-}
-
-function installStandardWindowHandlers(win: BrowserWindow): void {
-  installDevToolsShortcut(win)
-  win.webContents.setWindowOpenHandler(details => {
-    openExternalUrl(details.url)
-
-    return { action: 'deny' }
-  })
-  win.webContents.on('will-navigate', (event, url) => {
-    if ((DEV_SERVER && url.startsWith(DEV_SERVER)) || (!DEV_SERVER && url.startsWith('file:'))) {
-      return
-    }
-
-    event.preventDefault()
-    openExternalUrl(url)
-  })
-  win.webContents.on('render-process-gone', (_event, details) => {
-    rememberLog(`[renderer] render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
-
-    if (details?.reason === 'crashed' || details?.reason === 'oom') {
-      const now = Date.now()
-      rendererReloadTimes = rendererReloadTimes.filter(t => now - t < RENDERER_RELOAD_WINDOW_MS)
-
-      if (rendererReloadTimes.length >= RENDERER_RELOAD_MAX) {
-        rememberLog(
-          `[renderer] suppressing reload: ${rendererReloadTimes.length} crashes within ${RENDERER_RELOAD_WINDOW_MS}ms (likely a crash loop)`
-        )
-
-        return
-      }
-
-      rendererReloadTimes.push(now)
-      setImmediate(() => {
-        if (!win || win.isDestroyed()) {
-          return
-        }
-
-        try {
-          win.webContents.reload()
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          rememberLog(`[renderer] reload after crash failed: ${msg}`)
-        }
-      })
-    }
-  })
-  win.webContents.on('unresponsive', () => rememberLog('[renderer] webContents became unresponsive'))
-
-  win.webContents.on(
-    'console-message',
-    (
-      _event: Electron.Event,
-      detailsOrLevel: number | Electron.WebContentsConsoleMessageEventParams,
-      message?: string,
-      line?: number,
-      sourceId?: string
-    ) => {
-      const details = detailsOrLevel && typeof detailsOrLevel === 'object' ? detailsOrLevel : null
-
-      const level: number = details
-        ? details.level === 'error'
-          ? 3
-          : details.level === 'warning'
-            ? 2
-            : details.level === 'info'
-              ? 1
-              : 0
-        : (detailsOrLevel as number)
-
-      if (level !== 3) {
-        return
-      }
-
-      const text = details ? details.message : (message ?? '')
-      const src = details ? details.sourceId : (sourceId ?? '')
-      const lineNo = details ? details.lineNumber : (line ?? 0)
-      rememberLog(`[renderer console] ${text} (${src}:${lineNo})`)
-    }
-  )
-  installCloseInterceptor(win)
 }
 
 function createToolWindow(): void {
@@ -1338,14 +564,15 @@ function createToolWindow(): void {
     toolWindow.setWindowButtonVisibility(false)
   }
 
-  installZoomShortcuts(toolWindow)
-  installContextMenu(toolWindow)
-  installStandardWindowHandlers(toolWindow)
+  windowHandlers.installZoomShortcuts(toolWindow)
+  windowHandlers.installContextMenu(toolWindow)
+  windowHandlers.installStandardWindowHandlers(toolWindow)
+  installCloseInterceptor(toolWindow)
 
   void toolWindow.loadURL(rendererUrlFor('tool'))
 
   toolWindow.webContents.once('did-finish-load', () => {
-    restorePersistedZoomLevel(toolWindow)
+    zoomPersistence.restorePersistedZoomLevel(toolWindow)
   })
 }
 
@@ -1413,11 +640,12 @@ function createSpriteWindow(): void {
     screen.on('display-metrics-changed', () => applySpriteBounds())
   }
 
-  installStandardWindowHandlers(mainWindow)
+  windowHandlers.installStandardWindowHandlers(mainWindow)
+  installCloseInterceptor(mainWindow)
 
   void mainWindow.loadURL(rendererUrlFor('sprite'))
   mainWindow.webContents.once('did-finish-load', () => {
-    broadcastBootProgress()
+    bootProgress.broadcast()
     mainWindow?.showInactive()
   })
 }
@@ -1456,16 +684,26 @@ function hideToolWindow(): void {
 
 function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   rebuildTrayMenu()
+
   const authenticated = Boolean(snapshot?.hasToken)
-  const payload = { authenticated, snapshot: authenticated ? snapshot : null }
+
+  const authSnapshot: DesktopAuthSnapshot | null =
+    authenticated && snapshot
+      ? {
+          baseUrl: snapshot.baseUrl,
+          hasToken: snapshot.hasToken,
+          tokenExpiresAt: snapshot.tokenExpiresAt,
+          user: snapshot.user?.username ? { username: snapshot.user.username } : null
+        }
+      : null
+
+  const payload: DesktopAuthBroadcast = { authenticated, snapshot: authSnapshot }
 
   // 用户身份变化触发配置水合（登录/换号；登出只停摆待写）。
   configSync.handleAuthUserChanged(authenticated ? (snapshot?.user?.id ?? null) : null)
 
   for (const win of [mainWindow, toolWindow]) {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.event.authChanged, payload)
-    }
+    sendToMain(win, IPC.event.authChanged, payload)
   }
 }
 
@@ -1500,7 +738,7 @@ registerShortcutsIpc({
 registerClipboardIpc({
   electron: { clipboard },
   ipcMain,
-  writeComposerImage
+  writeComposerImage: contextMenuHelpers.writeComposerImage
 })
 registerLogIpc({ ipcMain, log: chunk => rememberLog(chunk) })
 registerFilesIpc({
@@ -1528,10 +766,10 @@ registerConnectionIpc({
   defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS,
   ensureBackend,
   fetchImpl: electronFetch,
-  fetchJson,
-  getBootProgressState: () => bootProgressState,
+  fetchJson: backendHttp.fetchJson,
+  getBootProgressState: () => bootProgress.getState(),
   ipcMain,
-  mintWsTicket,
+  mintWsTicket: backendHttp.mintWsTicket,
   modelDiskCache,
   resolvePathTimeoutMs,
   resolveTimeoutMs,
@@ -1550,128 +788,50 @@ registerMediaIpc({
   log: chunk => rememberLog(chunk)
 })
 
-function showAboutPanelFresh(): void {
-  app.setAboutPanelOptions({
-    applicationName: APP_NAME,
-    applicationVersion: app.getVersion(),
-    copyright: 'Copyright © 2026 SpiritAgent'
-  })
-  app.showAboutPanel()
-}
-
-interface RunnerBridgeDeps {
-  app: { getPath: (name: string) => string; [key: string]: unknown }
-  atomicWriteFile: typeof atomicWriteFile
-  autoStartBridge: () => void
-  autoStopBridge: () => void
-  backendSession: null | BackendSession
-  broadcastAuthChanged: (snapshot: null | SessionSnapshot) => void
-  buildClientContext: () => ReturnType<typeof buildClientContext>
-  createBackendSession: typeof createBackendSession
-  createReverseRpc: typeof createReverseRpc
-  createRunnerBridge: typeof createRunnerBridge
-  createRunnerProcess: typeof createRunnerProcess
-  createRunnerWsServer: typeof createRunnerWsServer
-  electronNet: typeof electronNet
-  ensureBackendSession: () => BackendSession
-  fetchJson: (
-    url: string,
-    token?: string,
-    options?: { body?: unknown; method?: string; timeoutMs?: number }
-  ) => Promise<unknown>
-  fileExists: typeof fileExists
-  getMainWindow: () => BrowserWindow | null
-  getSpriteWindow: () => BrowserWindow | null
-  getToolWindow: () => BrowserWindow | null
-  hideToolWindow: () => void
-  isQuitting: boolean
-  rebuildTrayMenu: () => void
-  rememberLog: (chunk: string) => void
-  resetBackendCache: () => void
-  resolveSpiritAgentVersion: () => string
-  rewireAuthToken: () => void
-  runnerBridge: null | RunnerBridge
-  safeStorage: typeof safeStorage
-  showToolWindow: () => void
-  spiritagentHome: string
-  taggedLogger: (prefix: string) => (chunk: string) => void
-}
-
-const bridgeDeps: RunnerBridgeDeps = {
-  app: app as unknown as { getPath: (name: string) => string; [key: string]: unknown },
+// BridgeDeps 工厂接收所有依赖为参数；它本身不再持有模块顶层 free variable，
+// 这样既保留 36 字段契约，又把"对象工厂 vs 对象字面量"的差异常规化为参数注入。
+const bridgeDeps = createBridgeDeps({
+  app,
   atomicWriteFile,
-  autoStartBridge: () => autoStartBridge(bridgeDeps),
-  autoStopBridge: () => autoStopBridge(bridgeDeps),
-  backendSession: null,
+  autoStartBridge,
+  autoStopBridge,
+  backendHttp,
   broadcastAuthChanged,
-  buildClientContext: () =>
-    buildClientContext({
-      spiritagentHome: SPIRITAGENT_HOME,
-      desktopVersion: resolveSpiritAgentVersion()
-    }),
+  buildClientContext,
   createBackendSession,
   createReverseRpc,
   createRunnerBridge,
   createRunnerProcess,
   createRunnerWsServer,
-  spiritagentHome: SPIRITAGENT_HOME,
   electronNet,
-  ensureBackendSession: () => {
-    if (bridgeDeps.backendSession) {
-      return bridgeDeps.backendSession
-    }
-
-    bridgeDeps.backendSession = createBackendSession({
-      appVersion: resolveSpiritAgentVersion(),
-      defaultBaseUrl: readStoredBackendUrl(SPIRITAGENT_HOME) || null,
-      fetchImpl: (url: string, options?: RequestInit) => electronNet.fetch(url, options),
-      log: (chunk: string) => rememberLog(chunk),
-      safeStorage,
-      userDataDir: app.getPath('userData')
-    })
-
-    try {
-      bridgeDeps.backendSession
-        .restoreSession()
-        .then((snapshot: null | SessionSnapshot) => {
-          if (snapshot) {
-            broadcastAuthChanged(snapshot)
-            autoStartBridge(bridgeDeps)
-          } else {
-            rebuildTrayMenu()
-          }
-        })
-        .catch((error: unknown) => {
-          const msg = error instanceof Error ? error.message : String(error)
-          rememberLog(`[session] restore failed: ${msg}`)
-          rebuildTrayMenu()
-        })
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
-      rememberLog(`[session] restore failed: ${msg}`)
-    }
-
-    return bridgeDeps.backendSession
-  },
-  fetchJson,
+  errorMessage,
   fileExists,
+  getAuthToken: {
+    getter: () => getAuthToken(),
+    setter: fn => {
+      getAuthToken = fn
+    }
+  },
   getMainWindow: () => mainWindow,
   getSpriteWindow: () => mainWindow,
   getToolWindow: () => toolWindow,
   hideToolWindow,
-  isQuitting: false,
-  rebuildTrayMenu: () => rebuildTrayMenu(),
+  readStoredBackendUrl,
+  rebuildTrayMenu,
   rememberLog: (chunk: string) => rememberLog(chunk),
   resetBackendCache,
-  resolveSpiritAgentVersion,
-  rewireAuthToken: () => {
-    getAuthToken = () => bridgeDeps.ensureBackendSession().getToken() ?? null
-  },
-  runnerBridge: null,
   safeStorage,
   showToolWindow,
-  taggedLogger: (prefix: string) => (chunk: string) => rememberLog(`${prefix} ${chunk}`)
-}
+  spiritagentHome: SPIRITAGENT_HOME
+})
+
+const autoUpdater = createAutoUpdater({
+  app,
+  appRoot: APP_ROOT,
+  bridgeDeps,
+  electronNet,
+  spiritagentHome: SPIRITAGENT_HOME
+})
 
 registerAuthIpc({ deps: bridgeDeps, ipcMain })
 registerRunnerIpc({ deps: bridgeDeps, ipcMain })
@@ -1729,22 +889,23 @@ setTimeout(() => {
 
 void app.whenReady().then(async () => {
   if (IS_MAC) {
-    Menu.setApplicationMenu(buildApplicationMenu())
+    Menu.setApplicationMenu(menu.buildApplicationMenu())
   } else {
     Menu.setApplicationMenu(null)
   }
 
-  installMediaPermissions()
-  installContentSecurityPolicy()
+  windowHandlers.installMediaPermissions()
+  windowHandlers.installContentSecurityPolicy()
   registerMediaProtocol()
-  configureSpellChecker()
-  registerPowerResumeListeners()
-  setupAutoUpdater()
+  windowHandlers.configureSpellChecker(app)
+  windowHandlers.registerPowerResumeListeners()
+  autoUpdater.setup()
 
-  await getRunnerUpdater()
+  await autoUpdater
+    .getRunnerUpdater()
     .installPending()
     .catch(err => {
-      log.warn('runner installPending failed:', err?.message || err)
+      log.warn('runner installPending failed:', errorMessage(err))
     })
   createSpriteWindow()
 
@@ -1781,28 +942,8 @@ void app.whenReady().then(async () => {
   })
 })
 
-function configureSpellChecker(): void {
-  try {
-    const defaultSession = session.defaultSession
-
-    if (!defaultSession || typeof defaultSession.setSpellCheckerLanguages !== 'function') {
-      return
-    }
-
-    const available = defaultSession.availableSpellCheckerLanguages || []
-    const locale = (app.getLocale && app.getLocale()) || 'en-US'
-    const candidates = [locale, locale.split('-')[0], 'en-US', 'en']
-    const chosen = candidates.find(lang => available.includes(lang)) || 'en-US'
-
-    defaultSession.setSpellCheckerLanguages([chosen])
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    rememberLog(`Spellchecker setup failed: ${msg}`)
-  }
-}
-
 app.on('before-quit', () => {
-  bridgeDeps.isQuitting = true
+  bridgeDeps.setQuitting(true)
   destroyTray()
   cleanupShortcuts()
 
@@ -1813,7 +954,7 @@ app.on('before-quit', () => {
     try {
       void bridgeDeps.runnerBridge.stop({ reason: 'app-quit' })
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       rememberLog(`[runner-bridge] quit cleanup failed: ${msg}`)
     }
   }

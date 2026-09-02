@@ -11,6 +11,7 @@ import {
 import { type BrowserWindow, globalShortcut, type IpcMain } from 'electron'
 
 import * as store from '../shared/lib/runner-config-store'
+import { errorMessage } from '../shared/utils'
 
 interface ShortcutsIpcDeps {
   getMainWindow: () => BrowserWindow | null | undefined
@@ -141,7 +142,7 @@ function registerSingleShortcut(action: keyof DesktopShortcutsConfig, accelerato
       currentStatus[action] = { registered: true }
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     currentStatus[action] = {
       error: message,
       registered: false

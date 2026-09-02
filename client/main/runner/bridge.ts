@@ -6,7 +6,7 @@ import path from 'node:path'
 
 import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '@ipc/contracts'
 
-import { atomicWriteFile } from '../shared/utils'
+import { atomicWriteFile, errorMessage } from '../shared/utils'
 
 import type { RunnerProcess, RunnerProcessStartArgs, RunnerProcessState } from './process'
 import type { ReverseRpcOptions } from './reverse-rpc'
@@ -200,7 +200,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
         `[runner-bridge] wrote endpoint file: transport=${endpoint.transport} path=${endpoint.path} pid=${process.pid}`
       )
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       log(`[runner-bridge] failed to write endpoint file: ${msg}`)
     }
   }
@@ -378,7 +378,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     if (state.phase !== 'starting') {
       if (pushConfig) {
         Promise.resolve(pushConfig()).catch(err => {
-          const msg = err instanceof Error ? err.message : String(err)
+          const msg = errorMessage(err)
           log(`[runner-bridge] config push on reconnect failed: ${msg}`)
         })
       }
@@ -399,7 +399,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       try {
         await pushConfig()
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         log(`[runner-bridge] initial config push failed: ${msg}`)
       }
     }
@@ -439,7 +439,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
         log(`[runner-bridge] tool names: ${names.join(', ') || '(unparseable schemas)'}`)
       }
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       log(`[runner-bridge] get_tools failed: ${msg}`)
       cachedTools = []
     }

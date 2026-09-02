@@ -1,12 +1,54 @@
 import fsp from 'node:fs/promises'
 
 import { type DesktopBootProgress, IPC, type SpiritAgentApiRequest, type SpiritAgentConnection } from '@ipc/contracts'
-import type { IpcMain } from 'electron'
+import type { IpcMain, WebContents } from 'electron'
 
 import { dataUrlFromBuffer } from '../shared/mime'
-import { sendToSender } from '../shared/utils'
+import { errorMessage, sendToSender } from '../shared/utils'
 
 import type { ModelDiskCache } from './model-disk-cache'
+
+// 在异常消息前缀匹配 `401 ` 且带 token 时广播会话过期事件；api / apiAssetModelUrl 复用。
+function notifyAuthExpiredOn401(message: string, connection: SpiritAgentConnection, sender: WebContents): void {
+  if (message.startsWith('401 ') && connection.token) {
+    sendToSender(sender, IPC.event.authSessionExpired)
+  }
+}
+
+// 对后端发起拉取并处理 401/错误包装——apiAsset / apiAssetBuffer 复用。
+async function fetchFromBackend({
+  rawUrl,
+  connection,
+  sender,
+  fetchImpl,
+  timeoutMs
+}: {
+  rawUrl: string
+  connection: SpiritAgentConnection
+  sender: WebContents
+  fetchImpl?: typeof globalThis.fetch
+  timeoutMs: number
+}): Promise<Response> {
+  const { pathname, search } = new URL(rawUrl, connection.baseUrl)
+  const pathAndQuery = `${pathname}${search}`
+  const caller = fetchImpl || globalThis.fetch
+
+  const res = await caller(`${connection.baseUrl}${pathAndQuery}`, {
+    headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
+    signal: AbortSignal.timeout(timeoutMs)
+  })
+
+  if (!res.ok) {
+    if (res.status === 401 && connection.token) {
+      sendToSender(sender, IPC.event.authSessionExpired)
+    }
+
+    const text = await res.text().catch(() => '')
+    throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
+  }
+
+  return res
+}
 
 interface ConnectionIpcDeps {
   defaultFetchTimeoutMs?: number
@@ -72,11 +114,9 @@ export function registerConnectionIpc({
         timeoutMs
       })
     } catch (error: unknown) {
-      const err = error as { message?: string }
+      const message = errorMessage(error)
 
-      if (err?.message?.startsWith('401 ') && connection.token) {
-        sendToSender(_event.sender, IPC.event.authSessionExpired)
-      }
+      notifyAuthExpiredOn401(message, connection, _event.sender)
 
       throw error
     }
@@ -90,25 +130,13 @@ export function registerConnectionIpc({
       throw new Error('asset url is required')
     }
 
-    const { pathname, search } = new URL(raw, connection.baseUrl)
-    const pathAndQuery = `${pathname}${search}`
-
-    const timeoutMs = defaultFetchTimeoutMs
-    const caller = fetchImpl || globalThis.fetch
-
-    const res = await caller(`${connection.baseUrl}${pathAndQuery}`, {
-      headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
-      signal: AbortSignal.timeout(timeoutMs)
+    const res = await fetchFromBackend({
+      rawUrl: raw,
+      connection,
+      fetchImpl,
+      sender: _event.sender,
+      timeoutMs: defaultFetchTimeoutMs
     })
-
-    if (!res.ok) {
-      if (res.status === 401 && connection.token) {
-        sendToSender(_event.sender, IPC.event.authSessionExpired)
-      }
-
-      const text = await res.text().catch(() => '')
-      throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
-    }
 
     const mime = res.headers.get('content-type') || 'application/octet-stream'
 
@@ -144,11 +172,9 @@ export function registerConnectionIpc({
       } catch (error: unknown) {
         // 与兄弟 handler `apiAsset` / `apiAssetBuffer` 对齐:401 触发广播,
         // 渲染层 `onSessionExpired` 监听器可触发重新登录。
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
 
-        if (message.startsWith('401 ') && connection.token) {
-          sendToSender(_event.sender, IPC.event.authSessionExpired)
-        }
+        notifyAuthExpiredOn401(message, connection, _event.sender)
 
         throw error
       }
@@ -163,7 +189,7 @@ export function registerConnectionIpc({
       throw new Error('asset url is required')
     }
 
-    const { pathname, search } = new URL(raw, connection.baseUrl)
+    const { pathname } = new URL(raw, connection.baseUrl)
 
     const isModel =
       pathname.includes('/model/file/') || pathname.includes('/companion-models/') || Boolean(request?.contentHash)
@@ -180,23 +206,13 @@ export function registerConnectionIpc({
       return await fsp.readFile(cached.filePath)
     }
 
-    const pathAndQuery = `${pathname}${search}`
-    const timeoutMs = defaultFetchTimeoutMs
-    const caller = fetchImpl || globalThis.fetch
-
-    const res = await caller(`${connection.baseUrl}${pathAndQuery}`, {
-      headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
-      signal: AbortSignal.timeout(timeoutMs)
+    const res = await fetchFromBackend({
+      rawUrl: raw,
+      connection,
+      fetchImpl,
+      sender: _event.sender,
+      timeoutMs: defaultFetchTimeoutMs
     })
-
-    if (!res.ok) {
-      if (res.status === 401 && connection.token) {
-        sendToSender(_event.sender, IPC.event.authSessionExpired)
-      }
-
-      const text = await res.text().catch(() => '')
-      throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
-    }
 
     return Buffer.from(await res.arrayBuffer())
   })

@@ -13,6 +13,7 @@ import type { CreateRunnerProcessOptions, RunnerProcess } from '../runner/proces
 import type { ReverseRpcOptions } from '../runner/reverse-rpc'
 import type { CreateRunnerWsServerOptions, RunnerWsServer } from '../runner/rpc-ws'
 import * as store from '../shared/lib/runner-config-store'
+import { errorMessage } from '../shared/utils'
 
 interface RunnerIpcDeps {
   createReverseRpc: (options: ReverseRpcOptions) => (method: string, params?: unknown) => Promise<unknown>
@@ -106,7 +107,7 @@ async function startRunnerBridgeForCurrentSession(
 
     return { ok: true, status: next }
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = errorMessage(error)
 
     return { error: msg, ok: false }
   }
@@ -131,14 +132,14 @@ export function autoStartBridge(deps: RunnerIpcDeps): void {
       }
     })
     .catch((error: unknown) => {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       deps.rememberLog(`[runner-bridge] auto-start error: ${msg}`)
     })
 }
 
 export function autoStopBridge(deps: RunnerIpcDeps): void {
   stopRunnerBridgeForCurrentSession(deps, { reason: 'session-cleared' }).catch((error: unknown) => {
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = errorMessage(error)
     deps.rememberLog(`[runner-bridge] auto-stop failed: ${msg}`)
   })
 }

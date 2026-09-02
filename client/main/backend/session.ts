@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { SafeStorageApi } from '../security/hardening'
-import { atomicWriteFile } from '../shared/utils'
+import { atomicWriteFile, errorMessage, safeReadJson } from '../shared/utils'
 
 import { type BackendClient, BackendRequestError, createBackendClient, type FetchFunction } from './client'
 
@@ -62,14 +62,6 @@ interface TokenAuthResponse {
 
 async function atomicWriteJson(targetPath: string, payload: unknown): Promise<void> {
   await atomicWriteFile(targetPath, JSON.stringify(payload, null, 2))
-}
-
-function readJsonSafe(filePath: string): unknown {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
-  } catch {
-    return null
-  }
 }
 
 function encryptToken(raw: null | string | undefined, safeStorage?: null | SafeStorageApi): EncryptedToken | null {
@@ -227,7 +219,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         user: cached.user
       })
     } catch (err) {
-      log(`[session] persistCurrent failed: ${err instanceof Error ? err.message : String(err)}`)
+      log(`[session] persistCurrent failed: ${errorMessage(err)}`)
     }
   }
 
@@ -260,7 +252,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
       log('[session] proactive token refresh triggered')
       refresh().catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         log(`[session] proactive refresh failed: ${msg}`)
       })
     }, delay)
@@ -275,7 +267,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     baseUrl: null | string
     user: null | SessionUser
   } {
-    const raw = readJsonSafe(sessionPath)
+    const raw = safeReadJson(sessionPath)
 
     if (!raw || typeof raw !== 'object') {
       return null
@@ -420,6 +412,36 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     return snapshot()
   }
 
+  // 验签 token 响应并写入会话；activate 和 refresh 共用此逻辑，
+  // 仅错误码与是否携带 baseUrl/activationCode 不同。
+  async function applyTokenResponse(
+    response: TokenAuthResponse,
+    source: 'activate' | 'refresh',
+    fallbackCode: string,
+    overrides: { activationCode?: string; baseUrl?: string } = {}
+  ): Promise<null | SessionSnapshot> {
+    if (!response || typeof response.access_token !== 'string' || !response.access_token) {
+      throw new SessionError({
+        code: fallbackCode,
+        message: 'Backend did not return an access token.'
+      })
+    }
+
+    const expiresIn =
+      typeof response.expires_in === 'number' && Number.isFinite(response.expires_in) && response.expires_in > 0
+        ? response.expires_in * 1000
+        : KNOWN_TOKEN_TTL_MS
+
+    return applySession({
+      activationCode: overrides.activationCode,
+      baseUrl: overrides.baseUrl,
+      source,
+      token: response.access_token,
+      tokenExpiresAt: now() + expiresIn,
+      user: response.user
+    })
+  }
+
   async function activate(payload: { clientContext?: unknown; code?: string } = {}): Promise<null | SessionSnapshot> {
     const { clientContext, code } = payload
 
@@ -462,28 +484,9 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
           code
         }
       })
-      .then(response => {
-        if (!response || typeof response.access_token !== 'string' || !response.access_token) {
-          throw new SessionError({
-            code: 'invalid-activate-response',
-            message: 'Backend did not return an access token.'
-          })
-        }
-
-        const expiresIn =
-          typeof response.expires_in === 'number' && Number.isFinite(response.expires_in) && response.expires_in > 0
-            ? response.expires_in * 1000
-            : KNOWN_TOKEN_TTL_MS
-
-        return applySession({
-          activationCode: code,
-          baseUrl,
-          source: 'activate',
-          token: response.access_token,
-          tokenExpiresAt: now() + expiresIn,
-          user: response.user
-        })
-      })
+      .then(response =>
+        applyTokenResponse(response, 'activate', 'invalid-activate-response', { activationCode: code, baseUrl })
+      )
       .catch(translateBackendError)
       .finally(() => {
         activatePromise = null
@@ -513,26 +516,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         },
         token: cached.token
       })
-      .then(response => {
-        if (!response || typeof response.access_token !== 'string' || !response.access_token) {
-          throw new SessionError({
-            code: 'invalid-refresh-response',
-            message: 'Backend did not return an access token.'
-          })
-        }
-
-        const expiresIn =
-          typeof response.expires_in === 'number' && Number.isFinite(response.expires_in) && response.expires_in > 0
-            ? response.expires_in * 1000
-            : KNOWN_TOKEN_TTL_MS
-
-        return applySession({
-          source: 'refresh',
-          token: response.access_token,
-          tokenExpiresAt: now() + expiresIn,
-          user: response.user
-        })
-      })
+      .then(response => applyTokenResponse(response, 'refresh', 'invalid-refresh-response'))
       .catch(translateBackendError)
   }
 
@@ -552,7 +536,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
       return { ok: true }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       log(`[session] logout backend call failed: ${msg}`)
       await clearSession()
 
@@ -599,7 +583,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         await clearSession()
       }
 
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       log(`[session] restore activation failed: ${msg}`)
 
       return null

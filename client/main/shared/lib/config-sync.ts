@@ -1,4 +1,5 @@
 import { type BackendClient, BackendRequestError, createBackendClient, type FetchFunction } from '../../backend/client'
+import { errorMessage } from '../utils'
 
 import * as store from './runner-config-store'
 
@@ -197,7 +198,7 @@ export function createConfigSync(deps: ConfigSyncDeps): ConfigSync {
         scheduleRetry(() => void flush())
       } else {
         // 鉴权失败（等 authChanged）或 4xx（载荷被拒，重试无意义）：挂起并保留 dirty。
-        deps.log(`[config-sync] flush parked: ${error instanceof Error ? error.message : String(error)}`)
+        deps.log(`[config-sync] flush parked: ${errorMessage(error)}`)
       }
     } finally {
       flushing = false
@@ -300,7 +301,7 @@ export function createConfigSync(deps: ConfigSyncDeps): ConfigSync {
         void flush()
       }
     } catch (error) {
-      deps.log(`[config-sync] hydrate failed: ${error instanceof Error ? error.message : String(error)}`)
+      deps.log(`[config-sync] hydrate failed: ${errorMessage(error)}`)
 
       if (error instanceof BackendRequestError && (error.isNetwork || error.isServerError)) {
         scheduleRetry(() => void hydrate())

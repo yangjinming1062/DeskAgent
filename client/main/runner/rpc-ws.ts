@@ -7,6 +7,8 @@ import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '@ipc/contract
 import type WebSocket from 'ws'
 import { WebSocketServer } from 'ws'
 
+import { errorMessage } from '../shared/utils'
+
 const DEFAULT_TIMEOUT_MS = 120_000
 const JSON_RPC_VERSION = '2.0'
 const HEARTBEAT_INTERVAL_MS = 10_000
@@ -110,7 +112,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
 
       return true
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       log(`[runner-ws] send failed: ${msg}`)
 
       return false
@@ -124,7 +126,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
       const text = typeof raw === 'string' ? raw : (raw as Buffer).toString()
       message = JSON.parse(text) as JsonRpcMessage
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       log(`[runner-ws] parse error: ${msg}`)
 
       return
@@ -379,7 +381,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
           try {
             ws.send(JSON.stringify({ jsonrpc: JSON_RPC_VERSION, method: 'runner.ping' }))
           } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err)
+            const msg = errorMessage(err)
             log(`[runner-ws] heartbeat send failed: ${msg}`)
           }
         }, HEARTBEAT_INTERVAL_MS)

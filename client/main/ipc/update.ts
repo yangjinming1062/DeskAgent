@@ -15,6 +15,8 @@ import log from 'electron-log/main'
 // 顶层 named import 在 dev/prod 都会被 Node ESM loader 拒绝。
 import electronUpdaterPkg from 'electron-updater'
 
+import { errorMessage } from '../shared/utils'
+
 interface UpdateIpcDeps {
   electron: { app: App }
   getMainWindow: () => BrowserWindow | null | undefined
@@ -58,7 +60,7 @@ export function registerUpdateIpc({ electron, getMainWindow, ipcMain, sendToMain
     try {
       await autoUpdater.checkForUpdates()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = errorMessage(e)
       broadcast({ message: msg, type: 'error' })
     }
   })
@@ -69,7 +71,7 @@ export function registerUpdateIpc({ electron, getMainWindow, ipcMain, sendToMain
   autoUpdater.on('download-progress', (progress: DesktopUpdateProgress) => broadcast({ progress, type: 'progress' }))
   autoUpdater.on('update-downloaded', info => broadcast({ info: toDesktopUpdateInfo(info), type: 'downloaded' }))
   autoUpdater.on('error', (err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
 
     if (message.includes('404') && message.includes('latest.yml')) {
       broadcast({ info: undefined, type: 'none' })

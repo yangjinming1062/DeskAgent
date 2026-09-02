@@ -1,3 +1,5 @@
+import { errorMessage } from '../shared/utils'
+
 export const DEFAULT_TIMEOUT_MS = 15_000
 
 interface BackendRequestErrorOptions {
@@ -57,7 +59,7 @@ function normalizeBaseUrl(raw?: null | string): string {
   try {
     parsed = new URL(value)
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = errorMessage(error)
     throw new BackendRequestError({
       code: 'invalid-base-url',
       message: `Backend base URL is not valid: ${msg}`
@@ -185,7 +187,7 @@ export function createBackendClient(options: BackendClientOptions = {}): Backend
     try {
       url = new URL(pathStr, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
       throw new BackendRequestError({
         code: 'invalid-path',
         message: `Backend request path is not valid: ${msg}`

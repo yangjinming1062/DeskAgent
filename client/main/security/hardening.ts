@@ -2,6 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { errorMessage } from '../shared/utils'
+
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000
 export const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 
@@ -191,7 +193,7 @@ export async function resolveReadableFileForIpc(
       throw new Error(`${purpose} failed: file does not exist.`)
     }
 
-    throw new Error(`${purpose} failed: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`${purpose} failed: ${errorMessage(error)}`)
   }
 
   if (stat.isDirectory()) {

@@ -10,6 +10,7 @@ import {
 } from 'electron'
 
 import type { BackendSessionLike } from '../runner/reverse-rpc'
+import { errorMessage, sendToMain } from '../shared/utils'
 
 interface TrayDeps {
   Menu: typeof Menu
@@ -33,9 +34,7 @@ let trayDeps: null | TrayDeps = null
 
 // 设置和激活/反激活放在托盘右键菜单里，而不是应用内界面。
 function isAuthenticated(): boolean {
-  const session = trayDeps?.bridgeDeps?.backendSession || trayDeps?.bridgeDeps?.ensureBackendSession?.()
-
-  return session?.getSession?.()?.hasToken === true
+  return Boolean(trayDeps?.bridgeDeps?.ensureBackendSession?.()?.getSession()?.hasToken)
 }
 
 function isSpriteVisible(): boolean {
@@ -49,11 +48,7 @@ function isSpriteVisible(): boolean {
 }
 
 function sendToMainWindow<C extends IpcEventChannel>(channel: C, ...payload: IpcEventContract[C]): void {
-  const win = trayDeps?.bridgeDeps?.getMainWindow?.()
-
-  if (win && !win.isDestroyed()) {
-    win.webContents.send(channel, ...payload)
-  }
+  sendToMain(trayDeps?.bridgeDeps?.getMainWindow?.(), channel, ...payload)
 }
 
 export function buildTrayMenu(): Menu | null {
@@ -209,7 +204,7 @@ export function resetMainWindowPosition(): void {
     const primaryDisplay = screen.getPrimaryDisplay()
     win.setBounds(primaryDisplay.workArea)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     trayDeps?.rememberLog(`[tray] reset bounds failed: ${message}`)
   }
 
@@ -261,7 +256,7 @@ export function installTray(deps: TrayDeps): null | Tray {
       return null
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     deps.rememberLog(`[tray] icon load failed: ${message} — operating in hide-only mode`)
 
     return null
@@ -270,7 +265,7 @@ export function installTray(deps: TrayDeps): null | Tray {
   try {
     trayInstance = new deps.Tray(image)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     deps.rememberLog(`[tray] init failed: ${message} — operating in hide-only mode`)
 
     return null

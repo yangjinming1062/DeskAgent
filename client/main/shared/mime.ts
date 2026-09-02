@@ -36,37 +36,22 @@ export function mimeTypeForPath(filePath: string): string {
   return MEDIA_MIME_TYPES[ext] || 'application/octet-stream'
 }
 
+const EXT_FOR_MIME: Record<string, string> = {
+  'image/bmp': '.bmp',
+  'image/gif': '.gif',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/svg+xml': '.svg',
+  'image/webp': '.webp'
+}
+
 export function extensionForMimeType(mimeType: string): string {
   const type = String(mimeType || '')
     .split(';')[0]
     .trim()
     .toLowerCase()
 
-  if (type === 'image/png') {
-    return '.png'
-  }
-
-  if (type === 'image/jpeg') {
-    return '.jpg'
-  }
-
-  if (type === 'image/gif') {
-    return '.gif'
-  }
-
-  if (type === 'image/webp') {
-    return '.webp'
-  }
-
-  if (type === 'image/bmp') {
-    return '.bmp'
-  }
-
-  if (type === 'image/svg+xml') {
-    return '.svg'
-  }
-
-  return ''
+  return EXT_FOR_MIME[type] || ''
 }
 
 export function dataUrlFromBuffer(buffer: Buffer | Uint8Array, mimeType: string): string {

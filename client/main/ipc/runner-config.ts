@@ -2,6 +2,7 @@ import { IPC, type RunnerConfigPatch } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
 import * as store from '../shared/lib/runner-config-store'
+import { errorMessage } from '../shared/utils'
 
 export function registerRunnerConfigIpc({ ipcMain }: { ipcMain: IpcMain }): void {
   ipcMain.handle(IPC.invoke.runnerConfigRead, async () => {
@@ -10,7 +11,7 @@ export function registerRunnerConfigIpc({ ipcMain }: { ipcMain: IpcMain }): void
 
       return { content, ok: true }
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
 
       return { error: msg, ok: false }
     }
@@ -26,7 +27,7 @@ export function registerRunnerConfigIpc({ ipcMain }: { ipcMain: IpcMain }): void
     try {
       obj = JSON.parse(newContent)
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = errorMessage(error)
 
       return { error: msg, ok: false }
     }
