@@ -13,7 +13,7 @@ from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
 from .tool_dispatch import _run_tool_batch, _ToolDispatchContext
-from .turn_inputs import _parse_temperature
+from .turn_inputs import parse_temperature
 from .types import TrackTask
 
 logger = get_logger(__name__)
@@ -167,7 +167,7 @@ async def _persist_assistant_no_tool_turn(
             await db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
-        title_temp = _parse_temperature(effective_settings.get("chat.title_generation_temperature"), TITLE_GENERATION_TEMPERATURE)
+        title_temp = parse_temperature(effective_settings.get("chat.title_generation_temperature"), TITLE_GENERATION_TEMPERATURE)
         title_task = asyncio.create_task(
             auto_generate_title(
                 conv.id,

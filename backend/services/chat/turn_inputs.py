@@ -62,7 +62,7 @@ NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "d
 
 @dataclass(frozen=True)
 class _TurnInputs:
-    """``_build_turn_inputs`` 的输出：orchestrator 与各轮辅助函数所需字段，避免重复查询 DB。"""
+    """``build_turn_inputs`` 的输出：orchestrator 与各轮辅助函数所需字段，避免重复查询 DB。"""
 
     context: dict[str, Any]
     client: Any
@@ -87,7 +87,7 @@ async def load_user_settings(db: AsyncSession, user_id: int) -> dict[str, str]:
     return {s.setting_key: s.setting_value for s in rows}
 
 
-def _merge_session_settings(user_settings: dict, runtime: RuntimeSession | None) -> dict:
+def merge_session_settings(user_settings: dict, runtime: RuntimeSession | None) -> dict:
     """构建本轮生效的 settings：会话级覆写覆盖全局 UserSetting；``SESSION_TO_GLOBAL_KEY_ALIASES`` 指定的会话键会重映射到对应全局键，使下游（斜杠命令、guardrail、未来工具）看到一致命名空间。"""
     merged = dict(user_settings)
     if runtime is not None and runtime.settings:
@@ -234,7 +234,7 @@ def _find_authoritative_token_baseline(history: list[Message], *, is_main_conver
     return None, history
 
 
-async def _build_turn_inputs(
+async def build_turn_inputs(
     db: AsyncSession,
     conv: Conversation,
     user_id: int,
@@ -415,7 +415,7 @@ def _parse_reasoning_effort(raw: str | None) -> str | None:
     return raw if raw in ALLOWED_REASONING_EFFORTS else None
 
 
-def _parse_temperature(raw: Any, default: float) -> float:
+def parse_temperature(raw: Any, default: float) -> float:
     """解析并校验归一化温度；空、非数值或越界 [0, 1] 回退到 default。"""
     if raw is None:
         return default

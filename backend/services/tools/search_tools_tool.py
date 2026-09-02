@@ -15,7 +15,7 @@ def search_tools_tool(query: str, **kwargs) -> str:
         # 由 ToolsRegistry.execute_backend_tool 注入保留键；直接单元测试调用时缺失，返回空结果而非崩溃。
         return json.dumps({"matched_tools": []}, ensure_ascii=False)
 
-    # 与 _build_turn_inputs 同源过滤——否则会向 LLM 暴露受门控的 schema（如未配置 Tavily key 的 web_extract）。
+    # 与 build_turn_inputs 同源过滤——否则会向 LLM 暴露受门控的 schema（如未配置 Tavily key 的 web_extract）。
     user_settings = kwargs.get("user_settings") or {}
     results = []
     query_lower = query.lower()

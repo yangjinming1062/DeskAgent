@@ -56,7 +56,7 @@ from services.chat.slash_commands import (
 from services.chat.slash_commands import (
     resolve as resolve_slash_command,
 )
-from services.chat.turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_temperature
+from services.chat.turn_inputs import build_turn_inputs, merge_session_settings, parse_temperature
 from services.companion import (
     AVATAR_JOB_LOCKS,
     MODEL_JOB_LOCKS,
@@ -464,11 +464,11 @@ async def _do_compress_history(db: AsyncSession, conv: Conversation, user_id: in
     compressed=False 时不含 messages / summary；True 时含 delivered messages 给前端 hydrate。
     """
     user_settings = await load_user_settings(db, user_id)
-    effective_settings = _merge_session_settings(user_settings, runtime)
+    effective_settings = merge_session_settings(user_settings, runtime)
     req = ChatRequest(session_id=str(conv.id), message=ChatMessageRequest(role="user", content=""))
-    inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
+    inputs = await build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
 
-    compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
+    compression_u = parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
     compressed_context, compress_info = await compress_history_if_needed(
         inputs.context,
         client=inputs.client,
@@ -505,7 +505,7 @@ async def _do_compress_history(db: AsyncSession, conv: Conversation, user_id: in
     await db.commit()
     await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
 
-    new_inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
+    new_inputs = await build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
     delivered = await build_session_messages(conv.id, db)
 
     return {

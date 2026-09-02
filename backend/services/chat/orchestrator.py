@@ -31,7 +31,7 @@ from .message_sanitization import truncate_responses_context
 from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
-from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort, _parse_temperature, load_user_settings
+from .turn_inputs import _parse_reasoning_effort, build_turn_inputs, load_user_settings, merge_session_settings, parse_temperature
 from .types import IterationBudget, TrackTask
 
 logger = get_logger(__name__)
@@ -60,14 +60,14 @@ async def run_chat_turn(
 
         # 回合起点重读 user_settings：PUT /api/config（工具集开关、语言等）后无需重连 WS 下一回合即生效；
         # 入口侧传入的快照仅作签名兼容保留。会话级覆写再覆盖其上，仍仅构建一次并被注册表门控和工具派发共用。
-        effective_settings = _merge_session_settings(await load_user_settings(db, user_id), runtime)
-        inputs = await _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
+        effective_settings = merge_session_settings(await load_user_settings(db, user_id), runtime)
+        inputs = await build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
-    compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
+    compression_u = parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
-    temperature = _parse_temperature(effective_settings.get("agent.temperature"), CHAT_TEMPERATURE_DEFAULT)
+    temperature = parse_temperature(effective_settings.get("agent.temperature"), CHAT_TEMPERATURE_DEFAULT)
     compressed_context, compress_info = await compress_history_if_needed(
         inputs.context,
         client=inputs.client,
