@@ -14,6 +14,7 @@ import { $effectiveTier, $spriteState, pushEffectiveDisturbanceTier, setSpriteSt
 import { openMainSession } from '@/companion/session-list-store'
 import { speakScripted } from '@/companion/tts'
 import { clearVfx, emitVfx } from '@/companion/vfx'
+import { type GatewayEvent } from '@/shared/lib/gateway-protocol'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
@@ -23,7 +24,7 @@ import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { RpcEvent, SessionResumeResponse } from '@/shared/types/spiritagent'
+import type { SessionResumeResponse } from '@/shared/types/spiritagent'
 
 // 后端对鉴权失败（token 过期 / 被吊销）使用 WS close 1008——
 // 此时触发登出，而不是用无效 token 不断重连。
@@ -91,7 +92,7 @@ async function syncRunnerTools(gateway: SpiritAgentGateway): Promise<void> {
 }
 
 interface GatewayBootOptions {
-  handleGatewayEvent: (event: RpcEvent) => void
+  handleGatewayEvent: (event: GatewayEvent) => void
   onConnectionReady: (connection: SpiritAgentConnection | null) => void
   onGatewayReady: (gateway: SpiritAgentGateway | null) => void
 }

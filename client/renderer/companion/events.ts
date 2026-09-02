@@ -61,12 +61,12 @@ import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/co
 import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
-import { type SlashCommandResultPayload } from '@/shared/lib/gateway-protocol'
+import { type GatewayEvent, type SlashCommandResultPayload } from '@/shared/lib/gateway-protocol'
 import { log } from '@/shared/lib/log'
 import { $auth } from '@/shared/store/auth'
 import { $gateway } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
-import type { ChatMediaItem, RpcEvent, SessionMessage } from '@/shared/types/spiritagent'
+import type { ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
@@ -179,7 +179,7 @@ function applySpatialCue(locale?: string, target?: string): void {
   })
 }
 
-export function handleCompanionEvent(event: RpcEvent): void {
+export function handleCompanionEvent(event: GatewayEvent): void {
   // 仅在冷启动 hydrateAuth 尚未完成时（'pending'）丢弃 WSEvent：无用户态，事件无主。
   // 'unauthenticated' 不丢弃：登出 race 里到达的 message.complete / model.ready /
   // companion.2d.ready 还要落地——否则流式 chat 卡 thinking、模型 ready 漏掉让用户

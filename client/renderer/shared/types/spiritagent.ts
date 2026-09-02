@@ -1,9 +1,3 @@
-export interface RpcEvent<T = unknown> {
-  payload?: T
-  session_id?: string
-  type: string
-}
-
 export interface SessionInfo {
   archived?: boolean
   pinned?: boolean
