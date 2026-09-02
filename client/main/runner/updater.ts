@@ -47,9 +47,9 @@ export interface RunnerUpdaterDeps {
 }
 
 export class RunnerUpdater {
-  bridgeDeps: RunnerUpdaterDeps['bridgeDeps']
-  fetchImpl: typeof globalThis.fetch
-  log?: RunnerUpdaterDeps['log']
+  private bridgeDeps: RunnerUpdaterDeps['bridgeDeps']
+  private fetchImpl: typeof globalThis.fetch
+  private log?: RunnerUpdaterDeps['log']
 
   constructor({ bridgeDeps, fetchImpl = globalThis.fetch, log }: RunnerUpdaterDeps) {
     this.bridgeDeps = bridgeDeps
