@@ -1,5 +1,4 @@
-import { clampBootProgress } from '@boot-progress'
-import type { DesktopBootProgress } from '@ipc/contracts'
+import { clampBootProgress, type DesktopBootProgress } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
 import { strings } from '@/shared/strings'

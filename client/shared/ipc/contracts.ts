@@ -3,6 +3,8 @@
 // `client/renderer/shared/types/global.d.ts` 导入。
 // 在此处新增或重命名通道/载荷字段，会在两侧类型检查时立即报错。
 
+import { clamp } from '../runtime'
+
 export interface DesktopVersionInfo {
   appVersion: string
   electronVersion: string
@@ -148,6 +150,16 @@ export interface DesktopBootProgress {
   progress: number
   running: boolean
   timestamp: number
+}
+
+// 启动进度的 0–100 收口；非数与 NaN 一律视为 0，避免上游 NaN 透传把进度条钉死。
+// 与 DesktopBootProgress.progress 字段配套使用，跨主进程广播与渲染层水合复用。
+export function clampBootProgress(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  return clamp(Math.round(value), 0, 100)
 }
 
 export interface DesktopAuthSnapshot {

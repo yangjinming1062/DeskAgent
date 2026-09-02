@@ -23,8 +23,7 @@
       "@companion/*": ["./renderer/companion/*"],
       "@hub/*": ["./renderer/hub/*"],
       "@ipc/contracts": ["./shared/ipc/contracts"],
-      "@runtime": ["./shared/runtime"],
-      "@boot-progress": ["./shared/boot-progress"]
+      "@runtime": ["./shared/runtime"]
     }
   },
   "include": ["renderer", "shared"],

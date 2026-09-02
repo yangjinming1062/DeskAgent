@@ -18,8 +18,7 @@
     "types": ["node"],
     "paths": {
       "@ipc/contracts": ["./shared/ipc/contracts"],
-      "@runtime": ["./shared/runtime"],
-      "@boot-progress": ["./shared/boot-progress"]
+      "@runtime": ["./shared/runtime"]
     }
   },
   "include": ["main", "scripts", "shared"]

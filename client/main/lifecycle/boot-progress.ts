@@ -1,5 +1,4 @@
-import { clampBootProgress } from '@boot-progress'
-import { type DesktopBootProgress, IPC } from '@ipc/contracts'
+import { clampBootProgress, type DesktopBootProgress, IPC } from '@ipc/contracts'
 import type { BrowserWindow } from 'electron'
 
 import { sendToMain } from '../shared/utils'

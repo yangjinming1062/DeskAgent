@@ -30,8 +30,7 @@ const baseOptions = {
     options.alias = {
       ...options.alias,
       '@ipc/contracts': './shared/ipc/contracts',
-      '@runtime': './shared/runtime',
-      '@boot-progress': './shared/boot-progress'
+      '@runtime': './shared/runtime'
     }
   }
 }
