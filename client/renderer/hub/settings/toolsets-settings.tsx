@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
-import { SearchField, Toggle } from '@/shared/panel'
+import { LoadingBlock, SearchField, Toggle } from '@/shared/panel'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
-import { EmptyState, LoadingState, Pill, SettingsSubsection } from './primitives'
+import { EmptyState, Pill, SettingsSubsection } from './primitives'
 
 type ToolsetRosterEntry = {
   id: string
@@ -115,7 +115,7 @@ export function ToolsetsSettings(): React.JSX.Element {
   }
 
   if (loading) {
-    return <LoadingState label={sk.loading} />
+    return <LoadingBlock label={sk.loading} />
   }
 
   if (loadFailed && toolsets.length === 0) {

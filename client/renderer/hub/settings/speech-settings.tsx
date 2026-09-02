@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { BTN_PRIMARY, PanelSelect, Toggle } from '@/shared/panel'
+import { BTN_PRIMARY, LoadingBlock, PanelSelect, Toggle } from '@/shared/panel'
 import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
-import { ListRow, LoadingState, SettingsContent, SettingsSubsection } from './primitives'
+import { ListRow, SettingsContent, SettingsSubsection } from './primitives'
 
 interface SpeechFormState {
   sttEnabled: boolean
@@ -74,7 +74,7 @@ export function SpeechSettings(): React.JSX.Element {
   if (isLoading) {
     return (
       <SettingsContent>
-        <LoadingState label={s.loading} />
+        <LoadingBlock label={s.loading} />
       </SettingsContent>
     )
   }

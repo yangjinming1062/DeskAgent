@@ -134,8 +134,13 @@ export function setBackground(bg: ViewportBackground): void {
   $viewportOptions.setKey('background', bg)
 }
 
-export function toggleSkeleton(): void {
-  $viewportOptions.setKey('showSkeleton', !$viewportOptions.get().showSkeleton)
+type ToggleableViewportKey = {
+  [K in keyof ViewportOptions]: ViewportOptions[K] extends boolean ? K : never
+}[keyof ViewportOptions]
+
+export function toggleViewportOption(key: ToggleableViewportKey): void {
+  const opts = $viewportOptions.get()
+  $viewportOptions.setKey(key, !opts[key])
 }
 
 /**
@@ -148,31 +153,22 @@ function syncHologramWithRig(): void {
   $viewportOptions.setKey('showHologram', opts.showBones || opts.showJoints)
 }
 
-export function toggleBones(): void {
-  $viewportOptions.setKey('showBones', !$viewportOptions.get().showBones)
+export const toggleSkeleton = (): void => toggleViewportOption('showSkeleton')
+
+export const toggleBones = (): void => {
+  toggleViewportOption('showBones')
   syncHologramWithRig()
 }
 
-export function toggleJoints(): void {
-  $viewportOptions.setKey('showJoints', !$viewportOptions.get().showJoints)
+export const toggleJoints = (): void => {
+  toggleViewportOption('showJoints')
   syncHologramWithRig()
 }
 
-export function toggleHologram(): void {
-  $viewportOptions.setKey('showHologram', !$viewportOptions.get().showHologram)
-}
-
-export function toggleGrid(): void {
-  $viewportOptions.setKey('showGrid', !$viewportOptions.get().showGrid)
-}
-
-export function toggleAxes(): void {
-  $viewportOptions.setKey('showAxes', !$viewportOptions.get().showAxes)
-}
-
-export function toggleWireframe(): void {
-  $viewportOptions.setKey('showWireframe', !$viewportOptions.get().showWireframe)
-}
+export const toggleHologram = (): void => toggleViewportOption('showHologram')
+export const toggleGrid = (): void => toggleViewportOption('showGrid')
+export const toggleAxes = (): void => toggleViewportOption('showAxes')
+export const toggleWireframe = (): void => toggleViewportOption('showWireframe')
 
 export function setTransformMode(mode: TransformMode): void {
   $transformMode.set(mode)

@@ -30,11 +30,11 @@ import {
   clearPendingPrompts,
   finalizeAssistantMessage,
   hydrateChatMessages,
+  markAssistantTerminal,
   pushAffectTraceMessage,
   pushMediaMessage,
   pushProactiveMessage,
   pushStatusPill,
-  setAssistantError,
   setAssistantTool,
   setChatOpen,
   setSessionContextUsage,
@@ -677,7 +677,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 强制重置为 idle——精灵在 'thinking' / 'working' 时，
       // 优先级门控会静默拒绝普通的状态转换。
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'
-      setAssistantError(message)
+      markAssistantTerminal({ error: message })
       setSpriteState('idle', { force: true })
 
       break

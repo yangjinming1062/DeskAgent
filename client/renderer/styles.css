@@ -821,31 +821,9 @@ html[data-theme='lilac-glass'] .sa-slider::-moz-range-thumb {
   background-size: 16px 16px;
 }
 
-/* 消息生成完毕时的冷光扫掠 */
-@keyframes glow-sweep {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.animate-glow-sweep {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(108, 138, 255, 0.15) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: glow-sweep 1.2s ease-out;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .border-beam,
-  .animate-caret-pulse,
-  .animate-glow-sweep {
+  .animate-caret-pulse {
     animation: none;
   }
 }

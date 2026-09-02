@@ -510,7 +510,7 @@ export function submitPendingBatch(): void {
       }
 
       // thinking（50）> idle（10）：不带 force 会被优先级门控吞掉，精灵卡在思考态。
-      setAssistantError(err instanceof Error ? err.message : '发送失败')
+      markAssistantTerminal({ error: err instanceof Error ? err.message : '发送失败' })
       setSpriteState('idle', { force: true })
       $chatTurnInFlight.set(false)
     }
@@ -647,18 +647,15 @@ export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[])
   $lastAssistantStreaming.set(false)
 }
 
-export function setAssistantError(message: string): void {
+export function markAssistantTerminal({ error, cancelled }: { error?: string; cancelled?: boolean } = {}): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
   const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
   const isStreaming = lastItem?.role === 'assistant' && lastBody?.streaming
+  const terminal = { ...(error !== undefined && { error }), ...(cancelled && { cancelled: true }) }
 
   if (isStreaming && lastItem && lastBody) {
-    $chatMessageBodies.setKey(lastItem.id, {
-      ...lastBody,
-      streaming: false,
-      error: message
-    })
+    $chatMessageBodies.setKey(lastItem.id, { ...lastBody, streaming: false, ...terminal })
     $lastAssistantStreaming.set(false)
 
     return
@@ -667,36 +664,7 @@ export function setAssistantError(message: string): void {
   const id = nextId()
   $chatMessageBodies.setKey(id, {
     text: '',
-    error: message,
-    streaming: false,
-    toolName: null
-  })
-  $chatMessageList.set([...list, { id, role: 'assistant' }])
-  $lastAssistantStreaming.set(false)
-}
-
-// 用户在第一条助手片段到达前主动停止。
-export function setAssistantCancelled(): void {
-  const list = $chatMessageList.get()
-  const lastItem = list[list.length - 1]
-  const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
-  const isStreaming = lastItem?.role === 'assistant' && lastBody?.streaming
-
-  if (isStreaming && lastItem && lastBody) {
-    $chatMessageBodies.setKey(lastItem.id, {
-      ...lastBody,
-      streaming: false,
-      cancelled: true
-    })
-    $lastAssistantStreaming.set(false)
-
-    return
-  }
-
-  const id = nextId()
-  $chatMessageBodies.setKey(id, {
-    text: '',
-    cancelled: true,
+    ...terminal,
     streaming: false,
     toolName: null
   })

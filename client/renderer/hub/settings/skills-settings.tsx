@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
-import { CHIP_FILTER, CHIP_FILTER_ACTIVE, SearchField, Toggle } from '@/shared/panel'
+import { CHIP_FILTER, CHIP_FILTER_ACTIVE, LoadingBlock, SearchField, Toggle } from '@/shared/panel'
 import { refreshSession } from '@/shared/store/auth'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
 import { UNCATEGORIZED_KEY } from './constants'
-import { EmptyState, ListRow, LoadingState, SettingsSubsection } from './primitives'
+import { EmptyState, ListRow, SettingsSubsection } from './primitives'
 
 type SkillSummary = {
   category?: string
@@ -153,7 +153,7 @@ export function SkillsSettings(): React.JSX.Element {
   }, [skills, searchTerm, selectedCategory])
 
   if (loading) {
-    return <LoadingState label={s.loading} />
+    return <LoadingBlock label={s.loading} />
   }
 
   const noSkillsAtAll = skills.length === 0

@@ -2,13 +2,13 @@ import { useState } from 'react'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { cn } from '@/shared/lib/utils'
-import { BTN_PRIMARY, INPUT_CLASS, PanelSelect, Toggle } from '@/shared/panel'
+import { BTN_PRIMARY, INPUT_CLASS, LoadingBlock, PanelSelect, Toggle } from '@/shared/panel'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
 import { getIn, setIn, useRunnerConfig } from '../runner/use-runner-config'
 
-import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
+import { EmptyState, ListRow, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
 type SelectRow = {
   kind: 'select'
@@ -123,7 +123,7 @@ export function RunnerSettings(): React.JSX.Element {
   if (isLoading) {
     return (
       <SettingsContent>
-        <LoadingState label={r.loading} />
+        <LoadingBlock label={r.loading} />
       </SettingsContent>
     )
   }

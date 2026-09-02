@@ -2,7 +2,7 @@ import { IconBrandWechat } from '@tabler/icons-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { BTN_GHOST, BTN_PRIMARY, BTN_SUBTLE, ConfirmDialog, Spinner } from '@/shared/panel'
+import { BTN_GHOST, BTN_PRIMARY, BTN_SUBTLE, ConfirmDialog, LoadingBlock, Spinner } from '@/shared/panel'
 import {
   actOnChannelPeer,
   getWeixinLoginState,
@@ -20,15 +20,7 @@ import type {
   ChannelPeerInfo
 } from '@/shared/types/spiritagent'
 
-import {
-  EmptyState,
-  ListRow,
-  LoadingState,
-  Pill,
-  SectionHeading,
-  SettingsContent,
-  SettingsSubsection
-} from './primitives'
+import { EmptyState, ListRow, Pill, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
 const WEIXIN_CHANNEL = 'weixin_ilink'
 const LOGIN_POLL_INTERVAL_MS = 2000
@@ -163,7 +155,7 @@ export function ChannelsSettings(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return <LoadingState label={t.heading} />
+    return <LoadingBlock label={t.heading} />
   }
 
   const weixinStatus = weixinBinding?.status ?? 'disabled'

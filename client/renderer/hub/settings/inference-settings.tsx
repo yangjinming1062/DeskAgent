@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Brain } from '@/shared/lib/icons'
-import { BTN_PRIMARY, Spinner } from '@/shared/panel'
+import { BTN_PRIMARY, LoadingBlock, Spinner } from '@/shared/panel'
 import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -11,7 +11,7 @@ import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 import { AgentDefaultsSection, type AgentFormState } from './inference/agent-defaults-section'
 import { type ChatFormState, ContextCompressionSection } from './inference/context-compression-section'
 import { type TemperatureFormState, TemperatureSection } from './inference/temperature-section'
-import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
+import { ListRow, SectionHeading, SettingsContent } from './primitives'
 
 const REASONING_OPTIONS = ['none', 'low', 'medium', 'high'] as const
 
@@ -171,7 +171,7 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
   if (isLoading) {
     return (
       <SettingsContent>
-        <LoadingState label={a.loading} />
+        <LoadingBlock label={a.loading} />
       </SettingsContent>
     )
   }

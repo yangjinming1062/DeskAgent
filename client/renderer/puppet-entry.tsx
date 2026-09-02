@@ -106,7 +106,10 @@ function Slider({
   )
 }
 
-const AUTO_LABEL: Record<string, string> = {
+const AUTOS = ['idle', 'rand', 'blink', 'talk', 'gaze'] as const
+type AutoKey = (typeof AUTOS)[number]
+
+const AUTO_LABEL: Record<AutoKey, string> = {
   idle: '待机摇摆',
   rand: '随机漫游',
   blink: '眨眼',
@@ -114,7 +117,7 @@ const AUTO_LABEL: Record<string, string> = {
   gaze: '视线跟随'
 }
 
-function PuppetDevApp() {
+function PuppetDevApp(): React.JSX.Element {
   const handleRef = useRef<PuppetCanvasHandle>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState('拖入或选择 see-through 产出的 PSD')
@@ -124,12 +127,12 @@ function PuppetDevApp() {
   const [angleZ, setAngleZ] = useState(0)
   const [eyeOpen, setEyeOpen] = useState(1)
   const [mouthOpen, setMouthOpen] = useState(0)
-  const [autos, setAutos] = useState({ idle: true, rand: true, blink: true, talk: true, gaze: true })
-  const fileRef = useRef<HTMLInputElement>(null)
 
-  const onRig = useCallback((r: Rig) => {
-    setRig(r)
-  }, [])
+  const [autos, setAutos] = useState<Record<AutoKey, boolean>>(
+    () => Object.fromEntries(AUTOS.map(k => [k, true])) as Record<AutoKey, boolean>
+  )
+
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const onStageMove = useCallback((ev: React.MouseEvent): void => {
     const rt = handleRef.current?.runtime
@@ -150,7 +153,7 @@ function PuppetDevApp() {
   }, [])
 
   const toggleAuto = useCallback(
-    (key: keyof typeof autos) =>
+    (key: AutoKey) =>
       (ev: React.ChangeEvent<HTMLInputElement>): void => {
         const v = ev.target.checked
         setAutos(a => ({ ...a, [key]: v }))
@@ -468,7 +471,7 @@ function PuppetDevApp() {
           onMouseMove={onStageMove}
           ref={stageRef}
         >
-          <PuppetCanvas onRig={onRig} ref={handleRef} />
+          <PuppetCanvas onRig={setRig} ref={handleRef} />
         </div>
         <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-line-standard p-4">
           <button
@@ -478,7 +481,7 @@ function PuppetDevApp() {
             选择 PSD 文件
           </button>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-            {(['idle', 'rand', 'blink', 'talk', 'gaze'] as const).map(key => (
+            {AUTOS.map(key => (
               <label className="flex items-center gap-1" key={key}>
                 <input checked={autos[key]} onChange={toggleAuto(key)} type="checkbox" />
                 {AUTO_LABEL[key]}

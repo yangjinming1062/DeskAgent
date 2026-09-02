@@ -31,14 +31,11 @@ import {
   $regenFeedback,
   applyPortrait,
   clearPortraitHistory,
-  clearRegenFeedback,
   hydratePortraitHistory,
   type PortraitEntry,
   pushPortraitEntry,
   selectAvatar,
-  selectPortraitEntry,
-  setActiveAvatarId,
-  setRegenFeedback
+  selectPortraitEntry
 } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
@@ -276,10 +273,10 @@ const LOCKED_FIELD_LABELS: Partial<Record<QKey, string>> = {
 
 // 分段边界由 ``voice`` 这道题的位置决定——之前全是角色子阶段，
 // 它本身是声音子阶段，之后都是用户子阶段。对应后端 ONBOARDING_FIELDS 的顺序。
-const _VOICE_Q_INDEX = QUESTIONS.findIndex(q => q.key === 'voice')
-const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, _VOICE_Q_INDEX)
-const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(_VOICE_Q_INDEX, _VOICE_Q_INDEX + 1)
-const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(_VOICE_Q_INDEX + 1)
+const VOICE_Q_INDEX = QUESTIONS.findIndex(q => q.key === 'voice')
+const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, VOICE_Q_INDEX)
+const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(VOICE_Q_INDEX, VOICE_Q_INDEX + 1)
+const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(VOICE_Q_INDEX + 1)
 
 const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   'q-character': CHARACTER_QUESTIONS,
@@ -402,7 +399,7 @@ function RegenFeedbackInput(): React.JSX.Element {
     <textarea
       className={`${INPUT_CLASS} text-xs`}
       maxLength={MAX_APPEARANCE}
-      onChange={e => setRegenFeedback(e.target.value)}
+      onChange={e => $regenFeedback.set(e.target.value)}
       placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
       rows={2}
       value={value}
@@ -552,7 +549,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // 避免 onboarding 里输入的「头发再短一点」泄漏到后续重生流程里。
   useEffect(() => {
     if (phase === 'portrait-avatar') {
-      clearRegenFeedback()
+      $regenFeedback.set('')
     }
   }, [phase])
 
@@ -1147,7 +1144,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       // 用户在画廊里点选时：当前 avatar 行必须跟显示的脸保持一致，
       // 否则选中会悄悄回退到最后一行，画面跳回用户已经拒绝过的那张脸。
       if (entry.avatarId != null) {
-        setActiveAvatarId(entry.avatarId)
+        $activeAvatarId.set(entry.avatarId)
         void selectAvatar(entry.avatarId)
       }
     },
@@ -1207,7 +1204,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           avatarId: applied.id ?? activeAvatarId,
           portraitUrl: applied.avatar
         })
-        clearRegenFeedback()
+        $regenFeedback.set('')
         setPhase('portrait-avatar')
         void playOnboardingAudio('onboarding.portrait.ok')
       }

@@ -30,7 +30,7 @@ if (!g.__spiritagent_interactive_state__) {
 
 const state = g.__spiritagent_interactive_state__
 
-function _bucket(windowId: number): Map<string, InteractiveRegion> {
+function bucket(windowId: number): Map<string, InteractiveRegion> {
   let m = state.regionsByWindow.get(windowId)
 
   if (!m) {
@@ -47,13 +47,13 @@ function registerInteractiveRegion(
   windowId: number = 0,
   hitTest?: (x: number, y: number) => boolean
 ): void {
-  const m = _bucket(windowId)
+  const m = bucket(windowId)
   m.set(id, { getRect, hitTest, id })
   state.probesByWindow.get(windowId)?.()
 }
 
 function unregisterInteractiveRegion(id: string, windowId: number = 0): void {
-  const m = _bucket(windowId)
+  const m = bucket(windowId)
 
   if (!m.delete(id)) {
     return
@@ -77,7 +77,7 @@ export function probeInteractiveRegions(windowId: number = 0): void {
 }
 
 function isPointInteractive(x: number, y: number, windowId: number = 0): boolean {
-  const regions = _bucket(windowId)
+  const regions = bucket(windowId)
 
   for (const region of regions.values()) {
     const rect = region.getRect()
@@ -98,7 +98,7 @@ function isPointInteractive(x: number, y: number, windowId: number = 0): boolean
 }
 
 export function isRegionHit(id: string, x: number, y: number, windowId: number = 0): boolean {
-  const regions = _bucket(windowId)
+  const regions = bucket(windowId)
   const region = regions.get(id)
 
   if (!region) {

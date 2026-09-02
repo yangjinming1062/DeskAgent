@@ -8,7 +8,6 @@ import {
   $portraitUrl,
   $regenFeedback,
   applyPortrait,
-  clearRegenFeedback,
   pushPortraitEntry
 } from '@/companion/portrait-store'
 
@@ -69,7 +68,7 @@ interface UseRegeneratePortraitResult {
 /**
  * 跨 onboarding、伙伴设置 → 形象、重新对话微调性格、PersonaSection 内联编辑
  * 共用的重生成形象流程。负责同步/排队分流、busy 标记、提示文案、音效提示；
- * 调用方提供一个绑定到 $regenFeedback 的 textarea（通过 setRegenFeedback /
+ * 调用方提供一个绑定到 $regenFeedback 的 textarea（通过 $regenFeedback.set /
  * useStore）或逐次传入 feedback。
  */
 export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}): UseRegeneratePortraitResult {
@@ -106,7 +105,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           portraitUrl: $portraitUrl.get(),
           avatarId: $activeAvatarId.get()
         })
-        clearRegenFeedback()
+        $regenFeedback.set('')
 
         if (playAudioOnSuccess) {
           void playOnboardingAudio('onboarding.portrait.regenerate')

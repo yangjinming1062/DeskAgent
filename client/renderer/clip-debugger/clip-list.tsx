@@ -55,7 +55,6 @@ export function ClipList(): React.JSX.Element {
 
   return (
     <aside className="flex h-full w-84 shrink-0 flex-col border-r border-slate-800 bg-slate-900/95 text-slate-200 backdrop-blur-md">
-      {/* 顶部骨骼 Rig 选择栏 */}
       <div className="flex flex-col gap-2.5 border-b border-slate-800 p-3.5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">骨骼体系 Rig Type</span>
@@ -87,7 +86,6 @@ export function ClipList(): React.JSX.Element {
           })}
         </div>
 
-        {/* 搜索框 */}
         <div className="relative mt-1">
           <input
             className="w-full rounded-lg border border-slate-700/80 bg-slate-950/80 px-3 py-1.5 pr-8 text-xs text-slate-100 placeholder-slate-500 transition-colors focus:border-sky-500 focus:outline-none"
@@ -212,7 +210,6 @@ export function ClipList(): React.JSX.Element {
         )}
       </div>
 
-      {/* 底部统计 */}
       <div className="border-t border-slate-800/80 px-3.5 py-2 text-center text-[11px] text-slate-500">
         显示 {filteredClips.length} / {allClips.length} 个动作片段
       </div>

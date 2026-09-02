@@ -57,9 +57,7 @@ export function ClipDebugger(): React.JSX.Element {
       {/* 隐藏的文件上传 input */}
       <input accept=".glb,.gltf" className="hidden" onChange={handleFileUpload} ref={fileInputRef} type="file" />
 
-      {/* 顶部主导航栏 */}
       <header className="flex h-13 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900/90 px-4 backdrop-blur-md">
-        {/* 左侧：标题与模型状态 */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/20 text-lg">🎬</span>
@@ -101,7 +99,7 @@ export function ClipDebugger(): React.JSX.Element {
           </div>
         </div>
 
-        {/* 右侧：辅助线切换、模型载入、表情面板切换 */}
+        {/* 右侧工具区 */}
         <div className="flex items-center gap-2">
           {/* 打开模型选择与后端拉取窗口 */}
           <button
@@ -221,18 +219,14 @@ export function ClipDebugger(): React.JSX.Element {
         </div>
       </header>
 
-      {/* 主体区域：左侧动画清单 + 右侧 3D 视口 */}
       <main className="relative flex flex-1 overflow-hidden">
-        {/* 左侧动画列表 */}
         <ClipList />
 
-        {/* 右侧 3D 视口与浮动控件 */}
         <div className="relative flex-1">
           <Viewport3D />
           <PlaybackBar />
         </div>
 
-        {/* 右侧抽屉式表情检视面板 */}
         {showMorphPanel && (
           <aside className="w-80 shrink-0 border-l border-slate-800 shadow-2xl transition-all">
             <MorphInspector />

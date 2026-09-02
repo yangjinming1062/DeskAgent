@@ -145,15 +145,15 @@ export interface GltfLease {
   scene: THREE.Group
 }
 
-const _cache = new Map<string, CachedTemplate>()
-const _pendingTemplates = new Map<string, CachedTemplate[]>()
-let _nextTemplateId = 1
+const cache = new Map<string, CachedTemplate>()
+const pendingTemplates = new Map<string, CachedTemplate[]>()
+let nextTemplateId = 1
 
 function addPendingTemplate(key: string, template: CachedTemplate): void {
   template.pendingDispose = true
-  const list = _pendingTemplates.get(key) ?? []
+  const list = pendingTemplates.get(key) ?? []
   list.push(template)
-  _pendingTemplates.set(key, list)
+  pendingTemplates.set(key, list)
 }
 
 /** 存入已解析的 GLB 场景作为模板。后续 `takeGltfClone(key)` 返回深克隆。 */
@@ -169,7 +169,7 @@ export function stashGltf(
     return
   }
 
-  const prev = _cache.get(key)
+  const prev = cache.get(key)
 
   if (prev) {
     if (prev.scene === gltf) {
@@ -185,16 +185,16 @@ export function stashGltf(
       addPendingTemplate(key, prev)
     }
 
-    _cache.delete(key)
+    cache.delete(key)
   }
 
   pruneTemplates(maxTemplates - 1, maxBytes - bytes)
 
-  _cache.set(key, {
+  cache.set(key, {
     animations,
     bytes,
     hits: 0,
-    id: _nextTemplateId++,
+    id: nextTemplateId++,
     lastUsed: Date.now(),
     refCount: 0,
     scene: gltf
@@ -207,17 +207,17 @@ export function stashGltf(
 function pruneTemplates(maxTemplates = DEFAULT_MAX_TEMPLATES, maxBytes = DEFAULT_MAX_CACHE_BYTES): void {
   let totalBytes = 0
 
-  for (const item of _cache.values()) {
+  for (const item of cache.values()) {
     totalBytes += item.bytes
   }
 
-  if (_cache.size <= maxTemplates && totalBytes <= maxBytes) {
+  if (cache.size <= maxTemplates && totalBytes <= maxBytes) {
     return
   }
 
   const candidates: { key: string; template: CachedTemplate }[] = []
 
-  for (const [key, item] of _cache.entries()) {
+  for (const [key, item] of cache.entries()) {
     if (item.refCount === 0) {
       candidates.push({ key, template: item })
     }
@@ -226,12 +226,12 @@ function pruneTemplates(maxTemplates = DEFAULT_MAX_TEMPLATES, maxBytes = DEFAULT
   candidates.sort((a, b) => a.template.lastUsed - b.template.lastUsed)
 
   for (const { key, template } of candidates) {
-    if (_cache.size <= maxTemplates && totalBytes <= maxBytes) {
+    if (cache.size <= maxTemplates && totalBytes <= maxBytes) {
       break
     }
 
     disposeTemplate(template)
-    _cache.delete(key)
+    cache.delete(key)
     totalBytes -= template.bytes
   }
 }
@@ -247,7 +247,7 @@ export function takeGltfClone(key: string): GltfLease | null {
     return null
   }
 
-  const cached = _cache.get(key)
+  const cached = cache.get(key)
 
   if (!cached || cached.pendingDispose) {
     return null
@@ -284,7 +284,7 @@ export function takeGltfClone(key: string): GltfLease | null {
 }
 
 function removePendingTemplate(key: string, template: CachedTemplate): void {
-  const pendingList = _pendingTemplates.get(key)
+  const pendingList = pendingTemplates.get(key)
 
   if (!pendingList) {
     return
@@ -299,19 +299,19 @@ function removePendingTemplate(key: string, template: CachedTemplate): void {
   pendingList.splice(index, 1)
 
   if (pendingList.length === 0) {
-    _pendingTemplates.delete(key)
+    pendingTemplates.delete(key)
   }
 }
 
 export function hasGltf(key: string): boolean {
-  const cached = _cache.get(key)
+  const cached = cache.get(key)
 
   return Boolean(cached && !cached.pendingDispose)
 }
 
 /** 清空所有缓存模板。用于用户登出或渲染器完全销毁。 */
 export function clearAllGltf(force = false): void {
-  for (const [key, cached] of _cache.entries()) {
+  for (const [key, cached] of cache.entries()) {
     if (cached.refCount === 0 || force) {
       disposeTemplate(cached)
     } else {
@@ -319,43 +319,22 @@ export function clearAllGltf(force = false): void {
     }
   }
 
-  _cache.clear()
+  cache.clear()
 
   if (force) {
-    for (const list of _pendingTemplates.values()) {
+    for (const list of pendingTemplates.values()) {
       for (const pending of list) {
         disposeTemplate(pending)
       }
     }
 
-    _pendingTemplates.clear()
+    pendingTemplates.clear()
   }
 }
 
 registerStorageClearHandler(() => {
   clearAllGltf(true)
 })
-
-/** 获取模板缓存状态快照。 */
-function _gltfCacheStats(): { activeRefs: number; keys: string[]; totalBytes: number; totalHits: number } {
-  let totalBytes = 0
-  let totalHits = 0
-  let activeRefs = 0
-
-  for (const cached of _cache.values()) {
-    totalBytes += cached.bytes
-    totalHits += cached.hits
-    activeRefs += cached.refCount
-  }
-
-  for (const list of _pendingTemplates.values()) {
-    for (const pending of list) {
-      activeRefs += pending.refCount
-    }
-  }
-
-  return { activeRefs, keys: [..._cache.keys()], totalBytes, totalHits }
-}
 
 function disposeTemplate(cached: CachedTemplate): void {
   try {

@@ -20,14 +20,13 @@ import {
   clearExternalAttachment,
   finalizeAssistantMessage,
   hydrateChatMessages,
+  markAssistantTerminal,
   type PendingAttachment,
   pushExternalAttachment,
   pushPendingPrompt,
   pushStatusPill,
   pushUserMessage,
   schedulePendingFlush,
-  setAssistantCancelled,
-  setAssistantError,
   submitPendingBatch
 } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState, setSpriteState } from '@/companion/companion-store'
@@ -221,10 +220,10 @@ async function executeSlashCommand(
         pushStatusPill('status_command_result', r.message)
       }
     } else {
-      setAssistantError(r.message)
+      markAssistantTerminal({ error: r.message })
     }
   } catch (err) {
-    setAssistantError(slashErrorToMessage(err))
+    markAssistantTerminal({ error: slashErrorToMessage(err) })
   } finally {
     onFinish?.()
   }
@@ -782,7 +781,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       const preCheck = slashPreCheck(pending, sending)
 
       if (preCheck) {
-        setAssistantError(preCheck)
+        markAssistantTerminal({ error: preCheck })
 
         return
       }
@@ -804,7 +803,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
       // 命中 `/foo` 但未识别本地命令：toast 提示，**保留** 输入文本让用户修改。
       // 不退回 prompt.submit，避免 `/foo` 被 LLM 当真发出去消耗 token。
-      setAssistantError(`未知命令: /${parsed.name}。试试 /help 查看可用命令。`)
+      markAssistantTerminal({ error: `未知命令: /${parsed.name}。试试 /help 查看可用命令。` })
 
       return
     }
@@ -911,7 +910,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       })
       schedulePendingFlush()
     } catch (err) {
-      setAssistantError(err instanceof Error ? err.message : '发送失败')
+      markAssistantTerminal({ error: err instanceof Error ? err.message : '发送失败' })
       setSpriteState('idle')
       setPending(null)
     } finally {
@@ -948,7 +947,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     if (lastItem?.role === 'assistant' && lastBody?.streaming && lastBody.text.trim()) {
       finalizeAssistantMessage()
     } else {
-      setAssistantCancelled()
+      markAssistantTerminal({ cancelled: true })
     }
 
     setSpriteState('idle', { force: true })
@@ -1202,7 +1201,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                           const preCheck = slashPreCheck(pending, sending)
 
                           if (preCheck) {
-                            setAssistantError(preCheck)
+                            markAssistantTerminal({ error: preCheck })
 
                             return
                           }
@@ -1259,7 +1258,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                       const preCheck = slashPreCheck(pending, sending)
 
                       if (preCheck) {
-                        setAssistantError(preCheck)
+                        markAssistantTerminal({ error: preCheck })
 
                         return
                       }

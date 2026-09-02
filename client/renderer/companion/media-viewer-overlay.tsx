@@ -15,10 +15,6 @@ export function openMediaViewer(item: ChatMediaItem): void {
   $mediaViewer.set(item)
 }
 
-function closeMediaViewer(): void {
-  $mediaViewer.set(null)
-}
-
 export function MediaViewerOverlay(): React.ReactPortal | null {
   const item = useStore($mediaViewer)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -35,7 +31,7 @@ export function MediaViewerOverlay(): React.ReactPortal | null {
 
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
-        closeMediaViewer()
+        $mediaViewer.set(null)
       }
     }
 
@@ -51,7 +47,7 @@ export function MediaViewerOverlay(): React.ReactPortal | null {
   return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
-      onClick={closeMediaViewer}
+      onClick={() => $mediaViewer.set(null)}
       ref={overlayRef}
       style={{ pointerEvents: 'auto' }}
     >

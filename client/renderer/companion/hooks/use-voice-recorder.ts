@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { IM_VOICE_BAR_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
 import { convertBlobToWav } from '@/companion/audio-wav'
-import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
+import { $chatSessionId, $chatTurnInFlight, markAssistantTerminal, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
 
@@ -144,7 +144,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
 
       return text || null
     } catch (err: unknown) {
-      setAssistantError(isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，用打字吧～')
+      markAssistantTerminal({ error: isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，用打字吧～' })
 
       return null
     }
@@ -215,7 +215,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       } catch (err) {
         $chatTurnInFlight.set(false)
         setSpriteState('idle')
-        setAssistantError(err instanceof Error ? err.message : '发送失败')
+        markAssistantTerminal({ error: err instanceof Error ? err.message : '发送失败' })
       }
     } else {
       setSpriteState('idle')
@@ -256,7 +256,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
           }, cap * 1000)
         }
       } catch {
-        setAssistantError('无法使用麦克风录制语音')
+        markAssistantTerminal({ error: '无法使用麦克风录制语音' })
         setSpriteState('idle')
       } finally {
         if (startPendingRef.current === pending) {

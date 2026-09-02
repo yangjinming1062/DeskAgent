@@ -9,16 +9,20 @@ const ClipDebugger = React.lazy(async () => {
   return { default: mod.ClipDebugger }
 })
 
+const ROLE_MAP: Record<string, 'clip' | 'sprite'> = {
+  sprite: 'sprite',
+  clip: 'clip',
+  anim: 'clip',
+  animation: 'clip'
+}
+
 function readRole(): 'clip' | 'sprite' | 'tool' {
   const params = new URLSearchParams(window.location.search)
   const role = params.get('role')
+  const fromQuery = role ? ROLE_MAP[role] : undefined
 
-  if (role === 'sprite') {
-    return 'sprite'
-  }
-
-  if (role === 'clip' || role === 'anim' || role === 'animation') {
-    return 'clip'
+  if (fromQuery) {
+    return fromQuery
   }
 
   if (window.location.hash.startsWith('#/clip') || window.location.hash.startsWith('#/anim')) {

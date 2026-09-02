@@ -12,7 +12,7 @@ interface PendingMap<T> {
 const REGEN_TIMEOUT_MS = 120_000
 const TOMBSTONE_TTL_MS = 10 * 60_000
 
-function _pruneTombstones(map: Map<string, number>): void {
+function pruneTombstones(map: Map<string, number>): void {
   const cutoff = Date.now() - TOMBSTONE_TTL_MS
 
   for (const [jobId, t] of map) {
@@ -22,7 +22,7 @@ function _pruneTombstones(map: Map<string, number>): void {
   }
 }
 
-function _makeAwaiter<T>(
+function makeAwaiter<T>(
   store: PendingMap<T>,
   makeTombstoneError: (jobId: string) => Error
 ): (jobId: string) => Promise<T> {
@@ -55,7 +55,7 @@ function _makeAwaiter<T>(
     })
 }
 
-function _makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string }) => void {
+function makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string }) => void {
   return payload => {
     const jobId = payload.job_id
 
@@ -63,7 +63,7 @@ function _makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string
       return
     }
 
-    _pruneTombstones(store.timedOut)
+    pruneTombstones(store.timedOut)
 
     if (store.timedOut.has(jobId)) {
       return
@@ -90,14 +90,14 @@ interface AvatarRegeneratedPayload {
   error?: string
 }
 
-const _avatarStore: PendingMap<AvatarRegeneratedPayload> = {
+const avatarStore: PendingMap<AvatarRegeneratedPayload> = {
   pending: new Map(),
   late: new Map(),
   timedOut: new Map()
 }
 
-export const awaitAvatarRegeneration = _makeAwaiter<AvatarRegeneratedPayload>(
-  _avatarStore,
+export const awaitAvatarRegeneration = makeAwaiter<AvatarRegeneratedPayload>(
+  avatarStore,
   jobId => new Error(`avatar regeneration timed out for job ${jobId}`)
 )
-export const resolveAvatarRegeneration = _makeResolver<AvatarRegeneratedPayload>(_avatarStore)
+export const resolveAvatarRegeneration = makeResolver<AvatarRegeneratedPayload>(avatarStore)

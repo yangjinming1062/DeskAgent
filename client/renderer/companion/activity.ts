@@ -40,12 +40,12 @@ let lastTierPushed: DisturbanceTier | null = null
 let runnerReady = false
 let offPhaseSub: (() => void) | null = null
 
-const _localStatsCounters: Record<'poke' | 'chat_turn', number> = {
+const localStatsCounters: Record<'poke' | 'chat_turn', number> = {
   poke: 0,
   chat_turn: 0
 }
 
-const _lastStatsSentAt: Record<'poke' | 'chat_turn', number> = {
+const lastStatsSentAt: Record<'poke' | 'chat_turn', number> = {
   poke: 0,
   chat_turn: 0
 }
@@ -405,7 +405,7 @@ export function reportInteractionStat(kind: 'poke' | 'chat_turn'): void {
     return
   }
 
-  _localStatsCounters[kind] += 1
+  localStatsCounters[kind] += 1
 
   // 阈值与后端的 ``STATS_THRESHOLD = 10`` 对齐。低于阈值时
   // 每次事件都发送，让每日计数器及时累加；越过阈值后，
@@ -414,11 +414,11 @@ export function reportInteractionStat(kind: 'poke' | 'chat_turn'): void {
   // 在每次合并发送时仍会更新行内容（高峰小时 / hour_buckets）。
   const now = Date.now()
 
-  if (_localStatsCounters[kind] > 10 && now - _lastStatsSentAt[kind] < STATS_POST_THRESHROTTLE_MS) {
+  if (localStatsCounters[kind] > 10 && now - lastStatsSentAt[kind] < STATS_POST_THRESHROTTLE_MS) {
     return
   }
 
-  _lastStatsSentAt[kind] = now
+  lastStatsSentAt[kind] = now
 
   void gateway.request('companion.record_interaction_stats', { kind, hour: new Date().getHours() }).catch(() => {
     /* 即发即忘；失败静默吞掉 */

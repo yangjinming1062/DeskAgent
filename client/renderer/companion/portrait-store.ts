@@ -13,14 +13,6 @@ export const $portraitUrl = atom<string | null>(null)
 // 3D 流水线是在服务端读取当前 avatar 行，所以这里只是为画廊选择做镜像。
 export const $activeAvatarId = atom<number | null>(null)
 
-export function setPortraitUrl(url: string | null): void {
-  $portraitUrl.set(url)
-}
-
-export function setActiveAvatarId(id: number | null): void {
-  $activeAvatarId.set(id)
-}
-
 interface PortraitUrls {
   assetUrl?: string | null
   seedFrontUrl?: string | null
@@ -37,11 +29,11 @@ export async function applyPortrait(
   const seedBack = urls.seedBackUrl === undefined ? null : await resolvePortraitUrl(urls.seedBackUrl)
 
   if (avatar) {
-    setPortraitUrl(avatar)
+    $portraitUrl.set(avatar)
   }
 
   if (urls.id != null) {
-    setActiveAvatarId(urls.id)
+    $activeAvatarId.set(urls.id)
   }
 
   return { avatar, seedBack, seedFront }
@@ -123,7 +115,7 @@ export async function selectAvatar(avatarId: number): Promise<boolean> {
       path: `/api/companion/avatar/${avatarId}/select`,
       method: 'PUT'
     })
-    setActiveAvatarId(avatarId)
+    $activeAvatarId.set(avatarId)
 
     return true
   } catch (error) {
@@ -141,20 +133,12 @@ export async function selectAvatar(avatarId: number): Promise<boolean> {
 // 每次重生成功后由 useRegeneratePortrait 清掉。
 export const $regenFeedback = atom<string>('')
 
-export function setRegenFeedback(value: string): void {
-  $regenFeedback.set(value)
-}
-
-export function clearRegenFeedback(): void {
-  $regenFeedback.set('')
-}
-
 export interface PortraitEntry {
   portraitUrl: string | null
   avatarId: number | null
 }
 
-const _MAX_HISTORY = 5
+const MAX_HISTORY = 5
 
 export const $portraitHistory = atom<PortraitEntry[]>([])
 export const $portraitSelectedIdx = atom<number>(0)
@@ -163,7 +147,7 @@ export function pushPortraitEntry(entry: PortraitEntry): void {
   const current = $portraitHistory.get()
   const next = [...current, entry]
 
-  if (next.length > _MAX_HISTORY) {
+  if (next.length > MAX_HISTORY) {
     next.shift()
   }
 

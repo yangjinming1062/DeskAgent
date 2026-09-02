@@ -7,24 +7,24 @@ import { atom } from 'nanostores'
 
 export const $voicePreparing = atom<boolean>(false)
 
-let _activeCount = 0
+let activeCount = 0
 
 export function beginVoicePreparing(): void {
-  _activeCount++
+  activeCount++
 
-  if (_activeCount === 1) {
+  if (activeCount === 1) {
     $voicePreparing.set(true)
   }
 }
 
 export function endVoicePreparing(): void {
-  if (_activeCount === 0) {
+  if (activeCount === 0) {
     return
   }
 
-  _activeCount--
+  activeCount--
 
-  if (_activeCount === 0) {
+  if (activeCount === 0) {
     $voicePreparing.set(false)
   }
 }

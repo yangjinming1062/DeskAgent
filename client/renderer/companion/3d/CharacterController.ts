@@ -57,8 +57,8 @@ async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayBuffer> 
   return buffer
 }
 
-const _QUAT = new THREE.Quaternion()
-const _EULER = new THREE.Euler()
+const QUAT = new THREE.Quaternion()
+const EULER = new THREE.Euler()
 
 export class CharacterController {
   root = new THREE.Group()
@@ -440,8 +440,8 @@ export class CharacterController {
       const lookPitch = -this.lookY * 0.06
       const lookYaw = this.lookX * 0.1
 
-      _EULER.set(chinTuckPitch + lookPitch, lookYaw, 0, 'YXZ')
-      _QUAT.setFromEuler(_EULER)
+      EULER.set(chinTuckPitch + lookPitch, lookYaw, 0, 'YXZ')
+      QUAT.setFromEuler(EULER)
 
       const restHead = this.boneRestQuats.get(this.headBone.name)
 
@@ -449,18 +449,18 @@ export class CharacterController {
         this.headBone.quaternion.copy(restHead)
       }
 
-      this.headBone.quaternion.multiply(_QUAT)
+      this.headBone.quaternion.multiply(QUAT)
 
       if (this.neckBone) {
         const restNeck = this.boneRestQuats.get(this.neckBone.name)
-        _EULER.set((chinTuckPitch + lookPitch) * 0.25, lookYaw * 0.25, 0, 'YXZ')
-        _QUAT.setFromEuler(_EULER)
+        EULER.set((chinTuckPitch + lookPitch) * 0.25, lookYaw * 0.25, 0, 'YXZ')
+        QUAT.setFromEuler(EULER)
 
         if (!animated && restNeck) {
           this.neckBone.quaternion.copy(restNeck)
         }
 
-        this.neckBone.quaternion.multiply(_QUAT)
+        this.neckBone.quaternion.multiply(QUAT)
       }
     }
   }
