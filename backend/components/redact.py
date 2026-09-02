@@ -92,15 +92,6 @@ _FORM_BODY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*=[^&\s]*(?:&[A-Za-z_][A-Za
 _PREFIX_RE = re.compile(r"(?<![A-Za-z0-9_-])(" + "|".join(_PREFIX_PATTERNS) + r")(?![A-Za-z0-9_-])")
 
 
-def mask_secret(value: str, *, head: int = 4, tail: int = 4, floor: int = SECRET_MASK_MIN_LENGTH, placeholder: str = "***", empty: str = "") -> str:
-    """Mask 凭据用于展示，保留首尾各 head / tail 个字符。"""
-    if not value:
-        return empty
-    if len(value) < floor:
-        return placeholder
-    return f"{value[:head]}...{value[-tail:]}"
-
-
 def _redact_query_string(query: str) -> str:
     if not query:
         return query
@@ -123,8 +114,10 @@ def _redact_form_body(text: str) -> str:
 
 
 def _sub_mask(match_value: str) -> str:
-    """统一的 mask 替换 helper，避免各 regex callback 重复写 mask_secret 调用。"""
-    return mask_secret(match_value, head=SECRET_MASK_HEAD_CHARS, tail=SECRET_MASK_TAIL_CHARS, floor=SECRET_MASK_MIN_LENGTH, empty="***")
+    # 短串（含空串）统一返占位——f-string 切头尾在短串上会撞索引并泄漏字符。
+    if len(match_value) < SECRET_MASK_MIN_LENGTH:
+        return "***"
+    return f"{match_value[:SECRET_MASK_HEAD_CHARS]}...{match_value[-SECRET_MASK_TAIL_CHARS:]}"
 
 
 def _sub_prefix(m: re.Match) -> str:
