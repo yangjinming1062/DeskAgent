@@ -5,19 +5,13 @@ import {
   pushStatusPill
 } from '@/companion/chat-store'
 import { ensureChatSession } from '@/companion/session-list-store'
-import { SpiritAgentRpcError, SpiritAgentRpcErrorCode } from '@/shared/lib/gateway-protocol/json-rpc-gateway'
+import {
+  type SlashCommandResultPayload,
+  SpiritAgentRpcError,
+  SpiritAgentRpcErrorCode
+} from '@/shared/lib/gateway-protocol'
 import { fuzzyFilterCommands, type SlashCommandMeta } from '@/shared/lib/slash-commands'
 import type { SessionMessage } from '@/shared/types/spiritagent'
-
-interface SlashCommandRpcResult {
-  command: string
-  result: {
-    status: 'ok' | 'error'
-    hydrate?: boolean
-    message: string
-    payload?: Record<string, unknown> | null
-  }
-}
 
 function slashErrorToMessage(err: unknown): string {
   if (err instanceof SpiritAgentRpcError) {
@@ -92,7 +86,7 @@ async function executeSlashCommand(
 
     const sid = await ensureChatSession()
 
-    const result = await requestGateway<SlashCommandRpcResult>('command.dispatch', {
+    const result = await requestGateway<SlashCommandResultPayload>('command.dispatch', {
       args,
       command: cmd.name,
       confirmed: true,

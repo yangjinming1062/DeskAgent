@@ -61,6 +61,7 @@ import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/co
 import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
+import { type SlashCommandResultPayload } from '@/shared/lib/gateway-protocol'
 import { log } from '@/shared/lib/log'
 import { $auth } from '@/shared/store/auth'
 import { $gateway } from '@/shared/store/gateway'
@@ -802,12 +803,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 服务端在 command.dispatch RPC response 之外另行广播此事件（PROTOCOL §1.3）；
       // 触发它的窗口已通过 RPC 路径自己渲染过 pill，本路径只服务其他窗口的同步渲染。
       // RPC 路径的 pushStatusPill 已在 chat-dock 的 executeSlashCommand 中幂等执行。
-      const payload = event.payload as
-        | {
-            command?: string
-            result?: { status: 'ok' | 'error'; message: string; payload?: unknown; hydrate?: boolean }
-          }
-        | undefined
+      const payload = event.payload as SlashCommandResultPayload | undefined
 
       const r = payload?.result
 

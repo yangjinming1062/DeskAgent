@@ -1,1 +1,7 @@
-export { type ConnectionState, JsonRpcGatewayClient } from './json-rpc-gateway'
+export {
+  type ConnectionState,
+  JsonRpcGatewayClient,
+  type SlashCommandResultPayload,
+  SpiritAgentRpcError,
+  SpiritAgentRpcErrorCode
+} from './json-rpc-gateway'
