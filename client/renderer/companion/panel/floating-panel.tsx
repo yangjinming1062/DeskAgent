@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { clamp } from '@runtime'
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 
@@ -123,8 +124,8 @@ export function FloatingPanel({
   // 保证面板在屏幕内至少保留 160px 宽 / 64px 高的可见条带。
   const dx = storedOffset?.dx ?? 0
   const dy = storedOffset?.dy ?? 0
-  const visibleDx = Math.min(Math.max(left + dx, 176 - size.width), viewport.width - 160) - left
-  const visibleDy = Math.min(Math.max(top + dy, 80 - size.height), viewport.height - 64) - top
+  const visibleDx = clamp(left + dx, 176 - size.width, viewport.width - 160) - left
+  const visibleDy = clamp(top + dy, 80 - size.height, viewport.height - 64) - top
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { clamp } from '@runtime'
 import type { App, BrowserWindow } from 'electron'
 
 import { errorMessage, safeReadJson } from '../shared/utils'
@@ -15,7 +16,7 @@ function clampZoomLevel(value: number): number {
     return 0
   }
 
-  return Math.min(Math.max(value, -9), 9)
+  return clamp(value, -9, 9)
 }
 
 interface ZoomPersistenceOptions {

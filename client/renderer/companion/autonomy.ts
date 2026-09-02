@@ -1,3 +1,5 @@
+import { clamp } from '@runtime'
+
 import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
@@ -95,7 +97,7 @@ function executeApproach(): void {
 
   const point = {
     x: Math.max(24, (vw - w) / 2),
-    y: Math.max(24, Math.min(vh - h - 24, vh * 0.6))
+    y: clamp(vh * 0.6, 24, vh - h - 24)
   }
 
   lockGazeToPoint(gazeTowardsPoint(point))

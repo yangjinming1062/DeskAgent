@@ -1,3 +1,4 @@
+import { clamp } from '@runtime'
 import * as THREE from 'three'
 import { WebGPUBackend, WebGPURenderer } from 'three/webgpu'
 
@@ -533,7 +534,7 @@ export class Engine {
       if (now - this.lastFrameAt >= threshold) {
         const elapsed = this.lastFrameAt > 0 ? (now - this.lastFrameAt) / 1000 : 1 / PROFILE_FPS[this.profile]
         this.lastFrameAt = now
-        const delta = Math.min(Math.max(0.001, elapsed), MAX_FRAME_DELTA)
+        const delta = clamp(elapsed, 0.001, MAX_FRAME_DELTA)
         this.character.update(delta)
 
         this.renderer.render(this.scene, this.camera)

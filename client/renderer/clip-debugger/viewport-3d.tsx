@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { clamp } from '@runtime'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -665,7 +666,7 @@ export function Viewport3D(): React.JSX.Element {
     }
 
     const action = currentActionRef.current
-    action.time = Math.max(0, Math.min(scrubTime, action.getClip().duration))
+    action.time = clamp(scrubTime, 0, action.getClip().duration)
     mixerRef.current.update(0)
   }, [scrubTime])
 
@@ -677,7 +678,7 @@ export function Viewport3D(): React.JSX.Element {
 
     const action = currentActionRef.current
     const dur = action.getClip().duration
-    const nextT = Math.max(0, Math.min((action.time + stepDelta + dur) % dur, dur))
+    const nextT = clamp((action.time + stepDelta + dur) % dur, 0, dur)
     action.time = nextT
     mixerRef.current.update(0)
     $playbackState.setKey('currentTime', nextT)

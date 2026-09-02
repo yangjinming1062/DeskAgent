@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { clamp } from '@runtime'
 import { useEffect, useRef, useState } from 'react'
 
 import { $chatOpen } from '@/companion/chat-store'
@@ -54,8 +55,8 @@ export function EggStage({ size = 280, onTap }: EggStageProps): React.JSX.Elemen
         return
       }
 
-      const nx = Math.max(-1, Math.min(1, ((e.clientX - rect.left) / rect.width) * 2 - 1))
-      const ny = Math.max(-1, Math.min(1, ((e.clientY - rect.top) / rect.height) * 2 - 1))
+      const nx = clamp(((e.clientX - rect.left) / rect.width) * 2 - 1, -1, 1)
+      const ny = clamp(((e.clientY - rect.top) / rect.height) * 2 - 1, -1, 1)
       pointerActive = true
       pointerLook = { x: nx, y: ny }
       updateEyes(nx, ny)

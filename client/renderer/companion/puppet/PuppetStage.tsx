@@ -12,6 +12,7 @@
  */
 
 import { useStore } from '@nanostores/react'
+import { clamp } from '@runtime'
 import { useCallback, useEffect, useRef } from 'react'
 
 import { registerAmplitudeSink } from '@/companion/audio-track'
@@ -507,9 +508,9 @@ export function PuppetStage(): React.JSX.Element {
 
       const lx = (e.clientX - rect.left) / rect.width
       const ly = (e.clientY - rect.top) / rect.height
-      const nx = Math.max(-1, Math.min(1, lx * 2 - 1))
+      const nx = clamp(lx * 2 - 1, -1, 1)
       // 纵向参考面部高度（画布上 35%），避免视线永远俯视
-      const ny = Math.max(-1, Math.min(1, (ly - 0.35) * 2))
+      const ny = clamp((ly - 0.35) * 2, -1, 1)
       r.setGaze(nx * 0.9, ny)
 
       // hover 发区 → 发束链冲量（200ms 节流）

@@ -9,6 +9,8 @@
  * 3. 呼吸衰减（Respiration Attenuation）：走路时 0.7，趴姿时 0.4。
  */
 
+import { clamp } from '@runtime'
+
 import type { Locomotion } from '@/companion/spatial'
 
 export const STRIDE_PX = 36
@@ -92,7 +94,7 @@ export class GaitDriver {
 
   /** 供启动恢复或外部测试直接置位贴边权重 */
   setClingWeight(weight: number): void {
-    this.w = Math.max(0, Math.min(1, weight))
+    this.w = clamp(weight, 0, 1)
   }
 
   getClingWeight(): number {
@@ -117,7 +119,7 @@ export class GaitDriver {
     edgeDockSide: 'none' | 'left' | 'right',
     tier: 'semantic' | 'grouped' | 'minimal' = 'grouped'
   ): GaitFrameOutput {
-    const clampedDt = Math.max(0.001, Math.min(0.1, dt))
+    const clampedDt = clamp(dt, 0.001, 0.1)
     const dist = Math.hypot(dx, dy)
     const isWalk = locomotion === 'walk' || locomotion === 'walk_fast'
 
@@ -129,7 +131,7 @@ export class GaitDriver {
       this.smoothV += (0 - this.smoothV) * Math.min(1, clampedDt * 8)
     }
 
-    const s = Math.max(0, Math.min(1, this.smoothV / WALK_SPEED))
+    const s = clamp(this.smoothV / WALK_SPEED, 0, 1)
 
     // 2. 相位积分（按位移距离积分，非纯墙钟时间）
     if (isWalk) {

@@ -1,4 +1,4 @@
-import { sleep } from '@runtime'
+import { clamp, sleep } from '@runtime'
 
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
@@ -69,11 +69,9 @@ export function gazeTowardsPoint(point: { x: number; y: number }): { nx: number;
   const halfW = (getBaseSpriteWidth() * $spatialScale.get()) / 2
   const halfH = (getBaseSpriteHeight() * $spatialScale.get()) / 2
 
-  const clamp = (v: number): number => Math.max(-1, Math.min(1, v))
-
   return {
-    nx: clamp((point.x - (pos.x + halfW)) / Math.max(halfW, 1)),
-    ny: clamp((point.y - (pos.y + halfH)) / Math.max(halfH, 1))
+    nx: clamp((point.x - (pos.x + halfW)) / Math.max(halfW, 1), -1, 1),
+    ny: clamp((point.y - (pos.y + halfH)) / Math.max(halfH, 1), -1, 1)
   }
 }
 

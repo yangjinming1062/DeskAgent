@@ -1,3 +1,4 @@
+import { clamp } from '@runtime'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -45,12 +46,12 @@ export function usePanelResize({
 
         // Math.min/max 对 NaN 直接透传——非数值的持久化尺寸回退默认，避免
         // width: NaN 让内联尺寸失效、面板塌成左上角的零定长块。
-        const clamp = (value: unknown, fallback: number): number =>
+        const finiteOr = (value: unknown, fallback: number): number =>
           typeof value === 'number' && Number.isFinite(value) ? value : fallback
 
         return {
-          width: Math.min(maxSize.width, Math.max(minSize.width, clamp(parsed.width, defaultSize.width))),
-          height: Math.min(maxSize.height, Math.max(minSize.height, clamp(parsed.height, defaultSize.height)))
+          width: clamp(finiteOr(parsed.width, defaultSize.width), minSize.width, maxSize.width),
+          height: clamp(finiteOr(parsed.height, defaultSize.height), minSize.height, maxSize.height)
         }
       }
     } catch {
@@ -131,17 +132,17 @@ export function usePanelResize({
 
     // 水平
     if (dir.includes('e')) {
-      newWidth = Math.min(maxSize.width, Math.max(minSize.width, startWidth + deltaX))
+      newWidth = clamp(startWidth + deltaX, minSize.width, maxSize.width)
     } else if (dir.includes('w')) {
-      newWidth = Math.min(maxSize.width, Math.max(minSize.width, startWidth - deltaX))
+      newWidth = clamp(startWidth - deltaX, minSize.width, maxSize.width)
       newDx = startDx + (startWidth - newWidth)
     }
 
     // 垂直
     if (dir.includes('s')) {
-      newHeight = Math.min(maxSize.height, Math.max(minSize.height, startHeight + deltaY))
+      newHeight = clamp(startHeight + deltaY, minSize.height, maxSize.height)
     } else if (dir.includes('n')) {
-      newHeight = Math.min(maxSize.height, Math.max(minSize.height, startHeight - deltaY))
+      newHeight = clamp(startHeight - deltaY, minSize.height, maxSize.height)
       newDy = startDy + (startHeight - newHeight)
     }
 

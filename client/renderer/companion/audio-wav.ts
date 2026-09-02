@@ -1,3 +1,5 @@
+import { clamp } from '@runtime'
+
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
 
 export async function convertBlobToWav(blob: Blob, targetSampleRate = 16000): Promise<Blob> {
@@ -96,7 +98,7 @@ function encodeAudioBufferToWav(audioBuffer: AudioBuffer, targetSampleRate = 160
   let offset = 44
 
   for (let i = 0; i < sampleCount; i++) {
-    const s = Math.max(-1, Math.min(1, resampledData[i]))
+    const s = clamp(resampledData[i], -1, 1)
     const val = s < 0 ? s * 0x8000 : s * 0x7fff
     view.setInt16(offset, val, true)
     offset += 2

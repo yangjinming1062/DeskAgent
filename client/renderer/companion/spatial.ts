@@ -1,3 +1,4 @@
+import { clamp } from '@runtime'
 import { atom } from 'nanostores'
 
 import { $focusContext, $lastIdleSeconds } from '@/companion/activity'
@@ -133,8 +134,8 @@ function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: numb
   const maxY = vh - c.bottom
 
   return {
-    x: Math.max(-c.left, Math.min(vw - c.right, pos.x)),
-    y: Math.max(-c.top, Math.min(maxY, pos.y))
+    x: clamp(pos.x, -c.left, vw - c.right),
+    y: clamp(pos.y, -c.top, maxY)
   }
 }
 
@@ -298,7 +299,7 @@ function tickScale(now: number): void {
 }
 
 function setScaleTarget(scale: number, instant = false): void {
-  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
+  const clamped = clamp(scale, MIN_SCALE, MAX_SCALE)
 
   if (instant || Math.abs(clamped - $spatialScale.get()) < 0.01) {
     if (scaleRafId !== null) {
@@ -360,7 +361,7 @@ function updateAdaptiveScale(): void {
 }
 
 export function setDefaultScale(scale: number): void {
-  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
+  const clamped = clamp(scale, MIN_SCALE, MAX_SCALE)
   $defaultScale.set(clamped)
   persistString(SCALE_KEY, String(clamped))
   updateAdaptiveScale()
@@ -541,7 +542,7 @@ function dockToEdge(side: 'left' | 'right'): void {
   const vw = window.innerWidth
   const c = contentBox()
   const charW = Math.max(1, c.right - c.left)
-  const targetY = Math.max(-c.top, Math.min($spatialPos.get().y, window.innerHeight - c.bottom))
+  const targetY = clamp($spatialPos.get().y, -c.top, window.innerHeight - c.bottom)
 
   const targetX =
     side === 'left'
@@ -679,7 +680,7 @@ export function initSpatial(): () => void {
           ? -c.left - EDGE_DOCK_HIDDEN_FRACTION * charW
           : vw - c.left - (1 - EDGE_DOCK_HIDDEN_FRACTION) * charW
 
-      const targetY = Math.max(-c.top, Math.min(saved.y, window.innerHeight - c.bottom))
+      const targetY = clamp(saved.y, -c.top, window.innerHeight - c.bottom)
       const dockPos = { x: targetX, y: targetY }
 
       $isEdgeDocked.set(true)
@@ -822,8 +823,8 @@ export function initSpatial(): () => void {
     const c = contentBox()
 
     const clamped = {
-      x: Math.max(REST_MARGIN, Math.min(home.x, window.innerWidth - c.right - REST_MARGIN)),
-      y: Math.max(-c.top, Math.min(home.y, window.innerHeight - c.bottom))
+      x: clamp(home.x, REST_MARGIN, window.innerWidth - c.right - REST_MARGIN),
+      y: clamp(home.y, -c.top, window.innerHeight - c.bottom)
     }
 
     $homePosition.set(clamped)

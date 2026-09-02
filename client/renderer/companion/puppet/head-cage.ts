@@ -7,6 +7,8 @@
  * 非中立姿态补充表面 Z 深度，中立姿态严格保持原图。
  */
 
+import { clamp } from '@runtime'
+
 import type { RigAnchors } from './puppet-types'
 
 export interface HeadCage {
@@ -88,5 +90,5 @@ export function headBlendMu(dF: number, dS: number, dd: number): number {
     return 1
   }
 
-  return Math.min(1, Math.max(0, (dS - dd) / (dS - dF)))
+  return clamp((dS - dd) / (dS - dF), 0, 1)
 }

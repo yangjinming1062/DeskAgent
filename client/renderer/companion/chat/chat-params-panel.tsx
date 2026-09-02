@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { clamp } from '@runtime'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -99,7 +100,7 @@ export function ChatParamsPanel(): React.JSX.Element {
   }
 
   const handleThresholdChange = (val: number) => {
-    const rounded = Math.min(1.0, Math.max(0.3, Math.round(val * 100) / 100))
+    const rounded = clamp(Math.round(val * 100) / 100, 0.3, 1.0)
     setThreshold(rounded)
     updateSessionSetting('context_compression_threshold', rounded)
     syncSettingsToGateway({ context_compression_threshold: rounded, reasoning_effort: reasoning, temperature: temp })

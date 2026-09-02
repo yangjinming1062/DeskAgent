@@ -6,6 +6,8 @@
  * 耳事件/呆毛/种子化自主段落，机制取自 PuppetLoom）为本仓代码。
  */
 
+import { clamp } from '@runtime'
+
 import { log } from '@/shared/lib/log'
 
 import { buildArtMesh } from './artmesh'
@@ -199,10 +201,6 @@ type Evaluated = PuppetParams & {
 
 /** 种子化自主段落的动作环：左右观察→抬头→低头，每步之间回正 */
 const SEG_CYCLE = ['r', 'n', 'l', 'n', 'u', 'n', 'd', 'n'] as const
-
-function clamp(v: number, a: number, b: number): number {
-  return v < a ? a : v > b ? b : v
-}
 
 /** 点在三角形内（含边界，符号法）——hitPart 命中检测用。 */
 function triContains(
@@ -928,7 +926,7 @@ export class PuppetRuntime {
         let m = muBase
 
         if (bn === 'front hair' && su) {
-          m = Math.min(1, Math.max(0, muBase + 0.15 - 0.3 * su[v]!))
+          m = clamp(muBase + 0.15 - 0.3 * su[v]!, 0, 1)
         }
 
         mu[v] = m

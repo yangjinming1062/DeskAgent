@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { clamp } from '@runtime'
 import type React from 'react'
 import { useState } from 'react'
 
@@ -47,8 +48,8 @@ export function ContextProgressBar(): React.JSX.Element {
   const totalTokens = usage.totalTokens
   const contextLimit = usage.contextLimit > 0 ? usage.contextLimit : DEFAULT_LIMIT
   const rawPct = (totalTokens / contextLimit) * 100
-  const pct = Math.min(100, Math.max(0, rawPct))
-  const thresholdPct = Math.min(100, Math.max(1, threshold * 100))
+  const pct = clamp(rawPct, 0, 100)
+  const thresholdPct = clamp(threshold * 100, 1, 100)
 
   // 色彩逻辑：
   // 1. 刚开始/基本无占用（< 2%）：未激活的灰色

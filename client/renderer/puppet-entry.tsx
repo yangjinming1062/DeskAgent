@@ -8,6 +8,7 @@
 
 import './styles.css'
 
+import { clamp } from '@runtime'
 import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -162,8 +163,8 @@ function PuppetDevApp(): React.JSX.Element {
     }
 
     // 归一化到画布区 [-1,1]（y 向下）；纵向参考面部高度（上 35%）避免永远俯视
-    const nx = Math.max(-1, Math.min(1, (ev.clientX - rect.left - rect.width / 2) / (rect.width / 2)))
-    const ny = Math.max(-1, Math.min(1, (ev.clientY - rect.top - rect.height * 0.35) / (rect.height / 2)))
+    const nx = clamp((ev.clientX - rect.left - rect.width / 2) / (rect.width / 2), -1, 1)
+    const ny = clamp((ev.clientY - rect.top - rect.height * 0.35) / (rect.height / 2), -1, 1)
     rt.setGaze(nx, ny)
   }, [])
 
