@@ -5,9 +5,10 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
+import { sleep } from '@runtime'
 import YAML from 'yaml'
 
-import { errorMessage, sleep } from '../shared/utils'
+import { errorMessage } from '../shared/utils'
 
 import { venvPythonFor } from './venv'
 

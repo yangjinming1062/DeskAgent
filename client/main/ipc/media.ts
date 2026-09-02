@@ -8,11 +8,11 @@ import {
   type MediaSttPayload,
   type MediaTtsPayload
 } from '@ipc/contracts'
+import { sleep } from '@runtime'
 import type { IpcMain } from 'electron'
 
 import { resolveReadableFileForIpc } from '../security/hardening'
 import { dataUrlFromBuffer, dataUrlToBuffer, parseDataUrl } from '../shared/mime'
-import { sleep } from '../shared/utils'
 
 import { createTtsDiskCache } from './tts-disk-cache'
 

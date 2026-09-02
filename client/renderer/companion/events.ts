@@ -1,3 +1,5 @@
+import { sleep } from '@runtime'
+
 import {
   $clipMap,
   $modelGenError,
@@ -60,7 +62,6 @@ import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
 import { log } from '@/shared/lib/log'
-import { sleep } from '@/shared/lib/utils'
 import { $auth } from '@/shared/store/auth'
 import { $gateway } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'

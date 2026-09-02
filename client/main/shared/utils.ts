@@ -70,10 +70,6 @@ export async function atomicWriteFile(targetPath: string, content: Buffer | stri
   }
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 // 把 unknown 收敛为可读的字符串消息——catch 块里最常见的回填逻辑。
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

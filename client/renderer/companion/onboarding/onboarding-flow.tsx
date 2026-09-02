@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { sleep } from '@runtime'
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -43,7 +44,6 @@ import { FolderOpen, Sparkles } from '@/shared/lib/icons'
 import { isClientErrorIpc, unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
 import { safeJsonParse } from '@/shared/lib/safe-json'
 import { cn } from '@/shared/lib/utils'
-import { sleep } from '@/shared/lib/utils'
 import { INPUT_CLASS } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 

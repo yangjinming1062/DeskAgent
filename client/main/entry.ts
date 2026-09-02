@@ -11,6 +11,7 @@ import {
   SPIRITAGENT_UI_THEMES,
   type SpiritAgentConnection
 } from '@ipc/contracts'
+import { sleep } from '@runtime'
 import {
   app,
   BrowserWindow,
@@ -85,7 +86,7 @@ import { readStoredBackendUrl } from './shared/config'
 import { createConfigSync } from './shared/lib/config-sync'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
-import { atomicWriteFile, directoryExists, errorMessage, fileExists, sendToMain, sleep } from './shared/utils'
+import { atomicWriteFile, directoryExists, errorMessage, fileExists, sendToMain } from './shared/utils'
 
 const USER_DATA_OVERRIDE = process.env.SPIRITAGENT_DESKTOP_USER_DATA_DIR
 

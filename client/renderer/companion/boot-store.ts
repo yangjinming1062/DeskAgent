@@ -1,3 +1,4 @@
+import { clampBootProgress } from '@boot-progress'
 import type { DesktopBootProgress } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
@@ -19,17 +20,9 @@ const INITIAL_BOOT_STATE: DesktopBootState = {
 
 export const $desktopBoot = atom<DesktopBootState>(INITIAL_BOOT_STATE)
 
-function clampProgress(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0
-  }
-
-  return Math.max(0, Math.min(100, Math.round(value)))
-}
-
 export function applyDesktopBootProgress(progress: DesktopBootProgress): void {
   const current = $desktopBoot.get()
-  const nextProgress = clampProgress(progress.progress)
+  const nextProgress = clampBootProgress(progress.progress)
   const mergedProgress = progress.running ? Math.max(current.progress, nextProgress) : nextProgress
 
   $desktopBoot.set({
@@ -79,7 +72,7 @@ export function failDesktopBoot(message: string): void {
     error: message,
     message: strings.boot.desktopBootFailedWithMessage(message),
     phase: 'renderer.error',
-    progress: clampProgress(current.progress),
+    progress: clampBootProgress(current.progress),
     running: false,
     timestamp: Date.now(),
     visible: true

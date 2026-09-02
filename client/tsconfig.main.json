@@ -17,7 +17,9 @@
     "noImplicitOverride": true,
     "types": ["node"],
     "paths": {
-      "@ipc/contracts": ["./shared/ipc/contracts"]
+      "@ipc/contracts": ["./shared/ipc/contracts"],
+      "@runtime": ["./shared/runtime"],
+      "@boot-progress": ["./shared/boot-progress"]
     }
   },
   "include": ["main", "scripts", "shared"]

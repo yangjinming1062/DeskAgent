@@ -1,3 +1,4 @@
+import { clampBootProgress } from '@boot-progress'
 import { type DesktopBootProgress, IPC } from '@ipc/contracts'
 import type { BrowserWindow } from 'electron'
 
@@ -20,22 +21,12 @@ export function createBootProgressMachine({ getMainWindow, rememberLog }: BootPr
     timestamp: Date.now()
   }
 
-  function clampProgress(value: unknown): number {
-    const numeric = Number(value)
-
-    if (!Number.isFinite(numeric)) {
-      return 0
-    }
-
-    return Math.max(0, Math.min(100, Math.round(numeric)))
-  }
-
   function broadcast(): void {
     sendToMain(getMainWindow(), IPC.event.bootProgress, state)
   }
 
   function update(update: Partial<DesktopBootProgress>, options: { allowDecrease?: boolean } = {}): void {
-    const nextProgressRaw = typeof update.progress === 'number' ? clampProgress(update.progress) : state.progress
+    const nextProgressRaw = typeof update.progress === 'number' ? clampBootProgress(update.progress) : state.progress
 
     const nextProgress = options.allowDecrease ? nextProgressRaw : Math.max(state.progress, nextProgressRaw)
 

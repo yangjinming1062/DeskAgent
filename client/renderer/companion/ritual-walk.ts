@@ -1,3 +1,5 @@
+import { sleep } from '@runtime'
+
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
 import { $gazeTarget, $spriteAction, lockGazeToPoint, setSpriteState } from '@/companion/companion-store'
@@ -12,7 +14,6 @@ import {
   moveTo,
   updateSpatialDecision
 } from '@/companion/spatial'
-import { sleep } from '@/shared/lib/utils'
 
 const RETRY_MS = 300
 const RETRY_COUNT = 5

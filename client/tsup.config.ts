@@ -29,7 +29,9 @@ const baseOptions = {
   esbuildOptions(options) {
     options.alias = {
       ...options.alias,
-      '@ipc/contracts': './shared/ipc/contracts'
+      '@ipc/contracts': './shared/ipc/contracts',
+      '@runtime': './shared/runtime',
+      '@boot-progress': './shared/boot-progress'
     }
   }
 }

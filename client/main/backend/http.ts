@@ -1,8 +1,9 @@
+import { sleep } from '@runtime'
 import type { App, Net } from 'electron'
 
 import { DEFAULT_FETCH_TIMEOUT_MS, resolveTimeoutMs } from '../security/hardening'
 import { resolveNormalizedBackendUrl } from '../shared/config'
-import { errorMessage, sleep } from '../shared/utils'
+import { errorMessage } from '../shared/utils'
 
 interface BackendHttpOptions {
   app: Pick<App, 'getVersion'>

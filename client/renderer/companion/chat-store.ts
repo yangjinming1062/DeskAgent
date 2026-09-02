@@ -1,3 +1,4 @@
+import { sleep } from '@runtime'
 import { atom, map } from 'nanostores'
 
 import { setSpriteState } from '@/companion/companion-store'
@@ -7,7 +8,6 @@ import {
   registerStorageClearHandler,
   storedString
 } from '@/shared/lib/storage'
-import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import type { ChatAttachment, ChatMediaItem, SessionMessage, SessionRuntimeInfo } from '@/shared/types/spiritagent'
 

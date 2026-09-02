@@ -57,7 +57,9 @@ export default defineConfig({
       '@shared': path.resolve(__dirname, './renderer/shared'),
       '@companion': path.resolve(__dirname, './renderer/companion'),
       '@hub': path.resolve(__dirname, './renderer/hub'),
-      '@ipc/contracts': path.resolve(__dirname, './shared/ipc/contracts')
+      '@ipc/contracts': path.resolve(__dirname, './shared/ipc/contracts'),
+      '@runtime': path.resolve(__dirname, './shared/runtime'),
+      '@boot-progress': path.resolve(__dirname, './shared/boot-progress')
     },
     dedupe: ['react', 'react-dom']
   },
