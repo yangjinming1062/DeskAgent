@@ -137,6 +137,9 @@ declare global {
         onEvent: EventSubscription<'spiritagent:update-event'>
       }
     }
+    spiritagentWebUtils?: {
+      getPathForFile: (file: File) => string
+    }
   }
 }
 

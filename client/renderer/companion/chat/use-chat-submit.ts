@@ -17,11 +17,12 @@ import {
   submitPendingBatch
 } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
+import { ensureChatSession } from '@/companion/session-list-store'
 import { parseSlashInput } from '@/shared/lib/slash-commands'
 import type { ChatAttachment } from '@/shared/types/spiritagent'
 
 import { basename } from './chat-path'
-import { ensureChatSession, executeSlashCommand, slashPreCheck } from './chat-slash'
+import { executeSlashCommand, slashPreCheck } from './chat-slash'
 
 interface UseChatSubmitOptions {
   externalPathsRef: React.MutableRefObject<string[]>

@@ -30,6 +30,17 @@ const SETTINGS_VIEWS = [
   'about'
 ] as const satisfies readonly SettingsTab[]
 
+const TAB_COMPONENTS: Record<SettingsTab, React.ComponentType> = {
+  about: AboutSettings,
+  appearance: AppearanceSettings,
+  channels: ChannelsSettings,
+  inference: InferenceSettings,
+  runner: RunnerSettings,
+  shortcuts: ShortcutsSettings,
+  skills: SkillsToolsTabs,
+  speech: SpeechSettings
+}
+
 // 配置云端真源 + 自动同步（PROTOCOL §2.4）后，导入/导出/恢复默认三按钮按设计移除：
 // 修改即时上云、跨端经水合收敛，文件搬运与本地重置入口不再需要。
 export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
@@ -47,6 +58,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
     { id: 'about', label: t.settings.nav.about, icon: Info }
   ]
 
+  const Panel = TAB_COMPONENTS[activeView] ?? InferenceSettings
+
   return (
     <OverlayView closeLabel={t.settings.closeSettings} icon={Settings} onClose={onClose} title={t.settings.title}>
       <div className="flex min-h-0 flex-1">
@@ -54,23 +67,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
           <SettingsNav activeId={activeView} items={navItems} onSelect={id => setActiveView(id as SettingsTab)} />
         </aside>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {activeView === 'inference' ? (
-            <InferenceSettings onConfigSaved={onConfigSaved} />
-          ) : activeView === 'speech' ? (
-            <SpeechSettings />
-          ) : activeView === 'channels' ? (
-            <ChannelsSettings />
-          ) : activeView === 'appearance' ? (
-            <AppearanceSettings />
-          ) : activeView === 'shortcuts' ? (
-            <ShortcutsSettings />
-          ) : activeView === 'runner' ? (
-            <RunnerSettings />
-          ) : activeView === 'skills' ? (
-            <SkillsToolsTabs />
-          ) : (
-            <AboutSettings />
-          )}
+          {activeView === 'inference' ? <InferenceSettings onConfigSaved={onConfigSaved} /> : <Panel />}
         </main>
       </div>
     </OverlayView>

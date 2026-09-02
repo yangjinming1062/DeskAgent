@@ -156,10 +156,12 @@ interface PendingExternalAttachment {
   nonce: number
 }
 
+let externalNonce = 0
+
 export const $pendingExternalAttachment = atom<PendingExternalAttachment | null>(null)
 
 export function pushExternalAttachment(paths: string[]): void {
-  $pendingExternalAttachment.set({ paths, nonce: Date.now() })
+  $pendingExternalAttachment.set({ paths, nonce: ++externalNonce })
 }
 
 export function clearExternalAttachment(): void {

@@ -1,4 +1,4 @@
-import { atom } from 'nanostores'
+import { atom, computed } from 'nanostores'
 
 import {
   $chatDraftFromUndo,
@@ -55,13 +55,47 @@ function parseSessionSort(raw: null | string): SessionSort {
   return SESSION_SORTS.includes(raw as SessionSort) ? (raw as SessionSort) : 'recent'
 }
 
-// 聊天窗头部标题兜底链：主列表 → 归档列表 → 搜索结果（归档/搜索命中的会话不在主列表里）。
-export function findSessionInfo(sessionId: string): SessionInfo | undefined {
+// 内部查询兜底（供 renameSession 等命令式操作回滚用）；响应式链路走 $currentSessionInfo。
+function findSessionInfo(sessionId: string): SessionInfo | undefined {
   return (
     $sessions.get().find(s => s.id === sessionId) ??
     $archivedSessions.get().find(s => s.id === sessionId) ??
     $searchResults.get().find(s => s.id === sessionId)
   )
+}
+
+export const $currentSessionInfo = computed(
+  [$chatSessionId, $sessions, $archivedSessions, $searchResults],
+  (id, sessions, archived, search) => {
+    if (!id) {
+      return undefined
+    }
+
+    return sessions.find(s => s.id === id) ?? archived.find(s => s.id === id) ?? search.find(s => s.id === id)
+  }
+)
+
+export const $currentSessionTitle = computed(
+  $currentSessionInfo,
+  info => (info?.title && info.title.trim()) || strings.chat.defaultSessionTitle
+)
+
+export const $currentSessionKind = computed($currentSessionInfo, info => info?.kind ?? '')
+
+export async function ensureChatSession(): Promise<string> {
+  const existing = $chatSessionId.get()
+
+  if (existing) {
+    return existing
+  }
+
+  const sessionId = await openMainSession()
+
+  if (!sessionId) {
+    throw new Error(strings.chat.openMainSessionFailed)
+  }
+
+  return sessionId
 }
 
 export function setSessionListOpen(open: boolean): void {

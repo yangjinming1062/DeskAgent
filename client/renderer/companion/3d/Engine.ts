@@ -422,15 +422,10 @@ export class Engine {
       return
     }
 
-    const size = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    box.getSize(size)
-    box.getCenter(center)
-
-    const widthSpan = Math.max(size.x, size.z, 0.4)
-    const height = Math.max(size.y, 0.6)
-    const centerX = center.x
-    const centerY = center.y
+    const widthSpan = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 0.4)
+    const height = Math.max(box.max.y - box.min.y, 0.6)
+    const centerX = (box.min.x + box.max.x) * 0.5
+    const centerY = (box.min.y + box.max.y) * 0.5
 
     // 将相机目标对准角色身高的 ~55% 处（胸口/锁骨中段偏上），
     // 配合下颌微收的平视视线，达成最舒适的水平对视感。

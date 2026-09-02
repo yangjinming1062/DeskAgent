@@ -3,6 +3,19 @@ import { atom, computed } from 'nanostores'
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
 
+import type { SettingsView } from './settings/settings-view'
+
+export interface DockOpenRequest {
+  kind: 'chat' | 'settings'
+  view?: SettingsView
+}
+
+export const $openDockRequest = atom<DockOpenRequest | null>(null)
+
+export function requestOpenDock(kind: 'chat' | 'settings', view?: SettingsView): void {
+  $openDockRequest.set({ kind, view })
+}
+
 // 渲染层按 unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
 
@@ -274,4 +287,5 @@ registerStorageClearHandler(() => {
   $previousState.set('idle')
   $clipOverride.set(null)
   $effectiveTierOverride.set(null)
+  $openDockRequest.set(null)
 })

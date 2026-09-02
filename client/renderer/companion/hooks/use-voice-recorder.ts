@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { IM_VOICE_BAR_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
 import { convertBlobToWav } from '@/companion/audio-wav'
-import { $chatSessionId, $chatTurnInFlight, markAssistantTerminal, setChatSession } from '@/companion/chat-store'
+import { markAssistantTerminal, pushPendingPrompt, pushUserMessage, schedulePendingFlush } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
+import { ensureChatSession } from '@/companion/session-list-store'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
 
 // IM 语音条仍走 MediaRecorder（webm/opus 整段录制 → 客户端转 16kHz WAV → REST 转写）。
@@ -54,13 +55,12 @@ function isMediaBusyError(err: unknown): boolean {
 }
 
 type Options = {
-  requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
-  onTranscribed?: (text: string) => Promise<void> | void
+  isReadOnlySession?: boolean
 }
 
 // 语音消息生命周期管理：录音、自动停止、全局事件解绑、音轨清理与转写提交。
 
-export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
+export function useVoiceRecorder({ isReadOnlySession }: Options): {
   recording: boolean
   start: () => void
   stop: () => Promise<void>
@@ -102,19 +102,6 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       /* 已关闭 */
     }
   }
-
-  const ensureSession = useCallback(async (): Promise<string> => {
-    const existing = $chatSessionId.get()
-
-    if (existing) {
-      return existing
-    }
-
-    const res = await requestGateway<{ session_id: string }>('session.create', {})
-    setChatSession(res.session_id)
-
-    return res.session_id
-  }, [requestGateway])
 
   const transcribe = async (blob: Blob): Promise<string | null> => {
     if (!blob || blob.size === 0) {
@@ -207,20 +194,26 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     const text = await transcribe(blob)
 
     if (text) {
+      if (isReadOnlySession) {
+        setSpriteState('idle', { force: true })
+
+        return
+      }
+
       try {
-        const sessionId = await ensureSession()
-        $chatTurnInFlight.set(true)
-        await onTranscribed?.(text)
-        await requestGateway('prompt.submit', { session_id: sessionId, text })
+        await ensureChatSession()
+        pushUserMessage(text)
+        setSpriteState('thinking')
+        pushPendingPrompt({ text })
+        schedulePendingFlush()
       } catch (err) {
-        $chatTurnInFlight.set(false)
-        setSpriteState('idle')
+        setSpriteState('idle', { force: true })
         markAssistantTerminal({ error: err instanceof Error ? err.message : '发送失败' })
       }
     } else {
-      setSpriteState('idle')
+      setSpriteState('idle', { force: true })
     }
-  }, [requestGateway, onTranscribed, ensureSession])
+  }, [isReadOnlySession])
 
   stopRef.current = stop
 

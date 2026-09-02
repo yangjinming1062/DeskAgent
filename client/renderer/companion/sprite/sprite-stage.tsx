@@ -1,9 +1,10 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
-import { $chatOpen, pushExternalAttachment } from '@/companion/chat-store'
-import { $clipOverride, $spriteAction, setSpriteState } from '@/companion/companion-store'
+import { $chatOpen, clearExternalAttachment, pushExternalAttachment } from '@/companion/chat-store'
+import { $clipOverride, $spriteAction, requestOpenDock, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 
 import { $sprite3DHitTest } from '../3d/silhouette-hit'
 import { handleDizzyInteraction, handleDragEndInteraction, handlePetInteraction } from '../interaction'
@@ -216,52 +217,8 @@ export function SpriteStage({
   }, [])
 
   // 文件投喂（DESIGN §6.3）：解析真实文件路径并推到 chat-dock。
-  // 抽成独立 async 函数让 onDrop handler 保持同步。
-  const handleDrop = async (fileList: FileList | null | undefined): Promise<void> => {
-    const files = Array.from(fileList ?? [])
-
-    if (files.length === 0) {
-      return
-    }
-
-    // Electron 32+ 移除了 File.path——必须经 webUtils.getPathForFile 拿真实路径。
-    // 浏览器没有 webUtils 时回退到 dataURL（虽然下游路径基于 file://，浏览器几乎不会走到这里）。
-    const webUtils = (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } })
-      .spiritagentWebUtils
-
-    const paths: string[] = []
-
-    for (const f of files) {
-      if (webUtils) {
-        try {
-          const p = webUtils.getPathForFile(f)
-
-          if (p) {
-            paths.push(p)
-
-            continue
-          }
-        } catch {
-          /* 单个文件解析失败不影响其他文件 */
-        }
-      }
-
-      // 主进程未暴露 webUtils（开发态 / 浏览器预览）——读 dataURL 作为退化
-      if (f instanceof Blob) {
-        try {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = () => reject(reader.error)
-            reader.readAsDataURL(f)
-          })
-
-          paths.push(dataUrl)
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+  const handleDrop = (fileList: FileList | null | undefined): void => {
+    const paths = resolveDroppedFiles(fileList)
 
     if (paths.length === 0) {
       return
@@ -273,11 +230,11 @@ export function SpriteStage({
     $clipOverride.set('present_right')
     $spriteAction.set('present_right')
     setSpriteState('interacting', { durationMs: 2000 })
+    clearExternalAttachment()
     pushExternalAttachment(paths)
     // 投喂文件时自动打开聊天面板，让用户看到附件被加入；
-    // 走根组件的 openDock 走 dock 互斥（不能直接 setChatOpen）。
-    const openDock = (window as unknown as { __spiritagentOpenDock?: (k: 'chat') => void }).__spiritagentOpenDock
-    openDock?.('chat')
+    // 走根组件订阅 $openDockRequest 走 dock 互斥（不能直接 setChatOpen）。
+    requestOpenDock('chat')
   }
 
   const gestureTrackerRef = useRef<Mesh2DGestureTracker | null>(null)

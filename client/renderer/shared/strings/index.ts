@@ -307,6 +307,9 @@ export const strings = {
   },
 
   chat: {
+    defaultSessionTitle: '日常对话',
+    openMainSessionFailed: '无法打开日常对话',
+
     presetPicker: {
       title: '选择新对话的预设',
       intro: '这条对话的系统提示词将从这里固定；选定后仍可改名、归档或删除。',

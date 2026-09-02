@@ -318,7 +318,7 @@ export function Companion3D(): React.JSX.Element {
 
   // 失败面板承载重试按钮 —— 没有注册区域时，点击会从透明精灵窗口直接穿透到桌面
   // （interactive-regions.ts 负责捕获开关）。面板未挂载时矩形为 null，
-  // 因此区域仅在失败状态下存在。
+  // 因此交互区域仅在失败状态下注册。生成态面板为纯信息展示（pointer-events: none），不注册捕获区域以保证桌面点击穿透。
   const failedPanelRef = useRef<HTMLDivElement | null>(null)
   useInteractiveRegion('model-gen-failed', failedPanelRef)
 
@@ -328,20 +328,8 @@ export function Companion3D(): React.JSX.Element {
       ref={containerRef}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
-      {genState === 'failed' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            padding: '1rem'
-          }}
-        >
+      {genState === 'generating' && (
+        <GenStatusFrame>
           <div
             style={{
               display: 'flex',
@@ -391,22 +379,10 @@ export function Companion3D(): React.JSX.Element {
               </div>
             )}
           </div>
-        </div>
+        </GenStatusFrame>
       )}
       {genState === 'failed' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            padding: '1rem'
-          }}
-        >
+        <GenStatusFrame>
           <div
             ref={failedPanelRef}
             style={{
@@ -443,7 +419,7 @@ export function Companion3D(): React.JSX.Element {
               </button>
             )}
           </div>
-        </div>
+        </GenStatusFrame>
       )}
     </div>
   )
@@ -461,4 +437,24 @@ const STAGE_LABELS: Record<string, string> = {
 
 function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage
+}
+
+function GenStatusFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+        padding: '1rem'
+      }}
+    >
+      {children}
+    </div>
+  )
 }

@@ -118,11 +118,13 @@ export function isRegionHit(id: string, x: number, y: number, windowId: number =
   return false
 }
 
+const defaultGetRect = (el: HTMLElement): DOMRect | null => el.getBoundingClientRect()
+
 // 通过 ref 获取可见矩形注册交互区域；返回 null 表示该帧退出交互。
 export function useInteractiveRegion(
   id: string,
   ref: RefObject<HTMLElement | null>,
-  getRect: (el: HTMLElement) => DOMRect | null = el => el.getBoundingClientRect(),
+  getRect: (el: HTMLElement) => DOMRect | null = defaultGetRect,
   hitTest?: (x: number, y: number) => boolean
 ): void {
   useEffect(() => {

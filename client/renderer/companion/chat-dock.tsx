@@ -15,7 +15,8 @@ import {
   $pendingExternalAttachment,
   $pendingPromptBatch,
   clearExternalAttachment,
-  markAssistantTerminal
+  markAssistantTerminal,
+  pushExternalAttachment
 } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState, setSpriteState } from '@/companion/companion-store'
 import {
@@ -26,8 +27,8 @@ import {
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
-import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
+import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 import {
   ArrowRight,
   FileText,
@@ -72,8 +73,9 @@ import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
 import {
+  $currentSessionKind,
+  $currentSessionTitle,
   $sessionListOpen,
-  findSessionInfo,
   openMainSession,
   setSessionListOpen,
   switchSession
@@ -88,10 +90,6 @@ const DOCK_MAX_HEIGHT = 900
 
 // DESIGN §2.1「用户输入起止」→ listening；停止输入该窗口后回落。
 const TYPING_IDLE_MS = 2500
-
-// Electron 32+ 移除了 File.path——剪贴板/拖拽文件的真实路径只能经 webUtils 桥接。
-const webUtilsBridge = (): { getPathForFile: (f: File) => string } | undefined =>
-  (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } }).spiritagentWebUtils
 
 interface ChatDockProps {
   onClose: () => void
@@ -126,10 +124,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const expressionAvatar = useStore($expressionAvatar)
   const customExpressions = useStore($expressions)
   const sessionListOpen = useStore($sessionListOpen)
-  // 三个列表 atom 的订阅只为标题兜底链的响应性（findSessionInfo 会读它们）。
-  useStore($sessions)
-  useStore($archivedSessions)
-  useStore($searchResults)
+  const currentSessionTitle = useStore($currentSessionTitle)
   const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
@@ -138,8 +133,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   // IM 桥接会话在桌面端只读查看。
   const chatSessionKind = useStore($chatSessionKind)
+  const currentSessionKind = useStore($currentSessionKind)
 
-  const sessionKind = chatSessionKind || findSessionInfo($chatSessionId.get() ?? '')?.kind || ''
+  const sessionKind = chatSessionKind || currentSessionKind || ''
   const isReadOnlySession = sessionKind === 'im'
 
   const submit = useChatSubmit({
@@ -185,11 +181,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     start: startRecording,
     stop: stopRecording
   } = useVoiceRecorder({
-    onTranscribed: text => {
-      // 语音转写结果直走文本提交轨道，不覆盖当前 draft
-      void text
-    },
-    requestGateway
+    isReadOnlySession
   })
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -404,7 +396,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       // 从资源管理器复制的视频文件：取真实路径走上传（图片位图粘贴走 saveClipboardImage 分支）。
       if (item.kind === 'file' && item.type.startsWith('video/')) {
         const file = item.getAsFile()
-        const path = file ? webUtilsBridge()?.getPathForFile(file) : undefined
+        const paths = file ? resolveDroppedFiles([file]) : []
+        const path = paths[0]
 
         if (path) {
           e.preventDefault()
@@ -434,33 +427,13 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   // DESIGN §6.1「支持拖拽文件」：面板本体也是投喂入口——解析真实路径后走与
   // 精灵投喂同一条附件管线（首个媒体进附件槽、其余随 send() 一并提交）。
-  const onDrop = async (e: React.DragEvent): Promise<void> => {
-    const files = Array.from(e.dataTransfer?.files ?? [])
-
-    if (files.length === 0) {
-      return
-    }
-
-    const paths: string[] = []
-
-    for (const f of files) {
-      try {
-        const p = webUtilsBridge()?.getPathForFile(f)
-
-        if (p) {
-          paths.push(p)
-        }
-      } catch {
-        /* 单个文件解析失败不影响其他文件 */
-      }
-    }
+  const onDrop = (e: React.DragEvent): void => {
+    const paths = resolveDroppedFiles(e.dataTransfer?.files)
 
     if (paths.length > 0) {
       e.preventDefault()
       clearExternalAttachment()
-      // 直接 push，避免再绕一道 pendingExternal 桥
-      const event = new CustomEvent('chat:external-attach', { detail: paths })
-      window.dispatchEvent(event)
+      pushExternalAttachment(paths)
     }
   }
 
@@ -545,14 +518,16 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     }
   }, [spriteEmotion, spriteState, customExpressions])
 
-  const currentSessionTitle = findSessionInfo($chatSessionId.get() ?? '')?.title || '日常对话'
-
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
         className="relative flex flex-row overflow-hidden rounded-2xl border border-line-strong bg-surface-panel text-strong shadow-2xl border-beam-container"
-        onDragOver={e => e.preventDefault()}
-        onDrop={e => void onDrop(e)}
+        onDragOver={e => {
+          if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault()
+          }
+        }}
+        onDrop={onDrop}
         ref={panelRef}
         style={{
           height: `min(calc(100vh - 2rem), ${currentH}px)`,

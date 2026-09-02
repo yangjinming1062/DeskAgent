@@ -8,7 +8,12 @@ import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { useMainProcessListener } from '@/companion/boot/use-main-process-listener'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
-import { $companionLifecycle, reportUserActivity, setCompanionLifecycle } from '@/companion/companion-store'
+import {
+  $companionLifecycle,
+  $openDockRequest,
+  reportUserActivity,
+  setCompanionLifecycle
+} from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
@@ -82,7 +87,7 @@ export function CompanionRoot(): React.JSX.Element {
   const { requestGateway } = useGatewayRequest()
 
   // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
-  // 通过全局 window.__spiritagentOpenDock 暴露，sprite-stage 等深层组件也能复用同一不变量。
+  // 通过 $openDockRequest atom 与 openDock 协同，sprite-stage 等深层组件也能复用同一不变量。
   // settings 可携带目标页直达（记忆 → 角色与记忆、音色失效提醒 → 音色）。
   const openDock = useCallback((kind: 'chat' | 'settings', settingsView?: SettingsView): void => {
     if (kind === 'settings' && settingsView) {
@@ -94,11 +99,17 @@ export function CompanionRoot(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    const w = window as unknown as { __spiritagentOpenDock?: typeof openDock }
-    w.__spiritagentOpenDock = openDock
+    const unsubscribe = $openDockRequest.listen(req => {
+      if (!req) {
+        return
+      }
+
+      openDock(req.kind, req.view)
+      $openDockRequest.set(null)
+    })
 
     return () => {
-      delete (window as unknown as { __spiritagentOpenDock?: typeof openDock }).__spiritagentOpenDock
+      unsubscribe()
     }
   }, [openDock])
 

@@ -1,11 +1,10 @@
 import {
-  $chatSessionId,
   hydrateChatMessages,
   markAssistantTerminal,
   type PendingAttachment,
   pushStatusPill
 } from '@/companion/chat-store'
-import { openMainSession } from '@/companion/session-list-store'
+import { ensureChatSession } from '@/companion/session-list-store'
 import { SpiritAgentRpcError, SpiritAgentRpcErrorCode } from '@/shared/lib/gateway-protocol/json-rpc-gateway'
 import { fuzzyFilterCommands, type SlashCommandMeta } from '@/shared/lib/slash-commands'
 import type { SessionMessage } from '@/shared/types/spiritagent'
@@ -64,22 +63,6 @@ function slashPreCheck(pending: PendingAttachment | null, sending: boolean): str
   }
 
   return null
-}
-
-async function ensureChatSession(): Promise<string> {
-  const existing = $chatSessionId.get()
-
-  if (existing) {
-    return existing
-  }
-
-  const sessionId = await openMainSession()
-
-  if (!sessionId) {
-    throw new Error('无法打开日常对话')
-  }
-
-  return sessionId
 }
 
 /**
@@ -141,7 +124,7 @@ async function executeSlashCommand(
   }
 }
 
-export { ensureChatSession, executeSlashCommand, slashErrorToMessage, slashPreCheck }
+export { executeSlashCommand, slashErrorToMessage, slashPreCheck }
 
 // Re-export fuzzy filter from shared — slash popover uses it too.
 export { fuzzyFilterCommands }

@@ -1,7 +1,7 @@
 import type { PendingAttachment } from '@/companion/chat-store'
+import { ensureChatSession } from '@/companion/session-list-store'
 
 import { basename } from './chat-path'
-import { ensureChatSession } from './chat-slash'
 
 // 附件扩展名分拣：视频容器与后端白名单一致（mp4/mov，供应商实测 webb 被拒）；
 // 图片同步支持 HEIC/HEIF（iPhone 截图）/TIFF/AVIF/JXL（next-gen）。
