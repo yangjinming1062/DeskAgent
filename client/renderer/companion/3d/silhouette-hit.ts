@@ -1,5 +1,5 @@
+import { clamp } from '@runtime'
 import { atom } from 'nanostores'
-import { MathUtils } from 'three'
 
 import { probeInteractiveRegions } from '@/companion/interactive-regions'
 
@@ -76,8 +76,8 @@ export function attachSilhouetteHitProbe(
     const relX = (x - rect.left) / rect.width
     const relY = (y - rect.top) / rect.height
     // 引擎把命中图的 alpha 归一化为自顶向下的行序，与 DOM client 空间一致。
-    const px = MathUtils.clamp(Math.floor(relX * map.width), 0, map.width - 1)
-    const py = MathUtils.clamp(Math.floor(relY * map.height), 0, map.height - 1)
+    const px = clamp(Math.floor(relX * map.width), 0, map.width - 1)
+    const py = clamp(Math.floor(relY * map.height), 0, map.height - 1)
 
     return map.alpha[py * map.width + px] >= HIT_ALPHA_MIN
   }

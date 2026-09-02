@@ -16,7 +16,7 @@ import { persistString, storedString } from '@/shared/lib/storage'
 
 export function getBaseSpriteHeight(): number {
   // 默认高度为显示器高度的 1/3，限制在 [260, 960] 区间内
-  return Math.round(Math.max(260, Math.min(window.innerHeight / 3, 960)))
+  return Math.round(clamp(window.innerHeight / 3, 260, 960))
 }
 
 export function getBaseSpriteWidth(): number {

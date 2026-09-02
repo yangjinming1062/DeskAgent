@@ -1,3 +1,4 @@
+import { clamp } from '@runtime'
 import * as THREE from 'three'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
@@ -366,16 +367,16 @@ export class CharacterController {
 
   setLookTarget(nx: number, ny: number): void {
     // nx, ny 从屏幕中心归一化到 [-1, 1]
-    this.lookX = THREE.MathUtils.clamp(nx, -1, 1)
-    this.lookY = THREE.MathUtils.clamp(ny, -1, 1)
+    this.lookX = clamp(nx, -1, 1)
+    this.lookY = clamp(ny, -1, 1)
   }
 
   private dragTilt = { x: 0, z: 0 }
 
   setDragVelocity(vx: number, vy: number): void {
     // vx, vy 以 px/ms 为单位归一化
-    this.dragTilt.z = THREE.MathUtils.clamp(-vx * 0.12, -0.25, 0.25)
-    this.dragTilt.x = THREE.MathUtils.clamp(vy * 0.08, -0.2, 0.2)
+    this.dragTilt.z = clamp(-vx * 0.12, -0.25, 0.25)
+    this.dragTilt.x = clamp(vy * 0.08, -0.2, 0.2)
   }
 
   update(delta: number): void {
