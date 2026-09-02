@@ -197,6 +197,7 @@ __all__ = [
     "create_outfit_draft",
     "decompress_glb_if_needed",
     "delete_memory",
+    "delete_portrait_file",
     "delete_outfit",
     "design_voice",
     "embed_memory_text",
