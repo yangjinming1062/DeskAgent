@@ -31,9 +31,8 @@ from modules.auth import (
 )
 from modules.companion import AvatarAsset, Companion3DModel
 from modules.system import MessageResponse
-from services.companion.avatar_service import _delete_portrait_file
-from services.gateway import MANAGER, cancel_user_cron_turns, discard_user
-from services.gateway.handlers import _USER_SESSIONS
+from services.companion import delete_portrait_file
+from services.gateway import MANAGER, cancel_user_cron_turns, discard_user, discard_user_session
 from services.llm import merge_provider_json
 from services.tools import REGISTRY
 from services.user_backup import (
@@ -135,20 +134,13 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
     cancel_user_cron_turns(user_id)
     await MANAGER.aunregister_dispatcher(user_id)
     REGISTRY.clear_runner_tools(user_id)
-    sess = _USER_SESSIONS.pop(user_id, None)
-    if sess is not None:
-        if sess.grace_timer_task and not sess.grace_timer_task.done():
-            sess.grace_timer_task.cancel()
-        for t in list(sess.background_tasks):
-            if not t.done():
-                t.cancel()
-        sess.runtime_sessions.clear()
+    discard_user_session(user_id)
     discard_user(user_id)
 
     # 清除用户范围内的 DB 行与磁盘资产（被遗忘权）。
     avatar_rows = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id))).scalars().all()
     for av in avatar_rows:
-        _delete_portrait_file(av.asset_url)
+        delete_portrait_file(av.asset_url)
 
     await db.execute(delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
     await db.execute(delete(Companion3DModel).where(Companion3DModel.user_id == user_id))

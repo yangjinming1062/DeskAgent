@@ -136,6 +136,23 @@ class UserGatewaySession:
 _USER_SESSIONS: dict[int, UserGatewaySession] = {}
 
 
+def discard_user_session(user_id: int) -> None:
+    """注销某用户的 per-session 资源（grace timer / background tasks / runtime sessions）。
+
+    admin 删除用户时经此入口清理而不再直读 _USER_SESSIONS；其它 per-user 状态（_inflight_prompt、
+    AVATAR_JOB_LOCKS 等）仍由 admin 显式调用各自的清理函数——本函数范围仅限 session 桶。
+    """
+    sess = _USER_SESSIONS.pop(user_id, None)
+    if sess is None:
+        return
+    if sess.grace_timer_task and not sess.grace_timer_task.done():
+        sess.grace_timer_task.cancel()
+    for t in list(sess.background_tasks):
+        if not t.done():
+            t.cancel()
+    sess.runtime_sessions.clear()
+
+
 async def drain() -> None:
     """取消 UserGatewaySession 中所有 per-user background task。"""
     pending: list[asyncio.Task] = []

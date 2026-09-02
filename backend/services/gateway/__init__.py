@@ -9,7 +9,7 @@ from .jsonrpc import Handler, JsonRpcDispatcher, JsonRpcError, redact_message
 from .runtime import RuntimeSession, SessionCreateResult, SessionResumeResult, SessionRuntimeInfo, ToolsSyncResult, new_runtime_session, runtime_info_snapshot
 
 # handlers 会拉起整个服务图（chat orchestrator + llm + tools），通过 __getattr__ 延迟导入，避免 chat<->gateway 循环（handlers 依赖 services.chat，不能让它在 gateway __init__ 完成前再次进入）。
-_HANDLER_NAMES = frozenset({"handle_chat_websocket"})
+_HANDLER_NAMES = frozenset({"handle_chat_websocket", "discard_user_session"})
 
 __all__ = [
     "MANAGER",
@@ -29,6 +29,7 @@ __all__ = [
     "create_future",
     "discard_call",
     "discard_user",
+    "discard_user_session",
     "handle_chat_websocket",
     "new_runtime_session",
     "notify_ws_event_loop",

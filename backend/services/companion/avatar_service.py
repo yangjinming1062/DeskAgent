@@ -317,7 +317,7 @@ async def _write_avatar_step(
     if persist:
         asset.asset_url = build_signed_avatar_url(file_id, final_ext)
         if previous is not None:
-            _delete_portrait_file(previous.asset_url)
+            delete_portrait_file(previous.asset_url)
     else:
         # 引导流程：temp-media URL——转换为客户端可解析的路径
         asset.asset_url = _temp_media_public_url(asset_url)
@@ -379,7 +379,7 @@ async def _generate_avatar_step(
     )
 
 
-def _delete_portrait_file(asset_url: str | None) -> None:
+def delete_portrait_file(asset_url: str | None) -> None:
     """尽力删除立绘文件，兼容签名 URL、companion-avatars/ 裸路径与 temp-media/ 草稿路径。"""
     if not asset_url:
         return

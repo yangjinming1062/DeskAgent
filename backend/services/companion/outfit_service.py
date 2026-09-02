@@ -25,12 +25,12 @@ from ..llm import build_outfit_prompt, chat, resolve_fullbody_template
 from .asset_store import build_data_uri, resolve_companion_asset_path
 from .avatar_service import (
     _FULLBODY_PREFERRED_PROVIDERS,
-    _delete_portrait_file,
     _fullbody_size_for,
     _generate_one_portrait_with_moderation_retry,
     _persist_portrait_bytes,
     _read_temp_media_bytes,
     _resolve_fullbody_rig_type,
+    delete_portrait_file,
     get_avatar_job_lock,
     load_avatar_bytes_as_data_uri,
     resolve_uploaded_avatar_path,
@@ -108,7 +108,7 @@ def _delete_reference_file(outfit: CompanionOutfit) -> None:
     source = safe_json_loads(outfit.source_json or "{}", default={})
     ref_path = source.get("reference_image_path") if isinstance(source, dict) else None
     if isinstance(ref_path, str) and ref_path:
-        _delete_portrait_file(ref_path)
+        delete_portrait_file(ref_path)
 
 
 async def _ensure_initial_outfit(db: AsyncSession, user_id: int) -> None:
@@ -434,7 +434,7 @@ async def delete_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> None:
         await db.execute(delete(Companion2DModel).where(Companion2DModel.outfit_id == outfit.id))
         _delete_reference_file(outfit)
         if outfit.fullbody_url not in avatar_files:
-            _delete_portrait_file(outfit.fullbody_url)
+            delete_portrait_file(outfit.fullbody_url)
         db.add(
             WSEvent(
                 user_id=user_id,

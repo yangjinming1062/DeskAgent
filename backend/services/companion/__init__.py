@@ -26,6 +26,7 @@ from .avatar_service import (
     ImageSealedError,
     SeedPromptMissingError,
     confirm_fullbody_front,
+    delete_portrait_file,
     finalize_avatar,
     generate_avatar,
     generate_fullbody_back,
