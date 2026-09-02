@@ -3,12 +3,10 @@ import { atom, computed } from 'nanostores'
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
 
-// 伙伴生命周期决定精灵窗口渲染的内容。渲染层按
-// unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
+// 渲染层按 unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
 
-// 第二阶段状态机（DESIGN §2）：
-// IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / INTERACTING / DISCONNECTED
+// 第二阶段状态机（DESIGN §2）。
 export type SpriteStateName =
   | 'idle'
   | 'listening'

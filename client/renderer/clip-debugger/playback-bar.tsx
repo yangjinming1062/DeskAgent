@@ -82,9 +82,7 @@ export function PlaybackBar(): React.JSX.Element {
         <span className="w-14 font-mono text-xs text-slate-400">{duration.toFixed(2)}s</span>
       </div>
 
-      {/* 下层：播放按钮、倍速、循环、过渡等控制 */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 pt-2.5">
-        {/* 左侧：帧控制与主播放/暂停 */}
         <div className="flex items-center gap-2">
           <button
             className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
@@ -120,7 +118,6 @@ export function PlaybackBar(): React.JSX.Element {
           )}
         </div>
 
-        {/* 中间：播放倍速 (支持 0.1x 慢动作排查) */}
         <div className="flex items-center gap-1 rounded-lg bg-slate-950/60 p-1 border border-slate-800/80">
           <span className="px-1.5 text-[11px] text-slate-400">倍速:</span>
           {SPEEDS.map(spd => {
@@ -141,9 +138,7 @@ export function PlaybackBar(): React.JSX.Element {
           })}
         </div>
 
-        {/* 右侧：循环模式、过渡时长、视角重置 */}
         <div className="flex items-center gap-3">
-          {/* 循环模式 */}
           <div className="flex items-center gap-1 text-xs">
             <span className="text-[11px] text-slate-400">循环:</span>
             <select

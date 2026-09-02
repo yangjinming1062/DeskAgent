@@ -175,7 +175,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   const slashItems = slashPopoverOpen ? fuzzyFilterCommands(slashQuery, 8) : []
 
-  // 当用户改动文本时重置 dismissed 与高亮项。
   useEffect(() => {
     setSlashDismissed(false)
     setSlashHighlightIndex(0)
@@ -187,8 +186,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     stop: stopRecording
   } = useVoiceRecorder({
     onTranscribed: text => {
-      // 复用 pushUserMessage 而不破坏当前 draft
-      // 直走文本提交轨道，避免覆盖文本框
+      // 语音转写结果直走文本提交轨道，不覆盖当前 draft
       void text
     },
     requestGateway
@@ -583,7 +581,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           {...dragBind}
         >
           <div className="flex flex-col items-center w-full min-h-0 overflow-y-auto no-scrollbar">
-            {/* Character Avatar with subtle glow and framing */}
             <div className="relative group mt-0.5">
               <div className="relative h-28 w-28 overflow-hidden rounded-2xl border border-line-standard bg-fill-faint shadow-xl transition duration-300 group-hover:border-line-strong">
                 {(expressionAvatar?.dataUrl ?? portraitUrl) ? (
@@ -624,7 +621,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
               </div>
             </div>
 
-            {/* Current Emotion Status Display */}
             <div className="mt-4 flex flex-col items-center text-center w-full px-1">
               <div className="flex items-center gap-1.5 rounded-full border border-line-standard bg-fill-faint px-2.5 py-0.5 text-xs text-strong shadow-sm">
                 <span className="text-sm">{currentMood.icon}</span>
@@ -633,7 +629,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
             </div>
           </div>
 
-          {/* Bottom Section: Session Parameters & Status Hint */}
           <div className="w-full flex flex-col items-center gap-2 pt-2 border-t border-line-hairline shrink-0">
             <ChatParamsPanel />
             <p className="text-[10px] text-faint pt-0.5">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
@@ -642,7 +637,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
         {/* Right Column: Chat Stream & Input */}
         <div className="flex flex-1 flex-col min-w-0 bg-surface-panel">
-          {/* Header Bar */}
           <div
             className="flex cursor-grab items-center justify-between gap-2 border-b border-line-standard px-3 py-2 active:cursor-grabbing"
             title="拖动以移动对话框"
@@ -678,7 +672,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
             </div>
           </div>
 
-          {/* Messages Area */}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
             {list.length === 0 && !sending && (
               <p className="mt-8 text-center text-sm text-faint">说点什么，或发送文件/图片/视频给我看看～</p>
@@ -698,13 +691,11 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
             <ChatScrollAutoFollow scrollRef={scrollRef} />
           </div>
 
-          {/* Input Area: Two-row Card Layout */}
           <div className="border-t border-line-standard p-3 pt-2.5 flex flex-col gap-1.5">
             {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
             {isReadOnlySession && <p className="mb-1 text-center text-xs text-faint">IM 对话 · 只读</p>}
 
             <div className="relative flex flex-col gap-2 rounded-xl border border-line-standard bg-fill-faint p-2.5 transition focus-within:border-accent/60 focus-within:bg-fill-hover shadow-sm">
-              {/* Row 1: Multiline Textarea & Slash Popover */}
               <div className="relative w-full">
                 <textarea
                   className="max-h-32 min-h-[42px] w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-strong outline-none placeholder:text-faint disabled:pointer-events-none disabled:opacity-40"
@@ -733,7 +724,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                 )}
               </div>
 
-              {/* Pending Attachments inside card */}
               {pending && (
                 <PendingAttachmentView
                   onRemove={() => setPending(null)}
@@ -743,11 +733,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                 />
               )}
 
-              {/* Row 2: Bottom Toolbar */}
               <div className="flex items-center justify-between gap-2 pt-1 border-t border-line-hairline">
-                {/* Left corner: Attachment & Slash command */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Attachment menu trigger */}
                   <div className="relative" ref={attachMenuRef}>
                     <button
                       aria-label="添加附件"
@@ -801,7 +788,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     )}
                   </div>
 
-                  {/* Slash command button */}
                   <button
                     aria-label="快捷命令"
                     className="inline-flex size-7 items-center justify-center rounded-lg text-muted transition hover:bg-fill-hover hover:text-strong disabled:pointer-events-none disabled:opacity-40"
@@ -821,12 +807,10 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                   </button>
                 </div>
 
-                {/* Center: Context usage progress bar */}
                 <div className="flex-1 min-w-0 px-2 flex items-center">
                   <ContextProgressBar />
                 </div>
 
-                {/* Right corner: Voice record & Send/Stop */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     className={cn(

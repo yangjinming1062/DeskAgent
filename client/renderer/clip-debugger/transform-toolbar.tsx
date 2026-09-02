@@ -38,9 +38,7 @@ export function TransformToolbar(): React.JSX.Element {
 
   return (
     <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-2">
-      {/* 顶部主工具栏 */}
       <div className="flex items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-900/90 p-1.5 shadow-xl backdrop-blur-md">
-        {/* 模式选择按钮组 */}
         <div className="flex items-center rounded-lg bg-slate-950/80 p-0.5">
           {MODES.map(m => (
             <button

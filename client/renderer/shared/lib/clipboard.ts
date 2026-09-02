@@ -1,5 +1,4 @@
 export function installClipboardShim(): void {
-  // 把 navigator.clipboard.writeText 路由到 Electron IPC
   const ipc = window.spiritagent?.writeClipboard
 
   if (!ipc || !navigator.clipboard) {
@@ -19,6 +18,6 @@ export function installClipboardShim(): void {
   try {
     Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: writeText, writable: true })
   } catch {
-    // 浏览器拒绝覆盖
+    /* 浏览器拒绝覆盖 */
   }
 }

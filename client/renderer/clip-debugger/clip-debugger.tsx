@@ -107,7 +107,6 @@ export function ClipDebugger(): React.JSX.Element {
           </div>
         </div>
 
-        {/* 右侧工具区 */}
         <div className="flex items-center gap-2">
           {/* 打开模型选择与后端拉取窗口 */}
           <button

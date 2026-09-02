@@ -319,7 +319,6 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
           )}
         </div>
 
-        {/* 底部按钮 */}
         <div className="flex items-center justify-between border-t border-slate-800 bg-slate-950/50 p-4">
           <button
             className="rounded-lg px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"

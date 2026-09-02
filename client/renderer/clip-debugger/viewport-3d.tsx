@@ -152,7 +152,6 @@ export function Viewport3D(): React.JSX.Element {
     rimLight.position.set(0, 4, -4)
     scene.add(rimLight)
 
-    // 辅助网格与坐标轴
     const grid = new THREE.GridHelper(10, 20, 0x64748b, 0x334155)
     grid.position.y = 0
     scene.add(grid)
