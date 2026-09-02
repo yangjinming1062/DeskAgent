@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type ReactNode, type Ref, useEffect, useRef, useState } from 'react'
+import { type Ref, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
@@ -203,37 +203,5 @@ function CopyDetailButton({ label, text }: { label: string; text: string }): Rea
       {copied ? <Check className="size-3" /> : failed ? <X className="size-3" /> : <Copy className="size-3" />}
       {copied ? strings.common.copied : failed ? strings.common.copyFailed : label}
     </button>
-  )
-}
-
-export function InlineNotice({
-  kind = 'info',
-  title,
-  children,
-  className
-}: {
-  kind?: NotificationKind
-  title?: string
-  children: ReactNode
-  className?: string
-}): React.JSX.Element {
-  const styles = tone[kind]
-  const Icon = styles.icon
-
-  return (
-    <div
-      className={cn(
-        STACK_SURFACE,
-        'grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 px-3.5 py-2.5 text-xs',
-        className
-      )}
-      role={kind === 'error' ? 'alert' : 'status'}
-    >
-      <Icon className={cn('mt-0.5 size-4 shrink-0', styles.iconClass)} />
-      <div className="col-start-2 min-w-0">
-        {title && <div className="font-medium tracking-tight text-strong">{title}</div>}
-        <div className={cn('text-[11px] leading-relaxed text-muted', !title && 'row-start-1')}>{children}</div>
-      </div>
-    </div>
   )
 }

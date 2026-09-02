@@ -1,6 +1,6 @@
 import type { DesktopUpdateEvent } from '@ipc/contracts'
 
-import { setUpdateStatus, type UpdateStatus } from '@/hub/settings-store'
+import { setUpdateStatus } from '@/hub/settings-store'
 
 type UpdateHandlerMap = {
   [E in DesktopUpdateEvent as E['type']]: (event: E) => void
@@ -36,5 +36,3 @@ export function installUpdateBridge(): () => void {
     off?.()
   }
 }
-
-export type { UpdateStatus }

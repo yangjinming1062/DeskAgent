@@ -1,6 +1,1 @@
-export {
-  type ConnectionState,
-  type GatewayClientOptions,
-  type GatewayEvent,
-  JsonRpcGatewayClient
-} from './json-rpc-gateway'
+export { type ConnectionState, JsonRpcGatewayClient } from './json-rpc-gateway'
