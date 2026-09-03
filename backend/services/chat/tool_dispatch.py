@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 from components import async_trace_span, redact_sensitive_text, safe_json_loads, tool_error
 
-from services.gateway import MANAGER, create_future, discard_call, wait_future
 from services.tools import (
     REGISTRY,
     RESERVED_KEYS,
@@ -18,6 +17,7 @@ from services.tools import (
     should_parallelize_tool_batch,
     toolguard_synthetic_result,
 )
+from services.ws import MANAGER, create_future, discard_call, wait_future
 
 from .chat_emitter import Emitter
 from .message_sanitization import _repair_tool_call_arguments

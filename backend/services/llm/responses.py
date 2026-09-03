@@ -1,8 +1,6 @@
 from typing import Any
 
-from components import DEFAULT_LANGUAGE, approx_text_tokens
-
-from services.chat.system_prompt import refresh_volatile_header_in_prompt
+from components import approx_text_tokens
 
 # Responses API: DB↔input-item conversion, token estimation, kwargs assembly.
 
@@ -92,15 +90,8 @@ def build_responses_kwargs(
     max_output_tokens: int | None = None,
     reasoning: dict[str, Any] | None = None,
     text: dict[str, Any] | None = None,
-    user_local_tz: str | None = None,
-    lang: str = DEFAULT_LANGUAGE,
 ) -> dict[str, Any]:
-    """Assemble kwargs for ``client.responses.create(**kwargs)``。发送前最后一刻刷新 volatile header 行。"""
-    instructions = refresh_volatile_header_in_prompt(
-        instructions,
-        user_local_tz=user_local_tz,
-        lang=lang,
-    )
+    """Assemble kwargs for ``client.responses.create(**kwargs)``。"""
     request: dict[str, Any] = {"model": model, "instructions": instructions, "input": input_items, "stream": stream, "store": False}
     if tools:
         request["tools"] = [tool_schema_for_responses(tool) for tool in tools]

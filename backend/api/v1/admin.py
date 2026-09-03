@@ -32,7 +32,7 @@ from modules.auth import (
 from modules.companion import AvatarAsset, Companion3DModel
 from modules.system import MessageResponse
 from services.companion import delete_portrait_file
-from services.gateway import MANAGER, cancel_user_cron_turns, discard_user
+from services.gateway import discard_user_session
 from services.llm import merge_provider_json
 from services.tools import REGISTRY
 from services.user_backup import (
@@ -46,6 +46,7 @@ from services.user_backup import (
     restore_files,
     serialize_rows,
 )
+from services.ws import MANAGER, cancel_user_cron_turns, discard_user
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
@@ -140,10 +141,6 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
     cancel_user_cron_turns(user_id)
     await MANAGER.aunregister_dispatcher(user_id)
     REGISTRY.clear_runner_tools(user_id)
-    # 函数内延迟导入：services.gateway.handlers 会拉起整个服务图（chat + llm + tools），
-    # 留在模块顶层会破坏 services.gateway 的延迟导入契约；只在首次 delete_user 时才付一次性代价。
-    from services.gateway import discard_user_session
-
     cancelled_tasks = discard_user_session(user_id)
     discard_user(user_id)
     # 等取消走完再删 DB 行——避免 task 仍在写行 / 持有 DB session / 打开文件句柄时 row 已消失。

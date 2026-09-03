@@ -35,6 +35,7 @@ from .avatar_service import (
     load_avatar_bytes_as_data_uri,
     resolve_uploaded_avatar_path,
 )
+from .mesh2d.pipeline import run_mesh2d_pipeline
 from .persona_service import get_or_create_persona, load_persona_definition
 
 logger = get_logger(__name__)
@@ -346,8 +347,6 @@ async def confirm_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Comp
         await db.commit()
         await db.refresh(model)
         await db.refresh(outfit)
-
-    from .mesh2d.pipeline import run_mesh2d_pipeline
 
     run_mesh2d_pipeline(user_id=user_id, model_id=model.id, fullbody_url=outfit.fullbody_url, priority="high")
     _kick_describe(user_id, outfit.id)

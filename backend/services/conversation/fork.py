@@ -4,9 +4,7 @@ from modules.conversation import Conversation, Message
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.chat import build_session_messages
-
-# 从子模块直接导入避开 services.conversation 包级 __init__ 的循环依赖（__init__ 已 import fork）。
+from .history import build_session_messages
 from .main_conversation import CRON_KIND, IM_KIND, SPECIAL_KIND, STANDARD_KIND
 
 

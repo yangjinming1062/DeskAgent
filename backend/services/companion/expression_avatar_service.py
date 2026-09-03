@@ -7,8 +7,9 @@ from modules.companion import CompanionExpression, CompanionExpressionAvatar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import ServiceType, resolve, resolve_provider_chain
-from ..tools.builtin import first_image_url, image_generation_tool
+from services.llm import ServiceType, resolve, resolve_provider_chain
+from services.media import ImageGenerationError, generate_images
+
 from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .expression_semantics import EXPRESSION_SEMANTICS
@@ -92,13 +93,15 @@ async def _generate_expression_avatar_png(db: AsyncSession | None, user_id: int,
     if not chain:
         raise ExpressionAvatarGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
     for cfg in chain:
-        result_json = await image_generation_tool(prompt, {}, size=size, n=1, user_id=user_id, reference_image=subject_ref, preferred_provider=cfg.provider_name)
-        url = first_image_url(result_json)
-        raw = await _fetch_image_bytes(url) if url else None
+        try:
+            urls = await generate_images(prompt, size=size, n=1, user_id=user_id, reference_image=subject_ref, preferred_provider=cfg.provider_name)
+        except ImageGenerationError as exc:
+            logger.warning("expression avatar image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": exc.internal})
+            continue
+        raw = await _fetch_image_bytes(urls[0])
         if raw is not None:
             return raw
-        err = (safe_json_loads(result_json, default={}) or {}).get("error") if isinstance(safe_json_loads(result_json, default={}), dict) else None
-        logger.warning("expression avatar image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
+        logger.warning("expression avatar image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": "image bytes unreachable"})
     raise ExpressionAvatarGenerationError("表情头像生成失败，请稍后再试")
 
 

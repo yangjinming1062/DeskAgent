@@ -8,7 +8,8 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import generate_embedding, generate_embeddings
-from services.tools import RESERVED_FROM_RECALL, context_not_in
+
+from .memory_namespaces import RESERVED_FROM_RECALL, context_not_in
 
 # RRF 平滑常数（TREC/IR 标准取值）
 RRF_K: int = 60

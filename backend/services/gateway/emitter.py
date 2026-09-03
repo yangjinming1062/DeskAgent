@@ -1,7 +1,8 @@
 from typing import Any
 
+from services.ws import JsonRpcDispatcher
+
 from ..chat import Emitter
-from .jsonrpc import JsonRpcDispatcher
 
 # 原始 ``type`` → JSON-RPC ``params.type``。每个原始帧要么翻译成 JSON-RPC 事件信封，要么丢弃（未知类型）。
 _TRANSLATED: dict[str, str] = {

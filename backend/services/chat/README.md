@@ -11,16 +11,15 @@ chat/
 ├── orchestrator.py          # run_chat_turn：单回合主循环（压缩、budget、guardrail、affect 透传）
 ├── turn_inputs.py           # 组装 system prompt（persona + user_profile + memory）+ schemas + LLM client
 ├── streaming.py             # 单次 LLM call 全流程：chunk → 影响 scrubber + usage → message.* 帧
-├── affect.py                # BUILTIN_EMOTIONS + AffectScrubber（流式剥离 `[affect:…]` tag）
+├── affect.py                # AffectScrubber（流式剥离 `[affect:…]` tag）
 ├── persistence.py           # Message 行落库；触发 title 生成 / background review；emit message.complete
 ├── tool_dispatch.py         # 并行 dispatch + return_exceptions 容错；并行白名单见 services/tools/tool_dispatch_helpers
 ├── system_prompt.py         # 全部 prompt 模板（identity / persona / outfit / user_profile / language / task / steer / 平台 / volatile）
-├── history.py               # 从 DB Message 重构会话历史 DTO
 ├── message_sanitization.py  # JSON 修复 + 截图归一化 + Responses 输入项窗口兜底
 ├── chat_emitter.py          # Emitter Protocol + HeadlessEmitter（子 agent）
 ├── agent_delegate.py        # agent_delegate_tool：spawn 子 agent 跑完整 chat-turn，HeadlessEmitter 捕获帧、提取最终答案作为工具结果返回
 ├── types.py                 # IterationBudget（threading.Lock 计数）+ TrackTask 类型别名
-└── __init__.py              # barrel + __getattr__ 懒加载 orchestrator / turn_inputs / agent_delegate
+└── __init__.py              # 包公共入口（eager import）
 ```
 
 ## 关键不变量（chat 包内独有）
@@ -33,7 +32,6 @@ chat/
 - **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES = {"input_image"}` 是 Responses API 输入图片 part 唯一类型；`persistence._build_persisted_content_from_parts` 写入与 `_input_part` 读取两侧一致。
 - **生成媒体在回合收口提取、随终端助手行落库**：`persistence.extract_turn_media` 只认图像/视频生成工具的成功结果（pending 与失败跳过），媒体列与正文正交且不进 LLM 上下文（URL 已在工具结果/摘要行内）；多气泡回合媒体挂最后一格。为什么不信任正文贴 URL：模型会漏贴或夹带 markdown，结构化提取是渲染端唯一可靠通道。跨模块契约见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)。
 - **流式 chunk 批处理**：在 5–10 ms 批窗口内合并连续 chunk 事件为单个 chunk 载荷；break 与 message.start 立即发出。
-- **懒加载子模块动态解析**：`_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")` 由 `__init__.__getattr__` 按需动态解析，避免循环依赖与无谓的顶层 import 开销。
 
 ## 已知限制
 

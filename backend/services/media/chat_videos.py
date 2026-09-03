@@ -120,20 +120,27 @@ def _rewrite_parts(parts: list, file_ids: set[str], *, session_id: str | None = 
     return out, changed
 
 
-async def _rewrite_rows_referencing(db: AsyncSession, session_id: str, file_ids: set[str]) -> int:
-    """把引用了被删文件的多模态用户行改写为占位文本；返回改写行数（session_id 即会话数字 id）。"""
+async def _rewrite_rows_referencing(
+    db: AsyncSession,
+    session_id: str,
+    file_ids: set[str],
+    *,
+    lo: int = 0,
+    hi: int | None = None,
+) -> int:
+    """把引用了被删文件的多模态用户行改写为占位文本；返回改写行数（session_id 即会话数字 id）。不内部 commit。"""
     if not file_ids:
         return 0
-    rows = (
-        await db.execute(
-            select(Message.id, Message.content).where(
-                Message.conversation_id == int(session_id),
-                Message.role == "user",
-                Message.content_type == "multimodal_v1",
-                Message.content.like('%"input_video"%'),
-            ),
-        )
-    ).all()
+    conditions = [
+        Message.conversation_id == int(session_id),
+        Message.id >= lo,
+        Message.role == "user",
+        Message.content_type == "multimodal_v1",
+        Message.content.like('%"input_video"%'),
+    ]
+    if hi is not None:
+        conditions.append(Message.id < hi)
+    rows = (await db.execute(select(Message.id, Message.content).where(*conditions))).all()
     rewritten = 0
     for message_id, content in rows:
         parts = safe_json_loads(content, default=[])
@@ -145,8 +152,6 @@ async def _rewrite_rows_referencing(db: AsyncSession, session_id: str, file_ids:
             if message is not None:
                 message.content = json.dumps(new_parts, ensure_ascii=False)
                 rewritten += 1
-    if rewritten:
-        await db.commit()
     return rewritten
 
 
@@ -179,6 +184,8 @@ async def enforce_session_quota(db: AsyncSession, session_id: str, incoming_byte
         with contextlib.suppress(OSError):
             p.unlink()
     rewritten = await _rewrite_rows_referencing(db, session_id, file_ids)
+    if rewritten:
+        await db.commit()
     logger.info(
         "session video quota eviction",
         extra={"session_id": session_id, "evicted": len(file_ids), "rewritten_rows": rewritten, "incoming_bytes": incoming_bytes},
@@ -224,7 +231,7 @@ async def prune_videos_in_range(db: AsyncSession, conversation_id: int, *, lo: i
             with contextlib.suppress(OSError):
                 target.unlink()
                 removed += 1
-    rewritten = await _rewrite_rows_referencing(db, str(conversation_id), file_ids)
+    rewritten = await _rewrite_rows_referencing(db, str(conversation_id), file_ids, lo=lo, hi=hi)
     logger.info(
         "session video prune",
         extra={"conversation_id": conversation_id, "lo": lo, "hi": hi, "removed_files": removed, "rewritten_rows": rewritten},

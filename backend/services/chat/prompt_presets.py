@@ -8,9 +8,9 @@ import logging
 from components import resolve_prompt_text
 from modules.system import PromptPreset
 
-logger = logging.getLogger(__name__)
+from services.conversation import DEFAULT_PRESET_ID, SYSTEM_PRESET_CATALOG
 
-DEFAULT_PRESET_ID = "companion"
+logger = logging.getLogger(__name__)
 
 # 5 套系统预设：companion 保留完整伴侣语气与着装联动；其余 4 套工作面预设按需拉取块。
 _BODY_COMPANION = (
@@ -161,42 +161,17 @@ def _build_body(preset: PromptPreset, language: str) -> str:
     return f"{header}\n\n{preset.body}"
 
 
+def _preset_from_catalog(preset_id: str, body: str) -> PromptPreset:
+    meta = SYSTEM_PRESET_CATALOG[preset_id]
+    return PromptPreset(id=meta.id, name=meta.name, description=meta.description, icon_key=meta.icon_key, body=body)
+
+
 BUILTIN_PRESETS: dict[str, PromptPreset] = {
-    "companion": PromptPreset(
-        id="companion",
-        name="陪伴",
-        description="默认伴侣预设：完整 persona + 着装 + 工具教学 + 长程记忆。",
-        icon_key="preset_companion",
-        body=_BODY_COMPANION,
-    ),
-    "developer": PromptPreset(
-        id="developer",
-        name="工程师",
-        description="开发工程师工作面：emphasizes 工具纪律与环境、抑制伴侣 persona。",
-        icon_key="preset_developer",
-        body=_BODY_DEVELOPER,
-    ),
-    "product_manager": PromptPreset(
-        id="product_manager",
-        name="产品经理",
-        description="产品经理工作面：结构化选项 + 权衡矩阵 + 假设显式化。",
-        icon_key="preset_product_manager",
-        body=_BODY_PRODUCT_MANAGER,
-    ),
-    "copywriter": PromptPreset(
-        id="copywriter",
-        name="文案秘书",
-        description="文案/秘书工作面：强语气、intent fidelity、2-3 变体默认。",
-        icon_key="preset_copywriter",
-        body=_BODY_COPYWRITER,
-    ),
-    "language_teacher": PromptPreset(
-        id="language_teacher",
-        name="语言老师",
-        description="语言老师/翻译工作面：双语 tutor、CEFR-aware、字面 + 自然双版译文。",
-        icon_key="preset_language_teacher",
-        body=_BODY_LANGUAGE_TEACHER,
-    ),
+    "companion": _preset_from_catalog("companion", _BODY_COMPANION),
+    "developer": _preset_from_catalog("developer", _BODY_DEVELOPER),
+    "product_manager": _preset_from_catalog("product_manager", _BODY_PRODUCT_MANAGER),
+    "copywriter": _preset_from_catalog("copywriter", _BODY_COPYWRITER),
+    "language_teacher": _preset_from_catalog("language_teacher", _BODY_LANGUAGE_TEACHER),
 }
 
 

@@ -6,8 +6,8 @@ from modules.settings import UserSetting
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from ..chat.affect import resolve_allowed_emotions
 from ..llm import LLMRuntimeError, UserLlmConfig, build_responses_kwargs, call_with_retry, client_for_config
+from .emotions import resolve_allowed_emotions
 from .memory_format import format_memories_block
 from .outfit_service import build_outfit_extras
 from .persona_service import render_extras

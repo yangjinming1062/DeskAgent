@@ -6,7 +6,7 @@ from fastapi import Depends
 from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import Conversation
 from modules.system import StatusResponse
-from services.gateway import MANAGER
+from services.ws import MANAGER
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

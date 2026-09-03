@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from components import safe_json_loads
 from pydantic import BaseModel, Field
 
+from services.llm import ServiceType, resolve_context_tokens
+
 
 class SessionRuntimeInfo(BaseModel):
     cwd: str | None
@@ -63,8 +65,6 @@ def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: st
 
 def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession) -> dict:
     """发给 renderer 的 SessionRuntimeInfo 负载。renderer 容忍缺失字段，未读的 settings 键不在契约内。"""
-    from services.llm import ServiceType, resolve_context_tokens
-
     provider = llm_config.get("provider") or llm_config.get("provider_name") or "openai"
     context_window = resolve_context_tokens(provider, ServiceType.llm)
 

@@ -85,6 +85,7 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
         await wdb.commit()
         # 检查点之前的视频不会再进读路径，清盘并改写历史行 part（与压缩检查点同一钩子）。
         await prune_videos_in_range(wdb, conv_id, hi=checkpoint.id)
+        await wdb.commit()
     logger.info("daily_checkpoint: created summary", extra={"user_id": user_id, "date": local_date_str})
 
 

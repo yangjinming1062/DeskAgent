@@ -1,5 +1,6 @@
 from . import asset_store, memory_admin, mesh2d, voice_catalog
 from .affect_check import AffectCheckResult, check_affect
+from .affect_emit import emit_companion_affect, emit_companion_message
 from .asset_store import (
     build_data_uri,
     build_signed_asset_url,
@@ -44,6 +45,7 @@ from .avatar_service import (
     select_avatar,
     upload_avatar,
 )
+from .emotions import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
 from .expression_avatar_service import (
     ExpressionAvatarGenerationError,
     ExpressionCooldownError,
@@ -56,7 +58,7 @@ from .expression_avatar_service import (
 )
 from .expression_validator import validate_and_sanitize_expression
 from .http_range import serve_ranged_file
-from .interact import InteractResult, interact
+from .interact import REGION_NAMES_ZH, InteractResult, interact
 from .interaction_stats import read_today_summary, record_interaction
 from .memory_admin import (
     delete_memory,
@@ -78,6 +80,21 @@ from .memory_format import (
     format_inferred_profile_block,
     format_memories_block,
     format_proactive_memory_block,
+)
+from .memory_namespaces import (
+    AUTO_INJECT_SLOTS,
+    FORBIDDEN_FROM_LLM,
+    INFERRED_PROFILE_SLOTS,
+    KIND_TO_PREFIX,
+    NAMESPACE_SPECS,
+    RECALL_TAGS,
+    RESERVED_FROM_RECALL,
+    STATIC_BLOCK_EXCLUDED,
+    NamespaceSpec,
+    context_not_in,
+    normalize_recall_context,
+    normalize_recall_tags,
+    participates_in_recall,
 )
 from .memory_retrieval import (
     backfill_memory_embeddings,
@@ -106,6 +123,7 @@ from .outfit_service import (
     list_outfits,
     regenerate_outfit_draft,
 )
+from .persona_background import drain as drain_persona_background
 from .persona_background import schedule_personality_tag_refresh
 from .persona_service import (
     ONBOARDING_FIELDS,
@@ -146,9 +164,19 @@ from .voice_catalog import (
 __all__ = [
     "ALLOWED_ACTIONS",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
+    "AUTO_INJECT_SLOTS",
     "AVATAR_JOB_LOCKS",
+    "BUILTIN_EMOTIONS",
+    "FORBIDDEN_FROM_LLM",
+    "INFERRED_PROFILE_SLOTS",
+    "KIND_TO_PREFIX",
     "MODEL_JOB_LOCKS",
+    "NAMESPACE_SPECS",
     "ONBOARDING_FIELDS",
+    "RECALL_TAGS",
+    "REGION_NAMES_ZH",
+    "RESERVED_FROM_RECALL",
+    "STATIC_BLOCK_EXCLUDED",
     "AffectCheckResult",
     "AvatarGenerationError",
     "AvatarNotFoundError",
@@ -165,6 +193,7 @@ __all__ = [
     "ModelGenerationError",
     "ModelGenerationInProgressError",
     "ModelProviderNotConfiguredError",
+    "NamespaceSpec",
     "NeutralEmotionError",
     "OutfitDraftExpiredError",
     "OutfitError",
@@ -194,14 +223,18 @@ __all__ = [
     "confirm_fullbody_front",
     "confirm_outfit",
     "confirm_portrait",
+    "context_not_in",
     "create_outfit_draft",
     "decompress_glb_if_needed",
     "delete_memory",
     "delete_outfit",
     "delete_portrait_file",
     "design_voice",
+    "drain_persona_background",
     "embed_memory_text",
+    "emit_companion_affect",
     "emit_companion_assets_updated",
+    "emit_companion_message",
     "extract_user_profile",
     "finalize_avatar",
     "format_auto_inject_block",
@@ -235,8 +268,11 @@ __all__ = [
     "mesh2d",
     "model_response",
     "normalize_persona_aliases",
+    "normalize_recall_context",
+    "normalize_recall_tags",
     "normalize_voice_language",
     "outfit_response",
+    "participates_in_recall",
     "raise_if_image_sealed",
     "read_today_summary",
     "read_user_profile",
@@ -249,13 +285,15 @@ __all__ = [
     "regenerate_outfit_draft",
     "render_extras",
     "request_model_download_retry",
+    "resolve_allowed_emotions",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
-    "resume_inflight_pipelines",
+    "resolve_custom_expressions",
     "resolve_expression_avatar",
     "resolve_self_reference_data_uri",
     "resolve_uploaded_avatar_path",
     "resolve_user_timezone",
+    "resume_inflight_pipelines",
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
     "run_prompt_json",

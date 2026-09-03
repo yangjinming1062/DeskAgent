@@ -25,18 +25,14 @@ from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.channels import start_channel_manager, stop_channel_manager
-from services.companion import recover_stuck_model_generations, resume_inflight_pipelines
-from services.companion.persona_background import drain as _persona_drain
-from services.gateway import start_ws_event_loop, stop_ws_event_loop
-from services.gateway.connection import drain as _conn_drain
-from services.gateway.handlers import drain as _handlers_drain
+from services.companion import drain_persona_background, recover_stuck_model_generations, resume_inflight_pipelines
+from services.gateway import drain_user_sessions, execute_cron_turn
 from services.llm import aclose_all
-from services.media import resume_pending_video_jobs
-from services.media.video_jobs import drain as _video_drain
+from services.media import drain_video_jobs, resume_pending_video_jobs
 from services.rate_limit import limiter, rate_limit_exception_handler, stash_user_id_middleware
-from services.scheduler import start_scheduler, stop_scheduler
-from services.scheduler.cron import drain as _cron_drain
+from services.scheduler import drain_cron, start_scheduler, stop_scheduler
 from services.tools import aclose
+from services.ws import drain_cron_turns, start_ws_event_loop, stop_ws_event_loop
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.engine import make_url
 
@@ -71,8 +67,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     attachment_root(SETTINGS.data_dir).mkdir(parents=True, exist_ok=True)
 
     start_scheduler()
-    # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连。
-    start_ws_event_loop(_raw_pg_dsn())
+    # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连；显式注入 execute_cron_turn 消除模块导入序耦合。
+    start_ws_event_loop(_raw_pg_dsn(), cron_turn_handler=execute_cron_turn)
     # IM 通道桥：拉起各用户已启用的渠道绑定，回合不依赖用户 WS。
     await start_channel_manager()
     await resume_pending_video_jobs()
@@ -101,7 +97,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await stop_scheduler()
 
         # 释放引擎前先 drain 模块级任务集合；避免 SIGTERM 把持有连接池的协程留在 commit 中途。
-        await asyncio.gather(_cron_drain(), _persona_drain(), _video_drain(), _conn_drain(), _handlers_drain(), return_exceptions=True)
+        await asyncio.gather(drain_cron(), drain_persona_background(), drain_video_jobs(), drain_cron_turns(), drain_user_sessions(), return_exceptions=True)
 
         # IM 通道桥在 outbox 专线关闭前停稳：适配器任务可能还在写 WSEvent / 开 DB session。
         await stop_channel_manager()

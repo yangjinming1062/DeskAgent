@@ -37,11 +37,12 @@ from services.conversation import (
     reset_user_outreach,
 )
 from services.disturbance import get_disturbance_tier, is_still
-from services.gateway.connection import MANAGER
+from services.ws import MANAGER
 
 from .cron_jobs import _compute_next_run_at
 from .memory_consolidator import maybe_consolidate_one_user
 from .nightly_activity import get_local_day_utc_bounds, run_nightly_pipeline
+from .outbox_gc import run_outbox_gc
 
 logger = get_logger(__name__)
 
@@ -350,8 +351,6 @@ async def _maybe_run_outbox_gc(now: datetime) -> None:
     if now.timestamp() - _LAST_OUTBOX_GC_SCAN < _OUTBOX_GC_INTERVAL_SECONDS:
         return
     _LAST_OUTBOX_GC_SCAN = now.timestamp()
-    from .outbox_gc import run_outbox_gc
-
     await run_outbox_gc()
 
 

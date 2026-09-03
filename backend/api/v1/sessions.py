@@ -28,18 +28,17 @@ from modules.conversation import (
     DesktopSessionUndoResponse,
     Message,
 )
-from services.chat import build_session_messages
-from services.chat.prompt_presets import resolve_preset
 from services.conversation import (
     CRON_KIND,
     SPECIAL_KIND,
     ForkNotAllowedError,
     SourceNotFoundError,
+    build_session_messages,
     fork_conversation_from_message,
+    resolve_preset_meta,
 )
-from services.gateway.connection import MANAGER
-from services.gateway.handlers import do_session_undo
-from services.gateway.jsonrpc import JsonRpcError
+from services.gateway import do_session_undo
+from services.ws import MANAGER, JsonRpcError
 from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +65,7 @@ _preview_subquery = (
 
 
 def _conversation_to_session_info(conv: Conversation, *, msg_count: int, input_tok: int, output_tok: int, tool_count: int, preview: str | None) -> DesktopSessionInfo:
-    preset = resolve_preset(conv.system_preset_id)
+    preset = resolve_preset_meta(conv.system_preset_id)
     return DesktopSessionInfo(
         id=str(conv.id),
         kind=conv.kind,

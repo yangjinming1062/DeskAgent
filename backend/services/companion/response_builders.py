@@ -3,7 +3,8 @@ import contextlib
 from components import safe_json_loads
 from modules.companion import AvatarAsset, AvatarAssetResponse, Companion3DModel, Companion3DModelResponse, CompanionOutfit, OutfitResponse
 
-from .. import image_to_3d
+from services.image_to_3d import provider_supports_multiview
+
 from .asset_store import get_companion_model_sha256
 from .avatar_service import _re_sign_bare_path
 from .pipeline import signed_model_url
@@ -19,7 +20,7 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
         seed_front_2d_url=getattr(asset, "seed_front_2d_url", None) or "",
         seed_front_3d_url=getattr(asset, "seed_front_3d_url", None) or "",
         seed_back_url=getattr(asset, "seed_back_url", None) or "",
-        supports_multiview=image_to_3d.provider_supports_multiview(),
+        supports_multiview=provider_supports_multiview(),
         fullbody_style=str(payload.get("fullbody_style") or ""),
         prompt=payload.get("prompt", ""),
         status="succeeded",

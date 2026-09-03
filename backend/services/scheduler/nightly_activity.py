@@ -30,6 +30,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from services.companion import (
+    AUTO_INJECT_SLOTS,
+    INFERRED_PROFILE_SLOTS,
+    KIND_TO_PREFIX,
+    RECALL_TAGS,
     backfill_memory_embeddings,
     kick_background_generation,
     list_memories,
@@ -40,7 +44,6 @@ from services.companion import (
 )
 from services.conversation import CRON_KIND, SPECIAL_KIND, UI_ONLY_SUBTYPES
 from services.llm import call_llm_once, resolve_user_llm_config
-from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
 from .daily_checkpoint import run_daily_checkpoint

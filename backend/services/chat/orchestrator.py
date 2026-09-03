@@ -14,7 +14,9 @@ from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 
-from ..gateway import RuntimeSession
+from services.media import inline_video_parts, prune_videos_in_range
+from services.tools import ToolCallGuardrailController, schema_name
+
 from ..llm import (
     LLMRuntimeError,
     MissingLlmConfigError,
@@ -24,8 +26,6 @@ from ..llm import (
     resolve_context_tokens,
     scale_temperature,
 )
-from ..media import inline_video_parts, prune_videos_in_range
-from ..tools import ToolCallGuardrailController, schema_name
 from .chat_emitter import Emitter
 from .message_sanitization import truncate_responses_context
 from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
@@ -46,7 +46,7 @@ async def run_chat_turn(
     session_client_context: ChatRequestClientContext | None = None,
     track_task: TrackTask | None = None,
     *,
-    runtime: RuntimeSession | None = None,
+    session_settings: dict | None = None,
 ) -> None:
     # 轮次起始是唯一的多读阶段，集中在一个短 session 内完成；之后每次 DB 访问都开新 session，避免跨多秒 LLM 等待持有连接。
     async with session_scope() as db:
@@ -60,7 +60,7 @@ async def run_chat_turn(
 
         # 回合起点重读 user_settings：PUT /api/config（工具集开关、语言等）后无需重连 WS 下一回合即生效；
         # 入口侧传入的快照仅作签名兼容保留。会话级覆写再覆盖其上，仍仅构建一次并被注册表门控和工具派发共用。
-        effective_settings = merge_session_settings(await load_user_settings(db, user_id), runtime)
+        effective_settings = merge_session_settings(await load_user_settings(db, user_id), session_settings)
         inputs = await build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
@@ -95,6 +95,7 @@ async def run_chat_turn(
             checkpoint_id = checkpoint.id
             # 检查点之前的视频不会再进读路径，磁盘是死重量；清理并改写历史行 part。
             await prune_videos_in_range(db, conv.id, hi=checkpoint_id)
+            await db.commit()
         # 自动压缩单行插入；手动 /压缩 走 command.result + hydrate=true，互斥互补。
         await emitter.send_json(
             {

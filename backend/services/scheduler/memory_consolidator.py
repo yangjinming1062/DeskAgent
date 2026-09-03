@@ -12,11 +12,8 @@ from components import (
 from modules.memory import Memory
 from sqlalchemy import delete
 
-from services.tools import RECALL_TAGS, normalize_recall_context, normalize_recall_tags
-
-from ..companion import memory_admin
-from ..companion.memory_retrieval import backfill_memory_embeddings
-from ..llm import call_llm_once, resolve_user_llm_config
+from services.companion import RECALL_TAGS, backfill_memory_embeddings, list_memories, normalize_recall_context, normalize_recall_tags
+from services.llm import call_llm_once, resolve_user_llm_config
 
 logger = get_logger(__name__)
 
@@ -75,7 +72,7 @@ async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: 
 async def maybe_consolidate_one_user(user_id: int) -> bool:
     """recall pool 超过触发阈值时合并；跑了返回 True，否则 False。per-user 节流由调用方负责（cron tick 维护 _LAST_MEMORY_CONSOLIDATE）。"""
     async with session_scope() as db:
-        recent_rows = await memory_admin.list_memories(db, user_id, kind="recall", limit=MEMORY_CONSOLIDATE_WINDOW_ROWS)
+        recent_rows = await list_memories(db, user_id, kind="recall", limit=MEMORY_CONSOLIDATE_WINDOW_ROWS)
         if len(recent_rows) < MEMORY_CONSOLIDATE_TRIGGER_ROWS:
             return False
         llm_cfg = await resolve_user_llm_config(db, user_id)

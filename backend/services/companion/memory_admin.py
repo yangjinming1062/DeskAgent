@@ -6,8 +6,7 @@ from modules.memory import Memory
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS, participates_in_recall
-
+from .memory_namespaces import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS, participates_in_recall
 from .memory_retrieval import backfill_memory_embeddings
 
 # 界限：列表分页上限与编辑时的长度上限

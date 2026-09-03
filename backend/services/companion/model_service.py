@@ -5,7 +5,7 @@ from modules.companion import AvatarAsset, Companion3DModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm import is_preset_species, resolve_fullbody_style
+from services.llm import chat, is_preset_species, resolve_fullbody_style
 
 from .persona_service import get_or_create_persona, load_persona_definition
 from .pipeline import (
@@ -52,8 +52,6 @@ async def _avatar_style(db: AsyncSession, avatar: AvatarAsset, species: str) -> 
     """3D 模型风格路由：类人物种走 CG 风格（anime_game_cg），非人物种走写实风格（realistic）。"""
     has_humanoid_face = None
     if not is_preset_species(species):
-        from services.llm import chat
-
         has_humanoid_face = (await classify_species(chat, species, db=db, user_id=avatar.user_id))[1]
     return resolve_fullbody_style(species, has_humanoid_face)
 

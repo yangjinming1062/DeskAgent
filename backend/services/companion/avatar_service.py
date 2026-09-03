@@ -18,6 +18,8 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.media import ImageGenerationError, generate_images
+
 from ..llm import (
     build_fullbody_prompt,
     chat,
@@ -27,8 +29,7 @@ from ..llm import (
     resolve_fullbody_style,
     resolve_fullbody_template,
 )
-from ..tools.builtin import first_image_url, image_generation_tool
-from .asset_store import build_data_uri, build_signed_avatar_url
+from .asset_store import build_data_uri, build_signed_avatar_url, resolve_companion_asset_path
 from .persona_service import get_or_create_persona, load_persona_definition
 from .rig_type_selector import classify_species, select_rig_type
 
@@ -246,26 +247,20 @@ async def _generate_one_portrait(
     preferred_provider: str | list[str] | None = None,
 ) -> tuple[str, str, str, str]:
     """persist=False 时图片留在 temp-media/（引导流程），True 时落盘到 companion-avatars/。"""
-    result_json = await image_generation_tool(
-        prompt=prompt,
-        llm_config={},
-        size=size,
-        quality=_AVATAR_QUALITY,
-        n=1,
-        user_id=user_id,
-        reference_image=reference_image,
-        secondary_reference_image=secondary_reference_image,
-        preferred_provider=preferred_provider,
-    )
-
-    source_url = first_image_url(result_json)
-    if source_url is None:
-        # 原始供应商错误需保留给审核重试判定，但不可进入 str(exc)（用户可见面）
-        parsed = safe_json_loads(result_json, default=None)
-        tool_err = parsed.get("error") if isinstance(parsed, dict) else None
-        err_msg = str(tool_err or "image-gen provider returned no URL")
-        logger.warning("portrait image generation failed", extra={"user_id": user_id, "error": err_msg})
-        raise AvatarGenerationError("image-gen provider failed", internal=err_msg)
+    try:
+        urls = await generate_images(
+            prompt,
+            size=size,
+            n=1,
+            user_id=user_id,
+            reference_image=reference_image,
+            secondary_reference_image=secondary_reference_image,
+            preferred_provider=preferred_provider,
+        )
+    except ImageGenerationError as exc:
+        logger.warning("portrait image generation failed", extra={"user_id": user_id, "error": exc.internal})
+        raise AvatarGenerationError("image-gen provider failed", internal=exc.internal) from exc
+    source_url = urls[0]
 
     if not persist:
         temp_file_id = _extract_temp_file_id(source_url)
@@ -582,8 +577,6 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
         if len(parts) >= 2:
             try:
                 uid = int(parts[-2])
-                from .asset_store import resolve_companion_asset_path
-
                 if (resolved := resolve_companion_asset_path(uid, parts[-1])) is not None and (uri := _read_as_data_uri(resolved)):
                     return uri
             except Exception:

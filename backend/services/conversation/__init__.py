@@ -2,6 +2,7 @@ from .bootstrap import ensure_system_conversations_for_user
 from .context_window import load_recent_context_window
 from .fork import ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
 from .formatting import format_messages_compact
+from .history import build_session_messages
 from .main_conversation import (
     AFFECT_TRACE_SUBTYPE,
     CRON_KIND,
@@ -15,6 +16,7 @@ from .main_conversation import (
     get_or_create_special_conversation,
     get_special_conversation,
 )
+from .presets import DEFAULT_PRESET_ID, SYSTEM_PRESET_CATALOG, SystemPresetMeta, resolve_preset_meta
 from .proactive_state import (
     ProactiveState,
     UserProactiveRecord,
@@ -24,22 +26,26 @@ from .proactive_state import (
     record_user_outreach,
     reset_user_outreach,
 )
-from .undo import UndoNotAllowedError, undo_conversation_to_message
+from .undo import UndoNotAllowedError, resolve_undo_target, undo_conversation_to_message
 
 __all__ = [
     "AFFECT_TRACE_SUBTYPE",
     "CRON_KIND",
+    "DEFAULT_PRESET_ID",
     "ForkNotAllowedError",
     "HINT_TEXT",
     "IM_KIND",
     "MEDIA_STATUS_SUBTYPE",
     "ProactiveState",
+    "SYSTEM_PRESET_CATALOG",
     "SourceNotFoundError",
     "SPECIAL_KIND",
     "STANDARD_KIND",
+    "SystemPresetMeta",
     "UI_ONLY_SUBTYPES",
     "UndoNotAllowedError",
     "UserProactiveRecord",
+    "build_session_messages",
     "ensure_system_conversations_for_user",
     "fork_conversation_from_message",
     "format_messages_compact",
@@ -52,5 +58,7 @@ __all__ = [
     "note_user_contact",
     "record_user_outreach",
     "reset_user_outreach",
+    "resolve_preset_meta",
+    "resolve_undo_target",
     "undo_conversation_to_message",
 ]

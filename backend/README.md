@@ -30,24 +30,17 @@
 backend/
 ├── common/ · components/    # 框架基座（基类 + 有状态基础设施单例 + 横切层 correlation/redact/attachments/temp_files）
 ├── modules/                  # 按 domain 分包的 ORM 模型 + Pydantic 契约
-├── services/                 # 业务/编排层，无 facade，按子包直接 import
-│   ├── auth/                 # 身份凭据能力集与配置响应构建
-│   ├── channels/             # 外部 IM 通道桥（适配器注册表 + 无头回合桥接 + 绑定管理；微信 iLink）
-│   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）；chat/prompt_blocks 与 prompt_presets 单源管理 5 套系统预设对话的提示词装配
-│   ├── companion/            # 角色定义、形象资产、affect、voice catalog（含 mesh2d / seethrough 2D 切分子包）
-│   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）；bootstrap.ensure_system_conversations_for_user 在 onboarding 完成时刻建 5 套预设对话
-│   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
-│   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类供应商抽象
-│   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
+├── services/                 # 业务/编排层；跨包只走子包公共入口（companion.mesh2d / companion.seethrough 除外）
+│   ├── llm/ · conversation/ · ws/ · image_to_3d/ · disturbance.py · rate_limit.py · desktop_config.py · update/ · user_backup/
+│   ├── media/                # 聊天视频、生图执行链、视频任务（可依赖 llm、conversation）
+│   ├── companion/            # 角色定义、形象资产、affect、记忆命名空间（含 mesh2d / seethrough）
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
-│   ├── update/               # 桌面客户端版本更新清单构建
-│   └── desktop_config.py     # 桌面配置默认值与铺平转换
+│   ├── chat/ · scheduler/    # 对话编排；Cron / 夜间批处理（chat → scheduler 单向允许）
+│   └── gateway/ · channels/  # JSON-RPC 适配器；外部 IM 通道桥
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配
 ```
 
-依赖方向（低 → 高）：`common` / `components`（框架基座，**不** import modules/services）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `services`（服务层）→ `main.py`，无反向。
-
-**循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 chat 服务内一个零内部依赖的发送协议模块（`services/chat/chat_emitter.py`）收敛；重编排器等重依赖经模块级懒加载，保证 `import services.chat` 不会触发整张服务图。
+依赖方向（低 → 高）：`common` / `components` / `modules` → `llm`、`conversation`、`ws`、`image_to_3d`、`disturbance`、`rate_limit`、`desktop_config`、`update`、`user_backup` → `media` → `companion` → `tools` → `chat`、`scheduler` → `gateway`、`channels`、`api`、`main`。包级无环，eager import。
 
 ## 4. 关键设计决策
 

@@ -7,9 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.chat.prompt_presets import BUILTIN_PRESETS
-
 from .main_conversation import HINT_TEXT, SPECIAL_KIND
+from .presets import SYSTEM_PRESET_CATALOG
 
 
 async def ensure_system_conversations_for_user(db: AsyncSession, user_id: int) -> None:
@@ -29,7 +28,7 @@ async def ensure_system_conversations_for_user(db: AsyncSession, user_id: int) -
     )
     have = set(existing)
 
-    for preset_id, preset in BUILTIN_PRESETS.items():
+    for preset_id, preset in SYSTEM_PRESET_CATALOG.items():
         if preset_id in have:
             continue
         try:

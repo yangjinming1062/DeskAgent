@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 from components import get_logger, is_safe_outbound, safe_outbound_async_client, tool_error
 
-from services.companion.affect_emit import emit_companion_message
+from services.companion import emit_companion_message
 from services.disturbance import is_still
 from services.tools import REGISTRY
 

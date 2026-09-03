@@ -42,23 +42,24 @@ from modules.system import ChatMessageRequest, ChatRequest, PromptPresetListResp
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.chat import build_session_messages, build_turn_inputs, load_user_settings, merge_session_settings, parse_temperature, persist_extra_user_messages, run_chat_turn
-from services.chat.prompt_presets import BUILTIN_PRESETS
-from services.chat.slash_commands import (
+from services.chat import (
     SlashCommandContext,
     SlashCommandResult,
+    build_turn_inputs,
     list_commands_for_user,
+    load_user_settings,
+    merge_session_settings,
+    parse_temperature,
+    persist_extra_user_messages,
+    register_slash_command,
+    resolve_slash_command,
+    run_chat_turn,
     suggest_commands,
-)
-from services.chat.slash_commands import (
-    register as register_slash_command,
-)
-from services.chat.slash_commands import (
-    resolve as resolve_slash_command,
 )
 from services.companion import (
     AVATAR_JOB_LOCKS,
     MODEL_JOB_LOCKS,
+    REGION_NAMES_ZH,
     AvatarGenerationError,
     ModelGenerationError,
     PersonaValidationError,
@@ -66,6 +67,7 @@ from services.companion import (
     check_affect,
     delete_memory,
     design_voice,
+    emit_companion_message,
     get_avatar_job_lock,
     get_onboarding_state,
     get_or_create_persona,
@@ -74,6 +76,7 @@ from services.companion import (
     list_tts_voices,
     match_user_voice,
     memory_counts,
+    normalize_recall_context,
     normalize_voice_language,
     raise_if_image_sealed,
     read_user_profile,
@@ -85,33 +88,47 @@ from services.companion import (
     submit_onboarding_field,
     update_memory,
 )
-from services.companion.affect_emit import emit_companion_message
-from services.companion.interact import REGION_NAMES_ZH
-from services.conversation import IM_KIND, get_or_create_special_conversation, get_special_conversation, note_user_contact, reset_user_outreach
-from services.conversation.fork import ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
-from services.conversation.undo import UndoNotAllowedError, undo_conversation_to_message
+from services.conversation import (
+    IM_KIND,
+    SYSTEM_PRESET_CATALOG,
+    ForkNotAllowedError,
+    SourceNotFoundError,
+    UndoNotAllowedError,
+    build_session_messages,
+    fork_conversation_from_message,
+    get_or_create_special_conversation,
+    get_special_conversation,
+    note_user_contact,
+    reset_user_outreach,
+    resolve_undo_target,
+    undo_conversation_to_message,
+)
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
-from services.tools import REGISTRY, normalize_recall_context
-
-from . import (
+from services.tools import REGISTRY
+from services.ws import (
+    DEFAULT_REPLAY_BUFFER_CAPACITY,
+    DEFAULT_REPLAY_BUFFER_TTL_SECONDS,
     MANAGER,
     JsonRpcDispatcher,
-    JsonRpcEmitter,
     JsonRpcError,
     ReplayBuffer,
+    authenticate_ws_token,
+    cancel_user_cron_turns,
+    discard_user,
+    resolve_future,
+)
+
+from .emitter import JsonRpcEmitter
+from .runtime import (
     RuntimeSession,
     SessionCreateResult,
     SessionResumeResult,
     ToolsSyncResult,
-    authenticate_ws_token,
-    discard_user,
     new_runtime_session,
-    resolve_future,
     runtime_info_snapshot,
 )
-from .buffer import DEFAULT_REPLAY_BUFFER_CAPACITY, DEFAULT_REPLAY_BUFFER_TTL_SECONDS
 
 logger = get_logger(__name__)
 
@@ -207,7 +224,7 @@ _AVATAR_REGEN_ADVISORY_NAMESPACE = 0x4156_4156
 
 # Slash 命令 per-conversation 锁：防止 /清理 + /压缩 双击 / 多窗口并发触发导致重复 marker。
 # 串行化副作用：DB 事务已是原子的，但 marker 是 INSERT，可能产生重复 status_cleared 行。
-_conversation_locks: dict[int, asyncio.Lock] = {}
+_conversation_locks: dict[str, asyncio.Lock] = {}
 
 
 def _user_throttled(state: dict[int, float], user_id: int, min_interval: float, now: float) -> bool:
@@ -341,8 +358,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                             pending = discard_user_session(uid)
                             if pending:
                                 await asyncio.gather(*pending, return_exceptions=True)
-
-                            from .connection import cancel_user_cron_turns
 
                             cancel_user_cron_turns(uid)
                             await MANAGER.aunregister_dispatcher(uid)
@@ -481,7 +496,7 @@ async def _do_compress_history(db: AsyncSession, conv: Conversation, user_id: in
     compressed=False 时不含 messages / summary；True 时含 delivered messages 给前端 hydrate。
     """
     user_settings = await load_user_settings(db, user_id)
-    effective_settings = merge_session_settings(user_settings, runtime)
+    effective_settings = merge_session_settings(user_settings, runtime.settings)
     req = ChatRequest(session_id=str(conv.id), message=ChatMessageRequest(role="user", content=""))
     inputs = await build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
 
@@ -521,6 +536,7 @@ async def _do_compress_history(db: AsyncSession, conv: Conversation, user_id: in
     db.add(checkpoint)
     await db.commit()
     await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
+    await db.commit()
 
     new_inputs = await build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
     delivered = await build_session_messages(conv.id, db)
@@ -588,16 +604,12 @@ async def do_session_undo(
     if runtime is not None and runtime.chat_task and not runtime.chat_task.done():
         raise JsonRpcError(JSONRPC_INVALID_PARAMS, "当前会话有正在生成的回复，请稍后再试")
 
-    # 按 session_id 串行化——避免 REST 与 WS 路径并发同会话的破坏性操作竞态。字符串键避免提前 int 解析失败阻塞锁获取。
-    lock = _conversation_locks.setdefault(session_id, asyncio.Lock())
+    lock = _conversation_locks.setdefault(str(session_id), asyncio.Lock())
     async with lock, SESSION_LOCAL() as db:
         try:
-            result = await undo_conversation_to_message(
-                db,
-                user_id=user_id,
-                session_id=session_id,
-                source_message_id=source_message_id,
-            )
+            conv = await resolve_undo_target(db, user_id, session_id, source_message_id)
+            await prune_videos_in_range(db, conv.id, lo=source_message_id)
+            result = await undo_conversation_to_message(db, conv, source_message_id)
         except (UndoNotAllowedError, SourceNotFoundError) as e:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(e))
 
@@ -635,7 +647,7 @@ async def _slash_clear(ctx: SlashCommandContext) -> SlashCommandResult:
     """``/清理`` 命令 handler。``confirmed`` 由 ``command.dispatch`` 在调用前把关，未传则抛 SLASH_CONFIRM_REQUIRED。"""
     if ctx.runtime.chat_task and not ctx.runtime.chat_task.done():
         raise JsonRpcError(JSONRPC_SLASH_BUSY, "请先停止当前生成再清理会话")
-    lock = _conversation_locks.setdefault(ctx.runtime.conversation_id, asyncio.Lock())
+    lock = _conversation_locks.setdefault(str(ctx.runtime.conversation_id), asyncio.Lock())
     async with lock, SESSION_LOCAL() as db:
         conv = await _find_owned_conv(db, ctx.user_id, ctx.session_id)
         if conv is None:
@@ -667,7 +679,7 @@ async def _slash_compress(ctx: SlashCommandContext) -> SlashCommandResult:
     """``/压缩`` 命令 handler：复用 session.compress_context 的核心实现。"""
     if ctx.runtime.chat_task and not ctx.runtime.chat_task.done():
         raise JsonRpcError(JSONRPC_SLASH_BUSY, "请先停止当前生成再压缩会话")
-    lock = _conversation_locks.setdefault(ctx.runtime.conversation_id, asyncio.Lock())
+    lock = _conversation_locks.setdefault(str(ctx.runtime.conversation_id), asyncio.Lock())
     async with lock, SESSION_LOCAL() as db:
         conv = await _find_owned_conv(db, ctx.user_id, ctx.session_id)
         if conv is None:
@@ -806,10 +818,10 @@ def _register_session_handlers(
         raw_preset = params.get("system_preset_id")
         preset_id: str | None = None
         if raw_preset is not None and raw_preset != "":
-            if not isinstance(raw_preset, str) or raw_preset not in BUILTIN_PRESETS:
+            if not isinstance(raw_preset, str) or raw_preset not in SYSTEM_PRESET_CATALOG:
                 raise JsonRpcError(
                     JSONRPC_INVALID_PARAMS,
-                    f"system_preset_id must be one of {sorted(BUILTIN_PRESETS)} or omitted",
+                    f"system_preset_id must be one of {sorted(SYSTEM_PRESET_CATALOG)} or omitted",
                 )
             preset_id = raw_preset
         async with SESSION_LOCAL() as db:
@@ -831,7 +843,7 @@ def _register_session_handlers(
     async def system_list_presets(_params: dict) -> dict:
         """返回内置系统预设的元数据清单（不含 body）。body 永远不下发到客户端。"""
         return PromptPresetListResponse(
-            presets=[PromptPresetSummary(id=p.id, name=p.name, description=p.description, icon_key=p.icon_key) for p in BUILTIN_PRESETS.values()],
+            presets=[PromptPresetSummary(id=p.id, name=p.name, description=p.description, icon_key=p.icon_key) for p in SYSTEM_PRESET_CATALOG.values()],
         ).model_dump()
 
     dispatcher.register("system.list_presets", system_list_presets)
@@ -1198,7 +1210,7 @@ def _register_session_handlers(
             _inflight_prompt.add(user_id)
             try:
                 try:
-                    await run_chat_turn(req, cur_cfg, cur_settings, user_id, emitter, session_client_context=cur_ctx, track_task=_track, runtime=runtime)
+                    await run_chat_turn(req, cur_cfg, cur_settings, user_id, emitter, session_client_context=cur_ctx, track_task=_track, session_settings=runtime.settings)
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     raise
                 except Exception as e:

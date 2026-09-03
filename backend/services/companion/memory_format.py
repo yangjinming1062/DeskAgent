@@ -3,7 +3,7 @@ from modules.memory import Memory
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, STATIC_BLOCK_EXCLUDED, context_not_in
+from .memory_namespaces import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, STATIC_BLOCK_EXCLUDED, context_not_in
 
 MAX_MEMORIES = 10
 MAX_MEMORY_SNIPPET_LEN = 200

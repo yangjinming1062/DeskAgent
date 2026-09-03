@@ -6,15 +6,25 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from components import SETTINGS, get_logger, resolve_prompt_text, session_scope
+from modules.auth import ChatRequestClientContext
 from modules.channels import ChannelBinding, ChannelPeer
+from modules.system import ChatMessageRequest, ChatRequest
 from modules.ws import WSEvent
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.chat import load_user_settings, persist_extra_user_messages, run_chat_turn
+from services.companion import emit_companion_affect
+from services.conversation import note_user_contact, reset_user_outreach
+from services.llm import resolve_user_llm_config
+from services.tools import REGISTRY
+from services.ws import MANAGER
+
 from .base import ChannelAdapter, InboundMessage
 from .conversation import get_or_create_channel_conversation
 from .formatting import chunk_text, strip_markdown
+from .registry import resolve as _resolve_channel
 
 logger = get_logger(__name__)
 
@@ -164,8 +174,6 @@ async def handle_inbound(adapter: ChannelAdapter, msg: InboundMessage) -> asynci
             await _emit_peer_request(snapshot.user_id, snapshot.channel, msg)
             return _resolved(PAIRING_NOTICE)
         return _resolved(None)
-
-    from services.conversation import note_user_contact, reset_user_outreach
 
     # IM 侧的用户消息同样终结主动外联节奏、刷新接触计时——与 prompt.submit 同一契约。
     reset_user_outreach(snapshot.user_id)
@@ -317,23 +325,12 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
     沿 _execute_cron_turn 的回合先例（connection.py），差异在 emitter：cron 复用用户 WS 派发器（桌面离线
     回合即死），这里无头捕获 + 回合后渠道投递。人设/长期记忆/主动记忆块按 user 加载，与桌面回合共享。
     """
-    # 延迟导入避免 channels → chat/companion 的 eager import 环（chat 侧 import gateway，companion 侧重量级）。
-    from modules.auth import ChatRequestClientContext
-    from modules.system import ChatMessageRequest, ChatRequest
-
-    from services.chat import load_user_settings, persist_extra_user_messages, run_chat_turn
-    from services.companion.affect_emit import emit_companion_affect
-    from services.gateway import MANAGER
-    from services.llm import resolve_user_llm_config
-    from services.tools import REGISTRY
-
     snapshot = adapter.snapshot
     last = batch[-1]
     async with session_scope() as db:
         binding = await db.get(ChannelBinding, snapshot.id)
         if binding is None:
             return None
-        from .registry import resolve as _resolve_channel
 
         conv = await get_or_create_channel_conversation(db, binding, title_override=_resolve_channel(binding.channel).conversation_title)
         llm_config = await resolve_user_llm_config(db, snapshot.user_id)

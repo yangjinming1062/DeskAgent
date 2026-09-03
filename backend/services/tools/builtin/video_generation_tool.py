@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from components import SESSION_LOCAL, SETTINGS, get_logger, tool_error, utc_now
 
+from services.companion import AvatarGenerationError, resolve_self_reference_data_uri
 from services.llm import MissingLlmConfigError
 from services.media import enqueue_video_job, get_job
 from services.tools import REGISTRY
@@ -26,9 +27,6 @@ async def video_generation_tool(
     if subject == "self" and not first_frame_image:
         if user_id is None:
             return tool_error("生成自己的形象需要用户上下文")
-        # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖（services.companion.avatar_service 反向引用 tools.builtin）。
-        from services.companion import AvatarGenerationError, resolve_self_reference_data_uri
-
         try:
             first_frame_image = await resolve_self_reference_data_uri(user_id)
         except AvatarGenerationError as e:

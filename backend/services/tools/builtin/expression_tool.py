@@ -4,6 +4,7 @@ from components import SESSION_LOCAL
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 
+from services.companion import emit_companion_assets_updated, kick_background_generation, validate_and_sanitize_expression
 from services.tools import REGISTRY
 
 
@@ -17,9 +18,6 @@ async def create_expression_tool(
     **kwargs,
 ) -> str:
     """注册新的自定义表情，并在后台生成其聊天头像图。"""
-    # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖（services.companion.avatar_service 反向引用 tools.builtin）。
-    from services.companion import emit_companion_assets_updated, kick_background_generation, validate_and_sanitize_expression
-
     user_id = kwargs.get("user_id")
     if not isinstance(user_id, int):
         return json.dumps({"success": False, "error": "missing user_id"}, ensure_ascii=False)

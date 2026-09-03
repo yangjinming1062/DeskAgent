@@ -8,10 +8,12 @@ from typing import Any
 
 from components import DEFAULT_LANGUAGE, TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
 
-from ..llm import FailoverReason, LLMRuntimeError, build_responses_kwargs, call_with_retry
+from services.llm import FailoverReason, LLMRuntimeError, build_responses_kwargs, call_with_retry
+
 from .affect import AffectScrubber
 from .bubble import BubbleEvent, BubbleSplitter
 from .chat_emitter import Emitter
+from .system_prompt import refresh_volatile_header_in_prompt
 
 logger = get_logger(__name__)
 
@@ -101,16 +103,19 @@ async def _stream_llm_response(
     client = provider.raw_client()
     reasoning = {"effort": reasoning_effort} if reasoning_effort and reasoning_effort in getattr(provider, "REASONING_EFFORTS", frozenset()) else None
     scaled_temperature = provider.scale_temperature(temperature) if temperature is not None else None
+    instructions = refresh_volatile_header_in_prompt(
+        context["instructions"],
+        user_local_tz=user_local_tz,
+        lang=lang,
+    )
     kwargs = build_responses_kwargs(
         model=model_name,
-        instructions=context["instructions"],
+        instructions=instructions,
         input_items=context["input"],
         tools=active_schemas,
         stream=True,
         reasoning=reasoning,
         temperature=scaled_temperature,
-        user_local_tz=user_local_tz,
-        lang=lang,
     )
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。

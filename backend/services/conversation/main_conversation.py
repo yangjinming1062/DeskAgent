@@ -3,6 +3,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .presets import resolve_preset_meta
+
 # ``SPECIAL_KIND`` 对应系统预设对话：每用户固定 5 条（companion/developer/product_manager/copywriter/language_teacher），system_preset_id 标注具体预设。原来的 ``MAIN_KIND = 'main'`` 单条主会话已合并入 ``special + system_preset_id='companion'``。
 SPECIAL_KIND = "special"
 # 自发的 cron 轮次独占独立会话：渲染端的 ``session.get_main`` 无法通过 conversation_id 匹配去取消进行中的 cron chat_task，cron 写入也不会与主会话 prompt.submit 交错；该会话仅 WS 派发器挂载。
@@ -42,9 +44,8 @@ async def get_or_create_special_conversation(db: AsyncSession, user_id: int, pre
     conv = await get_special_conversation(db, user_id, preset_id)
     if conv is not None:
         return conv
-    from services.chat.prompt_presets import resolve_preset
 
-    preset = resolve_preset(preset_id)
+    preset = resolve_preset_meta(preset_id)
     conv = Conversation(
         user_id=user_id,
         kind=SPECIAL_KIND,

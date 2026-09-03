@@ -21,7 +21,8 @@ from modules.system import AgentPromptConfig, ChatRequest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..companion import (
+from services.companion import (
+    BUILTIN_EMOTIONS,
     build_outfit_extras,
     build_system_prompt_extras,
     build_user_profile_extras,
@@ -29,12 +30,14 @@ from ..companion import (
     format_inferred_profile_block,
     format_proactive_memory_block,
     get_active_model,
+    resolve_allowed_emotions,
+    resolve_custom_expressions,
+    resolve_user_timezone,
     retrieve_proactive_memories,
 )
-from ..companion.memory_bootstrap import resolve_user_timezone
-from ..conversation import SPECIAL_KIND, UI_ONLY_SUBTYPES
-from ..gateway import RuntimeSession
-from ..llm import (
+from services.companion.mesh2d import DEFAULT_ACTIONS, NON_LLM_ACTIONS
+from services.conversation import SPECIAL_KIND, UI_ONLY_SUBTYPES
+from services.llm import (
     MissingLlmConfigError,
     ProviderConfig,
     ServiceType,
@@ -46,8 +49,8 @@ from ..llm import (
     resolve_video_chain,
     resolve_vision_chain,
 )
-from ..tools import REGISTRY, NativeMemory, schema_name
-from .affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
+from services.tools import REGISTRY, NativeMemory, schema_name
+
 from .prompt_presets import DEFAULT_PRESET_ID, resolve_preset
 from .system_prompt import build_system_prompt
 
@@ -87,11 +90,11 @@ async def load_user_settings(db: AsyncSession, user_id: int) -> dict[str, str]:
     return {s.setting_key: s.setting_value for s in rows}
 
 
-def merge_session_settings(user_settings: dict, runtime: RuntimeSession | None) -> dict:
+def merge_session_settings(user_settings: dict, session_settings: dict | None) -> dict:
     """构建本轮生效的 settings：会话级覆写覆盖全局 UserSetting；``SESSION_TO_GLOBAL_KEY_ALIASES`` 指定的会话键会重映射到对应全局键，使下游（斜杠命令、guardrail、未来工具）看到一致命名空间。"""
     merged = dict(user_settings)
-    if runtime is not None and runtime.settings:
-        for k, v in runtime.settings.items():
+    if session_settings:
+        for k, v in session_settings.items():
             target_key = SESSION_TO_GLOBAL_KEY_ALIASES.get(k, k)
             merged[target_key] = v
     return merged
@@ -325,8 +328,6 @@ async def build_turn_inputs(
         available_actions = sorted(set(clip_map) - NON_ACTION_CLIP_KEYS) if isinstance(clip_map, dict) else []
     if not available_actions:
         # 本地物理/交互触发动作不进 LLM 清单：脱离触发上下文播放是悬空姿态。
-        from services.companion.mesh2d import DEFAULT_ACTIONS, NON_LLM_ACTIONS
-
         available_actions = sorted(set(DEFAULT_ACTIONS) - NON_LLM_ACTIONS)
     resolved_preset = resolve_preset(conv.system_preset_id)
     # 仅 companion 预设（含 cron 主动消息）注入 per-message [HH:MM] 前缀与跨天分界；

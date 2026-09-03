@@ -2,7 +2,9 @@ import asyncio
 import contextlib
 import random
 import secrets
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from typing import Any
 
 import asyncpg
 from components import BackgroundTask, begin_local_scope, get_logger, safe_json_loads, session_scope, utc_now
@@ -10,9 +12,7 @@ from fastapi import WebSocket
 from modules.ws import CRON_TURN_EVENT, WSEvent
 from sqlalchemy import select, update
 
-from .emitter import JsonRpcEmitter
 from .jsonrpc import JsonRpcDispatcher
-from .runtime import RuntimeSession
 
 logger = get_logger(__name__)
 
@@ -31,6 +31,27 @@ WORKER_ID = f"worker-{secrets.token_hex(4)}"
 # 按 user 持有强引用，避免 spawn 的 cron turn 在运行到一半时被 GC（CPython bpo-46662）。
 _cron_turn_tasks: dict[int, set[asyncio.Task]] = {}
 
+CronTurnHandler = Callable[[int, dict], Awaitable[None]]
+_cron_turn_handler: CronTurnHandler | None = None
+
+
+def register_cron_turn_handler(handler: CronTurnHandler) -> None:
+    global _cron_turn_handler
+    _cron_turn_handler = handler
+
+
+def get_cron_turn_handler() -> CronTurnHandler | None:
+    """返回已注册的 cron_turn_handler；若未注册则尝试从 services.gateway.cron_turns 自愈加载。"""
+    global _cron_turn_handler
+    if _cron_turn_handler is None:
+        try:
+            from services.gateway.cron_turns import execute_cron_turn
+
+            _cron_turn_handler = execute_cron_turn
+        except Exception:
+            pass
+    return _cron_turn_handler
+
 
 class _WakeupState:
     def __init__(self) -> None:
@@ -45,7 +66,7 @@ class _WakeupState:
 # 全局唤醒状态，用于即时冲刷（Instant Drain）与 NOTIFY 触发
 _WAKEUP_STATE: _WakeupState = _WakeupState()
 
-_WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")
+_WS_EVENT_LOOP = BackgroundTask("ws.event_loop")
 
 
 def notify_ws_event_loop() -> None:
@@ -73,7 +94,7 @@ def cancel_user_cron_turns(user_id: int) -> int:
     return cancelled
 
 
-async def drain() -> None:
+async def drain_cron_turns() -> None:
     """展平 per-user 的 _cron_turn_tasks → 取消并 await 所有 task。"""
     pending: list[asyncio.Task] = []
     for user_tasks in list(_cron_turn_tasks.values()):
@@ -91,7 +112,7 @@ class ConnectionManager:
         self.active_connections: dict[int, WebSocket] = {}
         self._dispatchers: dict[int, JsonRpcDispatcher] = {}
         # 同会话 per-runtime map（同 _dispatchers 一并注册；存引用，runtime 挂载/卸载由 handlers.py 直接 mutate 同一 dict）。
-        self._runtime_sessions: dict[int, dict[str, RuntimeSession]] = {}
+        self._runtime_sessions: dict[int, dict[str, Any]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: int) -> None:
         """accept 并注册；同一用户已存在的 socket 也在此处关闭，把单设备登录不变量集中在一处，不与调用方分散。"""
@@ -114,11 +135,11 @@ class ConnectionManager:
         logger.info("User dispatcher registered", extra={"user_id": user_id})
         notify_ws_event_loop()
 
-    def register_runtime_sessions(self, user_id: int, runtime_sessions: dict[str, RuntimeSession]) -> None:
+    def register_runtime_sessions(self, user_id: int, runtime_sessions: dict[str, Any]) -> None:
         """注册同用户 runtime_sessions dict 引用——handlers.py 持续 mutate 此 dict，MANAGER 仅持有引用以供 REST 等非 WS 路径按 user_id 查表。"""
         self._runtime_sessions[user_id] = runtime_sessions
 
-    def get_runtime_sessions(self, user_id: int) -> dict[str, RuntimeSession] | None:
+    def get_runtime_sessions(self, user_id: int) -> dict[str, Any] | None:
         return self._runtime_sessions.get(user_id)
 
     async def aunregister_dispatcher(self, user_id: int) -> None:
@@ -169,19 +190,16 @@ async def _claim_pending_events(local_user_ids: list[int], limit: int = WS_EVENT
     """以原子锁认领待投递事件。"""
     now = utc_now()
     claimed: list[tuple[int, str, str, int, int]] = []
+    conditions = [
+        WSEvent.user_id.in_(local_user_ids),
+        WSEvent.status == "PENDING",
+        WSEvent.next_retry_at <= now,
+    ]
+    if get_cron_turn_handler() is None:
+        conditions.append(WSEvent.event_type != CRON_TURN_EVENT)
+
     async with session_scope() as db:
-        subq = (
-            select(WSEvent.id)
-            .where(
-                WSEvent.user_id.in_(local_user_ids),
-                WSEvent.status == "PENDING",
-                WSEvent.next_retry_at <= now,
-            )
-            .order_by(WSEvent.created_at, WSEvent.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-            .scalar_subquery()
-        )
+        subq = select(WSEvent.id).where(*conditions).order_by(WSEvent.created_at, WSEvent.id).limit(limit).with_for_update(skip_locked=True).scalar_subquery()
         rows = (
             await db.execute(
                 update(WSEvent)
@@ -322,7 +340,16 @@ async def _process_events(seen: int = -1) -> int:
                 continue
 
             if event_type == CRON_TURN_EVENT:
-                task = asyncio.create_task(_execute_cron_turn(user_id, payload))
+                handler = get_cron_turn_handler()
+                if handler is None:
+                    logger.warning("cron turn handler not registered; reverting event %s to PENDING", event_id)
+                    async with session_scope() as db:
+                        await db.execute(
+                            update(WSEvent).where(WSEvent.id == event_id).values(status="PENDING", locked_by=None, locked_at=None, next_retry_at=utc_now() + timedelta(seconds=5)),
+                        )
+                        await db.commit()
+                    continue
+                task = asyncio.create_task(handler(user_id, payload))
                 user_tasks = _cron_turn_tasks.setdefault(user_id, set())
                 user_tasks.add(task)
                 task.add_done_callback(lambda t, uid=user_id: _discard_cron_task(uid, t))
@@ -354,40 +381,9 @@ async def _process_events(seen: int = -1) -> int:
         return _WAKEUP_STATE.version
 
 
-async def _execute_cron_turn(user_id: int, payload: dict) -> None:
-    """执行 scheduler.cron 请求的自主 chat turn；只能由 outbox claim 胜出的 replica 执行——turn 的 emitter、tool future、runtime session 都是进程本地的。"""
-    dispatcher = MANAGER.get_dispatcher(user_id)
-    if dispatcher is None:
-        logger.debug("cron turn claimed but user disconnected", extra={"user_id": user_id})
-        return
-    prompt = (payload.get("prompt") or "").strip()
-    if not prompt:
-        return
-
-    from modules.system import ChatMessageRequest, ChatRequest
-
-    from services.chat import load_user_settings, run_chat_turn
-    from services.conversation import get_or_create_cron_conversation
-    from services.llm import resolve_user_llm_config
-
-    async with session_scope() as db:
-        # 使用专门的 cron 会话（CRON_KIND）而非用户主会话——WS 重连的 session.get_main 不会取消进行中的 cron turn，cron 的 user-role 行也不会与 prompt.submit 写入交错。
-        conv = await get_or_create_cron_conversation(db, user_id)
-        session_id = str(conv.id)
-        llm_config = await resolve_user_llm_config(db, user_id)
-        user_settings = await load_user_settings(db, user_id)
-        req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=prompt))
-
-    emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
-    try:
-        await run_chat_turn(req, llm_config, user_settings, user_id, emitter)
-    except Exception as e:
-        logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": payload.get("job_id")})
-        with contextlib.suppress(Exception):
-            await dispatcher.push_error_event(str(e), session_id=session_id)
-
-
-def start_ws_event_loop(dsn: str) -> None:
+def start_ws_event_loop(dsn: str, *, cron_turn_handler: CronTurnHandler | None = None) -> None:
+    if cron_turn_handler is not None:
+        register_cron_turn_handler(cron_turn_handler)
     _WS_EVENT_LOOP.start(ws_event_loop(dsn))
 
 
