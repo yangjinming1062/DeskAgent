@@ -19,7 +19,7 @@ interface MetaFile {
   size: number
 }
 
-export interface OpfsBlobCacheOptions {
+interface OpfsBlobCacheOptions {
   dirName: string
   blobSuffix: string
   maxFiles?: number
@@ -33,7 +33,7 @@ interface InFlightFetch {
   promise: Promise<ArrayBuffer | null>
 }
 
-export interface FetchWithCacheOptions {
+interface FetchWithCacheOptions {
   url: string
   contentHash?: string | null
   signal?: AbortSignal

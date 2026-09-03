@@ -6,12 +6,6 @@ import { notifyError } from '@/shared/store/notifications'
 
 type SaveResult = { ok: true } | { ok: false; error: string }
 
-type Patch = {
-  path: readonly (string | number)[]
-  value?: unknown
-  op?: 'set' | 'delete'
-}
-
 type Config = Record<string, unknown>
 
 export function getIn(obj: unknown, path: readonly (string | number)[]): unknown {
@@ -45,7 +39,6 @@ interface UseRunnerConfigResult {
   setConfig: React.Dispatch<React.SetStateAction<Config | null>>
   isLoading: boolean
   write: (content: string) => Promise<SaveResult>
-  patch: (p: Patch) => Promise<SaveResult>
 }
 
 export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
@@ -74,7 +67,5 @@ export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
   const write = async (content: string): Promise<SaveResult> =>
     toWriteResult(await window.spiritagent.runnerConfig.write(content))
 
-  const patch = async (p: Patch): Promise<SaveResult> => toWriteResult(await window.spiritagent.runnerConfig.patch(p))
-
-  return { config, setConfig, isLoading, write, patch }
+  return { config, setConfig, isLoading, write }
 }

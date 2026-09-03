@@ -61,5 +61,3 @@ export function createBootProgressMachine({ getMainWindow, rememberLog }: BootPr
     update
   }
 }
-
-export type BootProgressMachine = ReturnType<typeof createBootProgressMachine>

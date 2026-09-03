@@ -10,7 +10,7 @@ import {
   SpiritAgentRpcError,
   SpiritAgentRpcErrorCode
 } from '@/shared/lib/gateway-protocol'
-import { fuzzyFilterCommands, type SlashCommandMeta } from '@/shared/lib/slash-commands'
+import type { SlashCommandMeta } from '@/shared/lib/slash-commands'
 import type { SessionMessage } from '@/shared/types/spiritagent'
 
 function slashErrorToMessage(err: unknown): string {
@@ -118,7 +118,4 @@ async function executeSlashCommand(
   }
 }
 
-export { executeSlashCommand, slashErrorToMessage, slashPreCheck }
-
-// Re-export fuzzy filter from shared — slash popover uses it too.
-export { fuzzyFilterCommands }
+export { executeSlashCommand, slashPreCheck }

@@ -10,5 +10,4 @@ export type SettingsTab =
 
 export interface SettingsPageProps {
   onClose: () => void
-  onConfigSaved?: () => void
 }

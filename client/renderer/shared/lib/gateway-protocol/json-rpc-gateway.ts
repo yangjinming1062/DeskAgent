@@ -38,7 +38,7 @@ type PendingCall = {
   timer?: ReturnType<typeof setTimeout>
 }
 
-export interface GatewayClientOptions {
+interface GatewayClientOptions {
   closedErrorMessage?: string
   connectErrorMessage?: string
   connectTimeoutMs?: number

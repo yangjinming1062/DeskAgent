@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
-export interface FormSection<T> {
+interface FormSection<T> {
   isDirty: boolean
   reset: (config: SpiritAgentConfigResponse) => void
   set: (patch: Partial<T>) => void

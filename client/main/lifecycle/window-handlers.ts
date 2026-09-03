@@ -382,12 +382,10 @@ export function createWindowHandlers({
     configureSpellChecker,
     installContentSecurityPolicy,
     installContextMenu,
-    installDevToolsShortcut,
     installMediaPermissions,
     installStandardWindowHandlers,
     installZoomShortcuts,
-    registerPowerResumeListeners,
-    toggleDevTools
+    registerPowerResumeListeners
   }
 }
 

@@ -7,7 +7,6 @@ import type { SpiritAgentGateway } from '@/shared/spiritagent'
 import { $gateway, $gatewayState } from '@/shared/store/gateway'
 
 interface UseGatewayRequestResult {
-  gatewayRef: React.RefObject<SpiritAgentGateway | null>
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
 
@@ -100,5 +99,5 @@ export function useGatewayRequest(): UseGatewayRequestResult {
     [ensureGatewayOpen]
   )
 
-  return { gatewayRef, requestGateway }
+  return { requestGateway }
 }

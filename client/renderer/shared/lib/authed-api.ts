@@ -6,7 +6,7 @@ import { currentClearEpoch } from './storage'
 
 /** 鉴权 RPC 的统一返回：不把 auth-loss / 网络错 / 后端错 / void body 压成同一个 null，
  * 调用方按 reason 分流——避免 mesh2d 等 store 把"登出 race"误判成"请求成功无返回"而把状态卡在 'generating'。 */
-export type AuthedApiResult<T> =
+type AuthedApiResult<T> =
   | { ok: true; value: T | null }
   | { ok: false; reason: 'unauth' }
   | { ok: false; reason: 'err'; error: unknown }

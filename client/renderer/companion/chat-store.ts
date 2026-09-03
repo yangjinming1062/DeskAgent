@@ -62,10 +62,6 @@ export interface SessionSettings {
 
 export const $sessionSettings = atom<SessionSettings>({})
 
-export function setSessionSettings(settings: SessionSettings): void {
-  $sessionSettings.set(settings)
-}
-
 export function updateSessionSetting<K extends keyof SessionSettings>(key: K, value: SessionSettings[K]): void {
   $sessionSettings.set({
     ...$sessionSettings.get(),

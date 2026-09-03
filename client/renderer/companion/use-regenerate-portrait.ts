@@ -13,9 +13,6 @@ import {
 
 import { playOnboardingAudio } from './onboarding/onboarding-audio'
 
-const DEFAULT_SUCCESS_HINT = '换好啦，新形象已生成～'
-const DEFAULT_FAILURE_HINT = '暂时换不出来，稍后再试吧'
-
 interface UseRegeneratePortraitOptions {
   /**
    * 走 refImage 分支（POST /avatar/from-image），而不是 avatar.regenerate RPC。
@@ -33,13 +30,8 @@ interface UseRegeneratePortraitOptions {
    * 默认关闭，避免非 onboarding 页面意外加上没有申请的音效行为。
    */
   playAudioOnSuccess?: boolean
-  /** 覆盖成功提示文案。 */
-  successHint?: string
-  /** 覆盖失败提示文案。 */
-  failureHint?: string
   /**
-   * 通过 `regenerate(feedback)` 传入的可选逐次反馈。设置后，
-   * hook 自身的文案不会覆盖本次调用的值——callFeedback 优先。
+   * 通过 `regenerate(feedback)` 传入的可选逐次反馈。
    */
   feedback?: string
   /**
@@ -61,8 +53,6 @@ interface UseRegeneratePortraitResult {
    */
   regenerate: (feedback?: string, overrideRef?: PickedImage | null) => Promise<void>
   busy: boolean
-  hint: string | null
-  clearHint: () => void
 }
 
 /**
@@ -74,17 +64,8 @@ interface UseRegeneratePortraitResult {
 export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}): UseRegeneratePortraitResult {
   const { requestGateway } = useGatewayRequest()
   const [busy, setBusy] = useState(false)
-  const [hint, setHint] = useState<string | null>(null)
 
-  const {
-    refImage,
-    presentationRef,
-    playAudioOnSuccess = false,
-    successHint,
-    failureHint,
-    feedback: optionFeedback,
-    onRegenerated
-  } = options
+  const { refImage, presentationRef, playAudioOnSuccess = false, feedback: optionFeedback, onRegenerated } = options
 
   const regenerate = useCallback(
     async (callFeedback?: string, overrideRef?: PickedImage | null) => {
@@ -94,11 +75,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       const feedback = fromCall ?? fromOptions ?? fromAtom
       const effRefImage = overrideRef !== undefined ? overrideRef : refImage
 
-      const resolvedSuccess = successHint ?? DEFAULT_SUCCESS_HINT
-      const resolvedFailure = failureHint ?? DEFAULT_FAILURE_HINT
-
       setBusy(true)
-      setHint(null)
 
       const onApplied = () => {
         pushPortraitEntry({
@@ -144,7 +121,6 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
             onRegenerated?.({ ...applied, id: res.id ?? null })
             onApplied()
-            setHint(resolvedSuccess)
 
             return
           }
@@ -172,12 +148,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
           onRegenerated?.({ ...applied, id: settled.id ?? null })
           onApplied()
-          setHint(resolvedSuccess)
-        } else {
-          setHint(settled && 'error' in settled ? (settled.error ?? resolvedFailure) : resolvedFailure)
         }
       } catch {
-        setHint(resolvedFailure)
       } finally {
         setBusy(false)
       }
@@ -186,19 +158,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     // 都会传入新字面量，否则会让 `regenerate` 每次渲染都获得新身份，
     // 抵消下游 React.memo 的效果。optionFeedback 参与依赖是为了让调用方
     // 在不重新挂载 hook 的情况下更改它。
-    [
-      requestGateway,
-      refImage,
-      presentationRef,
-      playAudioOnSuccess,
-      successHint,
-      failureHint,
-      optionFeedback,
-      onRegenerated
-    ]
+    [requestGateway, refImage, presentationRef, playAudioOnSuccess, optionFeedback, onRegenerated]
   )
 
-  const clearHint = useCallback(() => setHint(null), [])
-
-  return { regenerate, busy, hint, clearHint }
+  return { regenerate, busy }
 }

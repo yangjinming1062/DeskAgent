@@ -82,7 +82,7 @@ const HAPTIC_INTENTS: Record<HapticIntent, HapticConfig> = {
   }
 }
 
-export type HapticTrigger = (input?: HapticInput, options?: TriggerOptions) => Promise<void> | undefined
+type HapticTrigger = (input?: HapticInput, options?: TriggerOptions) => Promise<void> | undefined
 
 let registeredTrigger: HapticTrigger | null = null
 let lastSelectionAt = 0

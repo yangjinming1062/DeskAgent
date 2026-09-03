@@ -107,28 +107,28 @@ export function persistValidatedJson<T>(key: string, value: T, isPersistable: (v
   }
 }
 
-export interface PersistedAtomOptions<T> {
+interface PersistedAtomOptions<T> {
   key: string
   fallback: T
   isPersistable?: (val: unknown) => val is T
   preserveOnLogout?: boolean
 }
 
-export interface PersistedAtomResult<T> {
+interface PersistedAtomResult<T> {
   $atom: WritableAtom<T>
   set: (next: T | Partial<T>) => void
   reset: () => void
   get: () => T
 }
 
-export interface PersistedEnumOptions<T extends string> {
+interface PersistedEnumOptions<T extends string> {
   key: string
   allowed: readonly T[]
   fallback: T
   preserveOnLogout?: boolean
 }
 
-export interface PersistedEnumResult<T extends string> {
+interface PersistedEnumResult<T extends string> {
   $atom: WritableAtom<T>
   set: (next: T) => void
   reset: () => void

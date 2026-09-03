@@ -66,16 +66,16 @@ function readCanvasSize(canvas: HTMLCanvasElement): { width: number; height: num
 }
 
 export class Engine {
-  readonly renderer: AnyRenderer
-  readonly backendKind: EngineBackendKind
+  private readonly renderer: AnyRenderer
+  private readonly backendKind: EngineBackendKind
   readonly canvas: HTMLCanvasElement
-  readonly scene: THREE.Scene
-  readonly camera: THREE.PerspectiveCamera
-  readonly clock = new THREE.Clock()
+  private readonly scene: THREE.Scene
+  private readonly camera: THREE.PerspectiveCamera
+  private readonly clock = new THREE.Clock()
   readonly character: CharacterController
-  readonly lighting: LightingRig
+  private readonly lighting: LightingRig
   /** Measured render rate, refreshed once per second (diagnostics only). */
-  readonly stats = { fps: 0 }
+  private readonly stats = { fps: 0 }
 
   private rafId: number | null = null
   private timerId: ReturnType<typeof setTimeout> | null = null

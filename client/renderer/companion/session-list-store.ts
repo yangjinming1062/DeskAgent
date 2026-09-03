@@ -55,7 +55,7 @@ function parseSessionSort(raw: null | string): SessionSort {
   return SESSION_SORTS.includes(raw as SessionSort) ? (raw as SessionSort) : 'recent'
 }
 
-// 内部查询兜底（供 renameSession 等命令式操作回滚用）；响应式链路走 $currentSessionInfo。
+// 内部查询兜底（供 renameSession 等命令式操作回滚用）。
 function findSessionInfo(sessionId: string): SessionInfo | undefined {
   return (
     $sessions.get().find(s => s.id === sessionId) ??
@@ -64,23 +64,30 @@ function findSessionInfo(sessionId: string): SessionInfo | undefined {
   )
 }
 
-export const $currentSessionInfo = computed(
-  [$chatSessionId, $sessions, $archivedSessions, $searchResults],
-  (id, sessions, archived, search) => {
-    if (!id) {
-      return undefined
-    }
+function findCurrentSession(): SessionInfo | undefined {
+  const id = $chatSessionId.get()
 
-    return sessions.find(s => s.id === id) ?? archived.find(s => s.id === id) ?? search.find(s => s.id === id)
+  if (!id) {
+    return undefined
   }
-)
 
-export const $currentSessionTitle = computed(
-  $currentSessionInfo,
-  info => (info?.title && info.title.trim()) || strings.chat.defaultSessionTitle
-)
+  return (
+    $sessions.get().find(s => s.id === id) ??
+    $archivedSessions.get().find(s => s.id === id) ??
+    $searchResults.get().find(s => s.id === id)
+  )
+}
 
-export const $currentSessionKind = computed($currentSessionInfo, info => info?.kind ?? '')
+export const $currentSessionTitle = computed([$chatSessionId, $sessions, $archivedSessions, $searchResults], () => {
+  const info = findCurrentSession()
+
+  return (info?.title && info.title.trim()) || strings.chat.defaultSessionTitle
+})
+
+export const $currentSessionKind = computed(
+  [$chatSessionId, $sessions, $archivedSessions, $searchResults],
+  () => findCurrentSession()?.kind ?? ''
+)
 
 export async function ensureChatSession(): Promise<string> {
   const existing = $chatSessionId.get()

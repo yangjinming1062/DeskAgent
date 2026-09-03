@@ -54,7 +54,7 @@ const readTemperatureState = (config: SpiritAgentConfigResponse): TemperatureFor
   compression_temperature: config.chat?.compression_temperature ?? EMPTY_TEMPERATURE.compression_temperature
 })
 
-export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}): React.JSX.Element {
+export function InferenceSettings(): React.JSX.Element {
   const t = strings
   const a = t.settings.inference
 
@@ -122,7 +122,6 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
       temperature.reset(config)
       triggerHaptic('success')
       notify({ kind: 'success', title: a.heading, message: a.saved })
-      onConfigSaved?.()
     } catch (err) {
       notifyError(err, a.saveFailed)
     } finally {

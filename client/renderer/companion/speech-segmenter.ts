@@ -2,7 +2,7 @@
  * 流式文本 → TTS 句子切分器：句末标点成段，超长强切，成句时清洗 Markdown。
  */
 
-export const DEFAULT_MAX_SEGMENT_CHARS = 120
+const DEFAULT_MAX_SEGMENT_CHARS = 120
 
 const CJK_ENDINGS = '。！？；…'
 const ASCII_ENDINGS = '.!?'
@@ -18,7 +18,7 @@ const MARKDOWN_PATTERNS: readonly [RegExp, string][] = [
 /**
  * 剥离常见 Markdown 标记（加粗、行内代码、超链接、行首无序列表标记）。
  */
-export function speakable(text: string): string {
+function speakable(text: string): string {
   let result = text
 
   for (const [pattern, repl] of MARKDOWN_PATTERNS) {
