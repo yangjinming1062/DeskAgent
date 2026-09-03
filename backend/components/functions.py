@@ -11,9 +11,6 @@ from .constants import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
-TRUTHY_STRINGS: frozenset[str] = frozenset({"1", "true", "yes", "on", "enabled"})
-FALSY_STRINGS: frozenset[str] = frozenset({"0", "false", "no", "off", "disabled"})
-
 
 def apply_partial(obj: Any, payload: BaseModel, /, *, exclude: frozenset[str] = frozenset()) -> None:
     for field, value in payload.model_dump(exclude_unset=True, exclude=exclude).items():
@@ -125,32 +122,6 @@ def resolve_prompt_text(texts: dict[str, str], language: str | None) -> str:
     return texts[lang]
 
 
-def as_bool(value: Any, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int | float):
-        return bool(value)
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in TRUTHY_STRINGS:
-            return True
-        if lowered in FALSY_STRINGS:
-            return False
-    return default
-
-
-def positive_int(value: Any, default: int) -> int:
-    if value is None:
-        return default
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed >= 1 else default
-
-
 def coerce_int(value: Any, default: int | None) -> int | None:
     """``int(value)`` + fallback；允许 ``default=None`` 表示「非法」信号。"""
     if value is None:
@@ -201,10 +172,3 @@ def approx_text_tokens(text: str) -> int:
     cjk_count = len(_CJK_CHARS.findall(text))
     other_count = len(text) - cjk_count
     return max(1, int(cjk_count * 1.3 + (other_count + 3) // 4))
-
-
-def approx_message_tokens(messages: list[dict] | None) -> int:
-    """基于 CJK 与字符感知的 token 估算。"""
-    if not messages:
-        return 0
-    return sum(approx_text_tokens(str(m.get("content") or "")) for m in messages)

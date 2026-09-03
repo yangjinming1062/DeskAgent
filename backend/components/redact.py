@@ -176,15 +176,6 @@ _GATED_RULES_DEFAULT: list[tuple[str, re.Pattern, Callable[[re.Match], str]]] = 
     ("+", _SIGNAL_PHONE_RE, _sub_phone),
 ]
 
-# 已知为源码时跳过 ENV/JSON-field 规则——`MAX_TOKENS=***` 和 `"apiKey": "test"` 这类 fixture 会误伤。
-_GATED_RULES_CODE_SAFE: list[tuple[str, re.Pattern, Callable[[re.Match], str]]] = [
-    (":", _TELEGRAM_RE, _sub_telegram),
-    ("BEGIN-----", _PRIVATE_KEY_RE, _sub_private_key),
-    ("://", _DB_CONNSTR_RE, _sub_db_connstr),
-    ("eyJ", _JWT_RE, _sub_jwt),
-    ("+", _SIGNAL_PHONE_RE, _sub_phone),
-]
-
 
 def _extract_literal_prefix(pattern: str) -> str:
     """取正则 pattern 从开头到首个元字符的字面前缀。"""
@@ -203,21 +194,21 @@ def _has_known_prefix_substring(text: str) -> bool:
     return any(p in text for p in _PREFIX_SUBSTRINGS)
 
 
-def redact_sensitive_text(text: str | None, *, force: bool = False, code_file: bool = False) -> str | None:
-    """对文本应用所有脱敏 pattern；regex 都走 substring 预筛 gate，无凭据日志行全扫描降 ~68%；force=True 用于安全边界绝不返原文，code_file=True 时跳过 ENV/JSON-field 规则。"""
+def redact_sensitive_text(text: str | None) -> str | None:
+    """对文本应用所有脱敏 pattern；regex 都走 substring 预筛 gate，无凭据日志行全扫描降 ~68%。"""
     if text is None:
         return None
     if not isinstance(text, str):
         text = str(text)
     if not text:
         return text
-    if not (force or _REDACT_ENABLED):
+    if not _REDACT_ENABLED:
         return text
 
     if _has_known_prefix_substring(text):
         text = _PREFIX_RE.sub(_sub_prefix, text)
 
-    text = _apply_gated_rules(text, _GATED_RULES_CODE_SAFE if code_file else _GATED_RULES_DEFAULT)
+    text = _apply_gated_rules(text, _GATED_RULES_DEFAULT)
 
     if "&" in text and "=" in text:
         text = _redact_form_body(text)

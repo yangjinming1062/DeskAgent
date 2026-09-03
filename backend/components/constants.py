@@ -1,7 +1,3 @@
-# ~4 chars/token，西文基准 Token 比例；混合/中文使用 approx_text_tokens。
-CHARS_PER_TOKEN: int = 4
-
-
 AGENT_MAX_LOOP_TURNS: int = 150
 
 # 保留 tool_call id 的前 24 个 hex 字符（96 bit 熵）。

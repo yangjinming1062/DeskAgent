@@ -1,18 +1,15 @@
 import contextvars
 import secrets
 import time
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import HTTPException, Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from .config import SETTINGS
 
-HTTP_REQUESTS_TOTAL = Counter("spiritagent_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
-HTTP_REQUEST_DURATION_SECONDS = Histogram("spiritagent_http_request_duration_seconds", "HTTP request latency in seconds", ["method", "path"])
-WS_CONNECTIONS_ACTIVE = Gauge("spiritagent_ws_connections_active", "Active WebSocket connections count")
 RPC_REQUESTS_TOTAL = Counter("spiritagent_rpc_requests_total", "Total JSON-RPC requests handled over WebSocket", ["method", "status"])
 RPC_REQUEST_DURATION_SECONDS = Histogram("spiritagent_rpc_request_duration_seconds", "JSON-RPC execution duration in seconds", ["method"])
 
@@ -52,25 +49,6 @@ async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) 
             method = name.removeprefix("rpc.")
             RPC_REQUESTS_TOTAL.labels(method=method, status=status).inc()
             RPC_REQUEST_DURATION_SECONDS.labels(method=method).observe(duration)
-
-
-@contextmanager
-def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
-    """sync 上下文管理器：记录 trace span。"""
-    trace_token: contextvars.Token | None = None
-    trace_id = _CURRENT_TRACE_ID.get()
-    if not trace_id:
-        trace_id = _mint_trace_id()
-        trace_token = _CURRENT_TRACE_ID.set(trace_id)
-    span_id = secrets.token_hex(8)
-    token_span = _CURRENT_SPAN_ID.set(span_id)
-    span_context = {"name": name, "trace_id": trace_id, "span_id": span_id, "attributes": attributes or {}}
-    try:
-        yield span_context
-    finally:
-        _CURRENT_SPAN_ID.reset(token_span)
-        if trace_token is not None:
-            _CURRENT_TRACE_ID.reset(trace_token)
 
 
 def check_metrics_auth(auth_header: str | None, token_header: str | None) -> None:
