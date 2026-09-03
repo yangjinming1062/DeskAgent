@@ -66,6 +66,10 @@ export function InferenceSettings(): React.JSX.Element {
   const chat = useFormSection(EMPTY_CHAT, readChatState)
   const temperature = useFormSection(EMPTY_TEMPERATURE, readTemperatureState)
 
+  const { reset: resetAgent } = agent
+  const { reset: resetChat } = chat
+  const { reset: resetTemperature } = temperature
+
   useEffect(() => {
     let cancelled = false
 
@@ -77,9 +81,9 @@ export function InferenceSettings(): React.JSX.Element {
           return
         }
 
-        agent.reset(config)
-        chat.reset(config)
-        temperature.reset(config)
+        resetAgent(config)
+        resetChat(config)
+        resetTemperature(config)
         setLoadError(null)
       } catch (err) {
         if (!cancelled) {
@@ -95,7 +99,7 @@ export function InferenceSettings(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [resetAgent, resetChat, resetTemperature])
 
   const isDirty = agent.isDirty || chat.isDirty || temperature.isDirty
 

@@ -38,7 +38,6 @@ export {
   IconDeviceDesktop as Monitor,
   IconPalette as Palette,
   IconLayoutSidebar as PanelLeft,
-  IconPaperclip as Paperclip,
   IconPencil as Pencil,
   IconPinned as Pin,
   IconPinnedOff as PinOff,
@@ -59,8 +58,7 @@ export {
   IconUsers as Users,
   IconVideo as Video,
   IconX as X,
-  IconBolt as Zap,
-  IconBoltFilled as ZapFilled
+  IconBolt as Zap
 } from '@tabler/icons-react'
 
 export type { Icon as IconComponent } from '@tabler/icons-react'

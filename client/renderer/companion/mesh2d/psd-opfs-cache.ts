@@ -9,12 +9,8 @@ const psdCache = new OpfsBlobCache({
   logTag: 'psd-opfs-cache'
 })
 
-export function clearPsdCache(): Promise<void> {
+function clearPsdCache(): Promise<void> {
   return psdCache.clear()
-}
-
-export function deletePsdCache(contentHash: string): Promise<void> {
-  return psdCache.delete(contentHash)
 }
 
 registerStorageClearHandler(clearPsdCache)

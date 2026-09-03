@@ -5,7 +5,7 @@ import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/s
 
 import type { SettingsView } from './settings/settings-view'
 
-export interface DockOpenRequest {
+interface DockOpenRequest {
   kind: 'chat' | 'settings'
   view?: SettingsView
 }
@@ -64,7 +64,6 @@ const lifecyclePersisted = definePersistedEnum<CompanionLifecycle>({
 
 export const $companionLifecycle = lifecyclePersisted.$atom
 export const setCompanionLifecycle = lifecyclePersisted.set
-export const resetCompanionLifecycle = lifecyclePersisted.reset
 
 export const $spriteState = atom<SpriteStateName>('idle')
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)

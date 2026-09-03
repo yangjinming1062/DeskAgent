@@ -28,9 +28,9 @@ interface ServerCommandEntry {
 }
 
 // 启动前为空，启动后由 fetchSlashCommandMeta 写入。
-export const $slashCommandMeta = atom<readonly SlashCommandMeta[]>([])
+const $slashCommandMeta = atom<readonly SlashCommandMeta[]>([])
 
-export function setSlashCommandMeta(metas: readonly SlashCommandMeta[]): void {
+function setSlashCommandMeta(metas: readonly SlashCommandMeta[]): void {
   $slashCommandMeta.set(metas)
 }
 
@@ -44,18 +44,18 @@ function normalizeServerEntry(entry: ServerCommandEntry): SlashCommandMeta {
 }
 
 /** 按名（已剥离前导 /，小写）查 SlashCommandMeta；atom 未加载时返回 undefined。 */
-export function getLocalSlashMeta(name: string): SlashCommandMeta | undefined {
+function getLocalSlashMeta(name: string): SlashCommandMeta | undefined {
   return $slashCommandMeta
     .get()
     .find(cmd => cmd.name === name.toLowerCase() || cmd.aliases.includes(name.toLowerCase()))
 }
 
 /** 列出所有命令（无别名重复），按 name 排序。 */
-export function listLocalSlashCommands(): SlashCommandMeta[] {
+function listLocalSlashCommands(): SlashCommandMeta[] {
   return [...$slashCommandMeta.get()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export interface ParsedSlashInput {
+interface ParsedSlashInput {
   /** 命中命令的元数据；未识别时为 undefined。 */
   command: SlashCommandMeta | undefined
   /** 命中的主名（已剥离前导 /，小写）。未识别时为原始 token。 */
@@ -219,7 +219,7 @@ export function fuzzyFilterCommands(query: string, limit = 8): ScoredSlashComman
   return scored.slice(0, limit)
 }
 
-export interface SlashCommandListResponse {
+interface SlashCommandListResponse {
   commands: readonly ServerCommandEntry[]
 }
 

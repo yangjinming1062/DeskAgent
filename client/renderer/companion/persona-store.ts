@@ -22,7 +22,7 @@ export interface PersonaDefinition {
 export const $persona = atom<PersonaDefinition | null>(null)
 export const $personalityTags = atom<string[]>([])
 
-export function resetPersona(): void {
+function resetPersona(): void {
   $persona.set(null)
   $personalityTags.set([])
 }

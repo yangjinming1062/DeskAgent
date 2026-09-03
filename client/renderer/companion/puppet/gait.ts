@@ -13,10 +13,10 @@ import { clamp } from '@runtime'
 
 import type { Locomotion } from '@/companion/spatial'
 
-export const STRIDE_PX = 36
-export const WALK_SPEED = 80
+const STRIDE_PX = 36
+const WALK_SPEED = 80
 
-export interface GaitPose {
+interface GaitPose {
   angleX: number
   angleY: number
   angleZ: number
@@ -32,7 +32,7 @@ export interface GaitPose {
  * EDGE_DOCK_LEAN_DEG 整体旋转完成，这里只负责贴身次级姿态：转头看向屏内、手扒边缘、
  * 微低头俯视。通道语义——angleX 水平转身(正=朝观众右转)/angleY 俯仰(正=抬头)/
  * angleZ 歪头/body 水平横移/armY 竖直抬手/armPos 竖直下压；左贴边由 mirrorClingPose 翻反对称组 */
-export const EDGE_CLING_BASE_POSE: GaitPose = {
+const EDGE_CLING_BASE_POSE: GaitPose = {
   armY: 1.8, // 手扒在屏幕边缘上（抬手 ~46px）
   armPos: 0,
   body: -0.15,
@@ -45,10 +45,7 @@ export const EDGE_CLING_BASE_POSE: GaitPose = {
 }
 
 /** 镜像趴姿：根据左右贴边侧翻转反对称通道符号，并根据装配档位进行幅度缩放 */
-export function mirrorClingPose(
-  side: 'left' | 'right',
-  tier: 'semantic' | 'grouped' | 'minimal' = 'grouped'
-): GaitPose {
+function mirrorClingPose(side: 'left' | 'right', tier: 'semantic' | 'grouped' | 'minimal' = 'grouped'): GaitPose {
   const scale = tier === 'semantic' ? 1.0 : 0.85
   const isLeft = side === 'left'
 
@@ -66,7 +63,7 @@ export function mirrorClingPose(
   }
 }
 
-export interface GaitFrameOutput {
+interface GaitFrameOutput {
   /** 步态增量通道（可加性叠加） */
   gaitOffsets: {
     body: number

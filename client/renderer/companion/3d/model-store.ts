@@ -150,7 +150,7 @@ export function setModelInfo(next: Partial<ModelInfo>): void {
   }
 }
 
-export function resetModel(): void {
+function resetModel(): void {
   modelInfoPersisted.reset()
   $modelLoadSettled.set(false)
   $glbLoadFailed.set(false)

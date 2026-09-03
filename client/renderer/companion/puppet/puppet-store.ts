@@ -14,7 +14,7 @@ import { log } from '@/shared/lib/log'
 import { definePersistedAtom } from '@/shared/lib/storage'
 import { $auth } from '@/shared/store/auth'
 
-export interface PuppetInfo {
+interface PuppetInfo {
   psdUrl: string | null
   contentHash: string | null
   error: string | null

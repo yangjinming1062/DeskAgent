@@ -4,7 +4,7 @@ import { pickAvatarImage, type PickedImage, resolvePortraitUrl } from '@/compani
 import { unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 
-export interface DesignMessage {
+interface DesignMessage {
   id: number
   role: 'user' | 'system'
   text: string
@@ -12,7 +12,7 @@ export interface DesignMessage {
   tone?: 'error' | 'info'
 }
 
-export interface DesignDraft {
+interface DesignDraft {
   id: number
   previewUrl: string
 }

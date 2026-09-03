@@ -53,7 +53,7 @@ export const $chatOpen = atom(false)
 export const $chatSessionKind = atom<string>('standard')
 
 // 当前会话独立参数配置（温度、压缩阈值、思考程度等）
-export interface SessionSettings {
+interface SessionSettings {
   temperature?: number
   context_compression_threshold?: number
   enable_context_compression?: boolean
@@ -138,7 +138,7 @@ export type PendingAttachment =
 
 // 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
 // sessionId 存在时点击气泡会切到该会话（媒体送达提示跳转用）。
-export interface ProactiveBubbleState {
+interface ProactiveBubbleState {
   text: string
   sessionId?: string
 }
@@ -365,7 +365,7 @@ export function pushStatusPill(subtype: string, text: string): string {
   return id
 }
 
-export interface PendingPromptItem {
+interface PendingPromptItem {
   text: string
   attachments?: ChatAttachment[]
 }
@@ -392,7 +392,7 @@ export const $chatTurnInFlight = atom<boolean>(false)
 // 当后端在 in-flight 回合期间发出 bubble.break 时置位，防止 message.complete 全文覆盖末尾气泡。
 export const $turnHadBubbleBreak = atom<boolean>(false)
 
-export interface ChatUndoDraft {
+interface ChatUndoDraft {
   session_id: string
   text: string
   content_type?: string

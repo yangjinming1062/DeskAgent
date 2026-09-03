@@ -71,7 +71,7 @@ export function persistString(key: string, value: null | string): void {
   }
 }
 
-export function storedJson<T>(key: string, fallback: T, validate?: (val: unknown) => val is T): T {
+function storedJson<T>(key: string, fallback: T, validate?: (val: unknown) => val is T): T {
   const raw = storedString(key)
 
   if (!raw) {
@@ -91,7 +91,7 @@ export function storedJson<T>(key: string, fallback: T, validate?: (val: unknown
   return parsed as T
 }
 
-export function storedEnum<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+function storedEnum<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   const raw = storedString(key)
 
   if (raw !== null && (allowed as readonly string[]).includes(raw)) {
@@ -99,12 +99,6 @@ export function storedEnum<T extends string>(key: string, allowed: readonly T[],
   }
 
   return fallback
-}
-
-export function persistValidatedJson<T>(key: string, value: T, isPersistable: (val: T) => boolean): void {
-  if (isPersistable(value)) {
-    persistString(key, JSON.stringify(value))
-  }
 }
 
 interface PersistedAtomOptions<T> {

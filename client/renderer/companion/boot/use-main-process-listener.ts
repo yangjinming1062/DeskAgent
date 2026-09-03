@@ -6,6 +6,9 @@ type ListenerName = {
     : never
 }[keyof Window['spiritagent']]
 
+// Caller-managed deps: the deps array is supplied by the caller and intentionally
+// escapes both `react-hooks/exhaustive-deps` and React Compiler's static analysis.
+/* eslint-disable react-hooks/exhaustive-deps, react-compiler/react-compiler */
 export function useMainProcessListener<K extends ListenerName>(
   name: K,
   fn: Parameters<NonNullable<Window['spiritagent'][K]>>[0],
@@ -18,6 +21,6 @@ export function useMainProcessListener<K extends ListenerName>(
     return () => {
       off?.()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- caller-managed deps
   }, deps)
 }
+/* eslint-enable react-hooks/exhaustive-deps, react-compiler/react-compiler */

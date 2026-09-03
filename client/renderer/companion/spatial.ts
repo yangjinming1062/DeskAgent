@@ -527,7 +527,7 @@ function stopRoam(): void {
   cancelMovement()
 }
 
-export function clearDockState(): void {
+function clearDockState(): void {
   if ($isEdgeDocked.get()) {
     $isEdgeDocked.set(false)
   }

@@ -81,7 +81,7 @@ const mesh2dInfoPersisted = definePersistedAtom<Mesh2DInfo>({
 export const $mesh2dInfo = mesh2dInfoPersisted.$atom
 export const resetMesh2D = mesh2dInfoPersisted.reset
 
-export function setMesh2DInfo(next: Partial<Mesh2DInfo>): void {
+function setMesh2DInfo(next: Partial<Mesh2DInfo>): void {
   mesh2dInfoPersisted.set(next)
 }
 

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode, useCallback, useEffect } from 'react'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
 import type { IconComponent } from '@/shared/lib/icons'
@@ -22,10 +22,10 @@ export function OverlayView({
   onClose,
   closeLabel = strings.common.close
 }: OverlayViewProps): React.JSX.Element {
-  const handleClose = (): void => {
+  const handleClose = useCallback((): void => {
     triggerHaptic('close')
     onClose()
-  }
+  }, [onClose])
 
   // Esc 关闭所有基于 OverlayView 的浮层。嵌套的 Radix 对话框会自行阻止冒泡，
   // 因此在 Settings 中打开（例如）模型选择器时，会先关闭选择器，
@@ -43,7 +43,7 @@ export function OverlayView({
     window.addEventListener('keydown', onKeyDown)
 
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [handleClose])
 
   return (
     <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-strong tech-grid">

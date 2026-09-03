@@ -310,7 +310,7 @@ export function hasGltf(key: string): boolean {
 }
 
 /** 清空所有缓存模板。用于用户登出或渲染器完全销毁。 */
-export function clearAllGltf(force = false): void {
+function clearAllGltf(force = false): void {
   for (const [key, cached] of cache.entries()) {
     if (cached.refCount === 0 || force) {
       disposeTemplate(cached)
