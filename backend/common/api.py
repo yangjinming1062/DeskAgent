@@ -8,13 +8,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_SENTINEL = object()
 
-
-def get_router(*, prefix: Any = _SENTINEL, tag: str | None = None, dependencies: list | None = None) -> APIRouter:
+def get_router(*, prefix: str | None = None, tag: str | None = None, dependencies: list | None = None) -> APIRouter:
     """默认 prefix 由 caller 模块的 leaf 名推导为 ``/api/<resource>``；传 ``prefix=""`` 挂载到根（admin 页面 router 用）。"""
     resource = inspect.currentframe().f_back.f_globals["__name__"].rsplit(".", 1)[-1]
-    if prefix is _SENTINEL:
+    if prefix is None:
         prefix = f"{SETTINGS.api_prefix}/{resource}"
     if tag is None:
         tag = resource
