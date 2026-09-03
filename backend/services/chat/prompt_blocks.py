@@ -1,6 +1,5 @@
 """系统提示词块渲染器注册表。
 
-每个内置 ``PromptPresetBlock`` 对应一个 ``(AgentPromptConfig) -> str | None`` 函数。
 ``substitute`` 在 ``preset.body`` 上严格替换 ``{{BLOCK_NAME}}`` 占位符：未识别 → logger.warning + 原文保留；空值 → 替换成空串后用 ``_collapse_blanks`` 收紧连续空行。
 """
 

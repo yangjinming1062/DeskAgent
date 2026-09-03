@@ -100,7 +100,6 @@ async def generate_mesh2d_model(
         user_id=user_id,
         avatar_id=avatar.id,
         status="generating",
-        priority=priority,
     )
     db.add(model)
     await db.commit()

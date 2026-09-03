@@ -1,4 +1,4 @@
-from .models import BINDING_STATUSES, PEER_STATUSES, ChannelBinding, ChannelPeer
+from .models import ChannelBinding, ChannelPeer
 from .schemas import (
     BindingInfo,
     ChannelBindingPutRequest,
@@ -12,8 +12,6 @@ from .schemas import (
 )
 
 __all__ = [
-    "BINDING_STATUSES",
-    "PEER_STATUSES",
     "BindingInfo",
     "ChannelBinding",
     "ChannelBindingPutRequest",

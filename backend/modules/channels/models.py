@@ -4,13 +4,6 @@ from common import ModelBase, TimestampMixin
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-# 绑定生命周期状态机：disabled（用户删除/停用）→ login_pending（等待扫码/配置）→ connected（适配器在跑）；
-# login_required（凭据过期需重新登录，微信 -14）、error（致命错误，守卫循环停止）。
-BINDING_STATUSES = ("disabled", "login_pending", "connected", "login_required", "error")
-
-# 对端访问控制三态：pending（已发过消息、等待主人审批，首条触发配对回复）、allowed、blocked（静默丢弃）。
-PEER_STATUSES = ("pending", "allowed", "blocked")
-
 
 class ChannelBinding(ModelBase, TimestampMixin):
     """用户 ↔ 外部 IM 渠道的绑定行：每 (user, channel) 一条（uq 约束），持有该渠道专属 im 会话的锚点。
