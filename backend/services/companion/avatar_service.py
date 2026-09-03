@@ -52,7 +52,6 @@ _AVATAR_QUALITY: str = "standard"
 _FULLBODY_PREFERRED_PROVIDERS = ("gemini", "grok")
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
-_EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 # 按用户加锁，避免 REST 头像路由与 WS RPC 并发再生成/选择时抢同一行
 AVATAR_JOB_LOCKS: dict[int, asyncio.Lock] = {}

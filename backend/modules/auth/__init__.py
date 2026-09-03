@@ -25,7 +25,6 @@ from .security import (
     decode_access_token,
     decode_activation_code,
     encode_activation_code,
-    fingerprint_api_key,
     generate_activation_token,
     hash_activation_token,
 )
@@ -55,7 +54,6 @@ __all__ = [
     "decode_access_token",
     "decode_activation_code",
     "encode_activation_code",
-    "fingerprint_api_key",
     "generate_activation_token",
     "get_current_admin_token",
     "get_current_session",

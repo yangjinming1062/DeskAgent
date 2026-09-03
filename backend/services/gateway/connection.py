@@ -121,13 +121,6 @@ class ConnectionManager:
     def get_runtime_sessions(self, user_id: int) -> dict[str, RuntimeSession] | None:
         return self._runtime_sessions.get(user_id)
 
-    def unregister_dispatcher(self, user_id: int) -> None:
-        dispatcher = self._dispatchers.pop(user_id, None)
-        if dispatcher is not None and getattr(dispatcher, "_writer_task", None) and not dispatcher._writer_task.done():
-            dispatcher._writer_task.cancel()
-        self._runtime_sessions.pop(user_id, None)
-        logger.info("User dispatcher unregistered", extra={"user_id": user_id})
-
     async def aunregister_dispatcher(self, user_id: int) -> None:
         dispatcher = self._dispatchers.pop(user_id, None)
         if dispatcher is not None:
@@ -150,14 +143,6 @@ class ConnectionManager:
     def local_user_ids(self) -> list[int]:
         """已注册 dispatcher 的 user_id 快照——outbox 轮询循环用它限定认领范围。"""
         return list(self._dispatchers.keys())
-
-    async def send_personal_event(self, event_type: str, payload: dict, user_id: int) -> None:
-        dispatcher = self._dispatchers.get(user_id)
-        if dispatcher is not None:
-            await dispatcher.push_event(event_type, payload)
-            return
-        logger.warning("send_personal_event: no dispatcher, dropping event", extra={"user_id": user_id, "event_type": event_type})
-        raise RuntimeError(f"User {user_id} has no registered dispatcher")
 
 
 MANAGER = ConnectionManager()

@@ -255,8 +255,6 @@ channels_inbound_rate_per_minute = 20
 channels_restart_backoff_seconds = 10.0
 # 回复分片上限（微信单条消息长度约束，其余渠道共用同一上限）
 weixin_reply_max_chars = 2000
-# 微信 iLink Bot API 基础地址（个人号官方 Bot API；扫码确认后服务端返回的 baseurl 优先于该默认值）
-weixin_ilink_base_url = "https://ilinkai.weixin.qq.com/"
 # getupdates 长轮询客户端超时（秒）——服务端 hold ~35s，客户端略放宽
 weixin_ilink_poll_timeout_seconds = 40.0
 

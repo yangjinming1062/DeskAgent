@@ -109,7 +109,7 @@ from .observability import (
 )
 from .paid_calls import log_paid_call
 from .redact import redact_sensitive_text
-from .temp_files import TempFileMarkerMismatch, cleanup_expired, get_file_path, save_file
+from .temp_files import cleanup_expired, get_file_path, save_file
 from .temp_files import gc_session as temp_files_gc_session
 
 __all__ = [
@@ -189,7 +189,6 @@ __all__ = [
     "VIDEO_INLINE_MAX_PER_REQUEST",
     "WS_CONNECTIONS_ACTIVE",
     "BackgroundTask",
-    "TempFileMarkerMismatch",
     "adopt_inbound",
     "apply_partial",
     "approx_message_tokens",

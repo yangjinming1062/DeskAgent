@@ -8,8 +8,6 @@ logger = get_logger(__name__)
 DEFAULT_BASE_URL: str = "https://tokenhub.tencentmaas.com"
 
 MODEL_VERSION_DEFAULT: str = "hy-3d-3.1"
-MODEL_VERSION_3_0: str = "hy-3d-3.0"
-MODEL_VERSION_EXPRESS: str = "hy-3d-express"
 
 _DOWNLOAD_TIMEOUT_SECONDS: float = 120.0
 _DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024

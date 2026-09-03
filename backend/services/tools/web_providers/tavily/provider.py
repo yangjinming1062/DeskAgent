@@ -116,11 +116,3 @@ class TavilyWebSearchProvider(WebSearchProvider):
         except Exception as exc:
             logger.warning("Tavily extract error", extra={"error": str(exc)})
             return [{"url": u, "title": "", "content": "", "error": f"Tavily extract failed: {exc}"} for u in urls]
-
-    def get_setup_schema(self) -> dict[str, Any]:
-        return {
-            "name": "Tavily",
-            "badge": "paid",
-            "tag": "Search + extract in one provider.",
-            "env_vars": [{"key": "TAVILY_API_KEY", "prompt": "Tavily API key", "url": "https://app.tavily.com/home"}],
-        }

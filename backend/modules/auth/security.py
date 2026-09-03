@@ -107,13 +107,3 @@ def decode_bearer_token(credentials: HTTPAuthorizationCredentials | None) -> dic
         return decode_access_token(credentials.credentials)
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="访问令牌无效。") from exc
-
-
-def fingerprint_api_key(api_key: str | None) -> str:
-    """稳定的、不可逆的 LLM API key 显示标签（首 3 + "…" + 末 2），用于 admin 模型配置列表与 desktop 配置响应；key 为空返 ``"<empty>"``，<8 字符返 ``"<short>"`` 以免把 1-2 字符的疑似误配 key 当成准完整指纹。"""
-    if not api_key:
-        return "<empty>"
-    # 至少 8 字符，避免截断 / 误配的短值呈现为「接近完整」的指纹。
-    if len(api_key) < 8:
-        return "<short>"
-    return f"{api_key[:3]}…{api_key[-2:]}"

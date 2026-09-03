@@ -167,35 +167,6 @@ def gc_session(session_id: str) -> None:
         logger.info("Cleaned up session temp files", extra={"session_id": session_id, "count": count})
 
 
-class TempFileMarkerMismatch(PermissionError):
-    """caller 提供的 required_marker 与文件记录的 marker 不一致；供路由层区分 403 / 404 避免向其他用户泄漏存在性。"""
-
-
-def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
-    """尽力删除单个 temp-media 文件；删了东西返 True。required_marker 命中规则：完全相等，或 required_marker 以 ':' 结尾且 marker 以它为前缀（支持 category 共享 marker，如 preview:）。"""
-    if not _valid_file_id(file_id):
-        return False
-    mp = _meta_path(file_id)
-    if not mp.exists():
-        return False
-    meta = _read_metadata(mp)
-    if meta is None:
-        _safe_unlink(mp)
-        return False
-    if required_marker is not None:
-        marker = meta.get("marker", "")
-        marker = marker if isinstance(marker, str) else ""
-        # 仅当 required_marker 以 ':' 结尾时允许 category 前缀匹配。
-        is_match = marker == required_marker or (required_marker.endswith(":") and marker.startswith(required_marker))
-        if not is_match:
-            raise TempFileMarkerMismatch(f"file_id {file_id!r} marker {marker!r} does not match required {required_marker!r}")
-    path = _metadata_path(meta)
-    if path is not None:
-        _safe_unlink(path)
-    _safe_unlink(mp)
-    return True
-
-
 def _safe_unlink(path: Path) -> None:
     with contextlib.suppress(OSError):
         resolved_path = path.resolve()

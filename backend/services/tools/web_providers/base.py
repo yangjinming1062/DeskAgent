@@ -34,10 +34,6 @@ class WebSearchProvider(abc.ABC):
         """从一个或多个 URL 抽取内容；返回 ``[{"url", "title", "content", "raw_content", "metadata": dict?, "error": str?}, ...]`` 形式，包装同步 HTTP 库的子类需在 ``search``/``extract`` 内部用 :func:`asyncio.to_thread` 避免阻塞事件循环。"""
         raise NotImplementedError(f"{self.name} does not support extract (override supports_extract)")
 
-    def get_setup_schema(self) -> dict[str, Any]:
-        """返回 ``spiritagent tools`` 选择器需要的供应商元数据，可重写以暴露 API key 提示、徽章、实例 URL 字段。"""
-        return {"name": self.display_name, "badge": "", "tag": "", "env_vars": []}
-
     def missing_credential_message(self) -> str | None:
         """``is_available() == False`` 时给用户的可操作提示；仅在 dispatcher 显式选择该供应商（非静默回退）时调用，``None`` 回退到通用「X 未配置」文案。"""
         return None

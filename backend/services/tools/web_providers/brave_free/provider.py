@@ -72,11 +72,3 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
         logger.info("Brave Search '%s': %d results (from %d raw, limit %d)", query, len(web_results), len(raw_results), limit)
 
         return {"success": True, "data": {"web": web_results}}
-
-    def get_setup_schema(self) -> dict[str, Any]:
-        return {
-            "name": "Brave Search (Free)",
-            "badge": "free",
-            "tag": "Free-tier API key — 2k queries/mo, search only.",
-            "env_vars": [{"key": "BRAVE_SEARCH_API_KEY", "prompt": "Brave Search API key (free tier)", "url": "https://brave.com/search/api/"}],
-        }

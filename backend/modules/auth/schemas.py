@@ -34,7 +34,6 @@ class RefreshRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"
     expires_in: int
     user: UserInfo
 
@@ -88,14 +87,13 @@ class UserModelConfigRequest(_UserModelConfigBase):
 
 
 class UserModelConfigListItem(BaseModel):
-    """管理员视角的 UserModelConfig：用 ``llm_api_key_fingerprint`` + ``*_set`` 标志展示，绝不返原始凭据。"""
+    """管理员视角的 UserModelConfig：用 ``*_set`` 标志展示，绝不返原始凭据。"""
 
     model_config = ConfigDict(from_attributes=True)
 
     user_id: int
     llm_provider: str = ""
     llm_base_url: str
-    llm_api_key_fingerprint: str
     llm_api_key_set: bool
     llm_model_name: str
     stt_provider: str = ""
@@ -128,7 +126,6 @@ class AdminLoginRequest(BaseModel):
 
 class AdminTokenResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"
     expires_in: int
 
 
