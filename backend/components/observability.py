@@ -20,18 +20,19 @@ _CURRENT_TRACE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("
 _CURRENT_SPAN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_span_id", default=None)
 
 
-def _ensure_trace_id() -> str:
-    tid = _CURRENT_TRACE_ID.get()
-    if not tid:
-        tid = secrets.token_hex(16)
-        _CURRENT_TRACE_ID.set(tid)
-    return tid
+def _mint_trace_id() -> str:
+    """mint 但不 bind：把 set+reset 留给 span 上下文管理器，避免在 stray 调用上泄露到后续请求。"""
+    return secrets.token_hex(16)
 
 
 @asynccontextmanager
 async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) -> AsyncIterator[dict[str, Any]]:
     """async 上下文管理器：记录 trace span 并上报 JSON-RPC 指标。"""
-    trace_id = _ensure_trace_id()
+    trace_token: contextvars.Token | None = None
+    trace_id = _CURRENT_TRACE_ID.get()
+    if not trace_id:
+        trace_id = _mint_trace_id()
+        trace_token = _CURRENT_TRACE_ID.set(trace_id)
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
     start_time = time.monotonic()
@@ -45,6 +46,8 @@ async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) 
     finally:
         duration = time.monotonic() - start_time
         _CURRENT_SPAN_ID.reset(token_span)
+        if trace_token is not None:
+            _CURRENT_TRACE_ID.reset(trace_token)
         if name.startswith("rpc."):
             method = name.removeprefix("rpc.")
             RPC_REQUESTS_TOTAL.labels(method=method, status=status).inc()
@@ -54,7 +57,11 @@ async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) 
 @contextmanager
 def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
     """sync 上下文管理器：记录 trace span。"""
-    trace_id = _ensure_trace_id()
+    trace_token: contextvars.Token | None = None
+    trace_id = _CURRENT_TRACE_ID.get()
+    if not trace_id:
+        trace_id = _mint_trace_id()
+        trace_token = _CURRENT_TRACE_ID.set(trace_id)
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
     span_context = {"name": name, "trace_id": trace_id, "span_id": span_id, "attributes": attributes or {}}
@@ -62,6 +69,8 @@ def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iter
         yield span_context
     finally:
         _CURRENT_SPAN_ID.reset(token_span)
+        if trace_token is not None:
+            _CURRENT_TRACE_ID.reset(trace_token)
 
 
 def check_metrics_auth(auth_header: str | None, token_header: str | None) -> None:

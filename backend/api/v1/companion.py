@@ -31,7 +31,6 @@ from modules.companion import (
     OutfitListResponse,
     OutfitRegenerateRequest,
     OutfitResponse,
-    Persona,
     PersonaResponse,
     PersonaUpdate,
     RenderModeRequest,
@@ -109,15 +108,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 router = get_router()
 
 logger = get_logger(__name__)
-
-
-async def _resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
-    """读取 persona 定义草稿（短读，需在短会话内调用）。"""
-    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    if persona is None:
-        return {}
-    draft = safe_json_loads(persona.definition_json or "{}", default={})
-    return draft if isinstance(draft, dict) else {}
 
 
 @router.get("/onboarding/state", response_model=OnboardingStateResponse)

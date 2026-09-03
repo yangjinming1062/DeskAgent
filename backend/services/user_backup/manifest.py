@@ -2,13 +2,12 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from components import get_logger, utc_now
+from components import utc_now
 from fastapi import HTTPException
 
 if TYPE_CHECKING:
     from modules.auth import User
 
-logger = get_logger(__name__)
 
 MANIFEST_FORMAT = "spiritagent-user-backup"
 MANIFEST_SCHEMA_VERSION = 1

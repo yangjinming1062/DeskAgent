@@ -2,9 +2,7 @@ import asyncio
 import contextlib
 import json
 
-from components import JSONRPC_INTERNAL_ERROR, SETTINGS, get_logger
-
-logger = get_logger(__name__)
+from components import JSONRPC_INTERNAL_ERROR, SETTINGS
 
 _PENDING: dict[tuple[int, str], asyncio.Future] = {}
 

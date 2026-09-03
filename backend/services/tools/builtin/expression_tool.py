@@ -1,12 +1,10 @@
 import json
 
-from components import SESSION_LOCAL, get_logger
+from components import SESSION_LOCAL
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 
 from services.tools import REGISTRY
-
-logger = get_logger(__name__)
 
 
 async def create_expression_tool(

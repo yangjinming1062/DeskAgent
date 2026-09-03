@@ -25,17 +25,19 @@ def __getattr__(name: str) -> Any:
 
 # 声明懒加载子模块以便 ``from services.chat import orchestrator`` 仍能通过 __getattr__ 解析；新符号无需在此同步。
 __all__ = [
+    "AGENT_DELEGATE_SCHEMA",
     "BUILTIN_EMOTIONS",
     "Emitter",
     "HeadlessEmitter",
+    "agent_delegate_tool",
     "build_session_messages",
-    "persist_extra_user_messages",
-    "truncate_responses_context",
     "build_system_prompt",
     "build_system_prompt_parts",
-    # 懒加载子模块对外符号，新符号由 __getattr__ 按需解析无需同步此列表
+    "build_turn_inputs",
     "load_user_settings",
+    "merge_session_settings",
+    "parse_temperature",
+    "persist_extra_user_messages",
     "run_chat_turn",
-    "agent_delegate_tool",
-    "AGENT_DELEGATE_SCHEMA",
+    "truncate_responses_context",
 ]

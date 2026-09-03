@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 
-from components import async_trace_span, get_logger, redact_sensitive_text, safe_json_loads, tool_error
+from components import async_trace_span, redact_sensitive_text, safe_json_loads, tool_error
 
 from services.gateway import MANAGER, create_future, discard_call, wait_future
 from services.tools import (
@@ -21,8 +21,6 @@ from services.tools import (
 
 from .chat_emitter import Emitter
 from .message_sanitization import _repair_tool_call_arguments
-
-logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

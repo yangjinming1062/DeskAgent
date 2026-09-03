@@ -61,7 +61,7 @@ NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "d
 
 
 @dataclass(frozen=True)
-class _TurnInputs:
+class TurnInputs:
     """``build_turn_inputs`` 的输出：orchestrator 与各轮辅助函数所需字段，避免重复查询 DB。"""
 
     context: dict[str, Any]
@@ -241,7 +241,7 @@ async def build_turn_inputs(
     req: ChatRequest,
     session_client_context: ChatRequestClientContext | None,
     user_settings: dict,
-) -> _TurnInputs:
+) -> TurnInputs:
     """解析身份 prompt、schemas、agent_config、历史与 LLM client；native_memory 补充内容在此注入系统消息，使 orchestrator 保持线性。"""
     # LLM 上下文从最新检查点开始（夜间 daily_summary 或进行中 compress_summary），其前消息已被摘要覆盖；原行留在 DB，仅缩窄本次读取范围。
     checkpoint_id = (
@@ -387,7 +387,7 @@ async def build_turn_inputs(
         estimated_tokens = full_context_tokens
 
     allowed_emotions = await resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
-    return _TurnInputs(
+    return TurnInputs(
         context=context,
         client=client,
         native_memory=native_memory,

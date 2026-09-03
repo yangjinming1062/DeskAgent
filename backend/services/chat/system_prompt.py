@@ -1,4 +1,3 @@
-import logging
 import re
 
 from components import (
@@ -13,8 +12,6 @@ from modules.system import AgentPromptConfig, PromptPreset
 from .affect import build_affect_guidance
 from .prompt_blocks import BLOCK_RENDERERS, substitute
 from .prompt_presets import _build_body
-
-logger = logging.getLogger(__name__)
 
 # volatile header 行的发送前正则：保留 label 只换日期，避免 raw lang='fr' 解析后把英文 label 替换成中文。
 _VOLATILE_HEADER_RE = re.compile(r"(?m)^(?P<label>当前日期：|Current date: )(?P<date>.*)$")

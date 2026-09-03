@@ -3,9 +3,7 @@ import time
 from typing import Any
 
 import httpx
-from components import SETTINGS, download_capped, get_logger, log_paid_call
-
-logger = get_logger(__name__)
+from components import SETTINGS, download_capped, log_paid_call
 
 DEFAULT_BASE_URL: str = "https://openapi.tripo3d.ai/v3"
 

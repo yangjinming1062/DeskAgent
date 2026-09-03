@@ -588,7 +588,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
                 if (resolved := resolve_companion_asset_path(uid, parts[-1])) is not None and (uri := _read_as_data_uri(resolved)):
                     return uri
             except Exception:
-                pass
+                logger.debug("asset resolution fallback failed for path %s", clean_path, exc_info=True)
 
     return None
 

@@ -51,6 +51,16 @@ def attachment_video_url(session_id: str, file_id: str) -> str:
     return f"{base}{path}" if base else path
 
 
+def _file_id_from_url(video_url: str, session_id: str) -> str | None:
+    """URL → file_id：跨会话或形态非法时返回 None。
+    多模态 inline 时必须用本函数把 video_url 解析成 (session_id, file_id)，
+    防止 stale DB 行 / 跨会话路径污染 prompt。"""
+    if not video_url.startswith(f"{VIDEO_URL_PREFIX}/{session_id}/"):
+        return None
+    tail = video_url[len(VIDEO_URL_PREFIX) + len(session_id) + 2 :]
+    return tail if _FILE_NAME_RE.fullmatch(tail) else None
+
+
 def video_mime_for_ext(ext: str) -> str:
     return _VIDEO_MIME_BY_EXT.get(ext.lower(), "application/octet-stream")
 
@@ -85,25 +95,23 @@ def save_video_attachment(session_id: str, data: bytes, ext: str) -> tuple[str, 
     return file_id, len(data)
 
 
-def _file_id_from_url(video_url: str, session_id: str) -> str | None:
-    """从附件 URL 尾段提取本会话的 file_id；跨会话或形态非法返回 None。"""
-    tail = video_url.rstrip("/").rsplit("/", 2)
-    if len(tail) != 3:
-        return None
-    _, url_session, file_id = tail
-    if url_session != session_id or not _FILE_NAME_RE.fullmatch(file_id):
-        return None
-    return file_id
+def _rewrite_parts(parts: list, file_ids: set[str], *, session_id: str | None = None) -> tuple[list, bool]:
+    """把引用了 ``file_ids`` 的 input_video part 替换为清理占位文本；返回 (新 parts, 是否有改动)。
 
-
-def _rewrite_parts(parts: list, file_ids: set[str]) -> tuple[list, bool]:
-    """把引用了 ``file_ids`` 的 input_video part 替换为清理占位文本；返回 (新 parts, 是否有改动)。"""
+    ``session_id`` 传入时拒掉跨会话 / 形态非法的 URL，防止 stale DB 行把任意路径污染到 victim 集合比对中。
+    """
     changed = False
     out: list = []
     for part in parts:
         if isinstance(part, dict) and part.get("type") == "input_video":
             url = str(part.get("video_url") or "")
-            file_id = url.rsplit("/", 1)[-1]
+            if session_id is not None:
+                file_id = _file_id_from_url(url, session_id)
+                if file_id is None:
+                    out.append(part)
+                    continue
+            else:
+                file_id = url.rsplit("/", 1)[-1]
             if file_id in file_ids:
                 out.append({"type": "input_text", "text": VIDEO_PRUNED_TEXT})
                 changed = True
@@ -131,7 +139,7 @@ async def _rewrite_rows_referencing(db: AsyncSession, session_id: str, file_ids:
         parts = safe_json_loads(content, default=[])
         if not isinstance(parts, list):
             continue
-        new_parts, changed = _rewrite_parts(parts, file_ids)
+        new_parts, changed = _rewrite_parts(parts, file_ids, session_id=session_id)
         if changed:
             message = await db.get(Message, message_id)
             if message is not None:
@@ -223,12 +231,12 @@ async def prune_videos_in_range(db: AsyncSession, conversation_id: int, *, lo: i
     )
 
 
-async def inline_video_parts(items: list) -> list:
+async def inline_video_parts(items: list, *, expected_session_id: str | None = None) -> list:
     """构造供应商请求前的最后一步：把最近的相对 URL ``input_video`` 内联为 data URL。
 
-    从新到旧分配 ``VIDEO_INLINE_MAX_PER_REQUEST`` 个内联名额；超出、文件缺失的降级为
-    ``[video]`` 文本占位（与旧图 [screenshot] 同构）。公网绝对 URL 原样直通（供应商自行拉取）。
-    仅修改 dict 项的 list content，其他 item 形状原样保留。
+    从新到旧分配 ``VIDEO_INLINE_MAX_PER_REQUEST`` 个内联名额；超出、文件缺失或 URL 指向
+    非 ``expected_session_id`` 会话的降级为 ``[video]`` 文本占位（与旧图 [screenshot] 同构）。
+    公网绝对 URL 原样直通（供应商自行拉取）。仅修改 dict 项的 list content，其他 item 形状原样保留。
     """
     budget = VIDEO_INLINE_MAX_PER_REQUEST
     out_items: list = []
@@ -246,10 +254,9 @@ async def inline_video_parts(items: list) -> list:
                 new_parts.append(part)  # 公网模式：供应商直接拉取
                 continue
             inlined = None
-            if budget > 0:
-                file_id = url.rsplit("/", 1)[-1] if "/" in url else ""
-                session_id = url.rsplit("/", 2)[-2] if url.count("/") >= 2 else ""
-                path = _video_file_path(session_id, file_id) if file_id and session_id else None
+            if budget > 0 and expected_session_id:
+                file_id = _file_id_from_url(url, expected_session_id)
+                path = _video_file_path(expected_session_id, file_id) if file_id else None
                 if path is not None and path.is_file():
                     try:
                         raw = await asyncio.to_thread(path.read_bytes)

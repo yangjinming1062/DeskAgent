@@ -748,13 +748,12 @@ def _extract_error_body(error: Exception) -> dict:
             if isinstance(json_body, dict):
                 return json_body
         except Exception:
-            pass
+            logger.debug("failed to parse error response body as JSON", exc_info=True)
     return {}
 
 
 def _extract_error_code(error: Exception, body: dict) -> str:
     """按优先级读 SDK 异常属性 + body 字段提取结构化错误码：e.code → e.type → body["error"]["code"] → body["error"]["type"] → body["code"] → body["error_code"] → Responses-API message 内嵌 JSON。"""
-    # 1. SDK 异常自身的 .code / .type 字段（APIError 基类提供；openai 真实响应通常为 None，因为 code 嵌套在 body["error"]["code"]）
     # 1. SDK 异常自身的 .code / .type 字段（APIError 基类提供；openai-shaped 响应通常 None，因为 real shape 把 code 嵌套在 body["error"]["code"]）
     code = getattr(error, "code", None)
     if isinstance(code, str) and code.strip() and code.strip() != "400":

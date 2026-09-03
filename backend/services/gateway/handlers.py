@@ -42,7 +42,7 @@ from modules.system import ChatMessageRequest, ChatRequest, PromptPresetListResp
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
+from services.chat import build_session_messages, build_turn_inputs, load_user_settings, merge_session_settings, parse_temperature, persist_extra_user_messages, run_chat_turn
 from services.chat.prompt_presets import BUILTIN_PRESETS
 from services.chat.slash_commands import (
     SlashCommandContext,
@@ -56,7 +56,6 @@ from services.chat.slash_commands import (
 from services.chat.slash_commands import (
     resolve as resolve_slash_command,
 )
-from services.chat.turn_inputs import build_turn_inputs, merge_session_settings, parse_temperature
 from services.companion import (
     AVATAR_JOB_LOCKS,
     MODEL_JOB_LOCKS,
@@ -136,21 +135,25 @@ class UserGatewaySession:
 _USER_SESSIONS: dict[int, UserGatewaySession] = {}
 
 
-def discard_user_session(user_id: int) -> None:
-    """注销某用户的 per-session 资源（grace timer / background tasks / runtime sessions）。
-
-    admin 删除用户时经此入口清理而不再直读 _USER_SESSIONS；其它 per-user 状态（_inflight_prompt、
-    AVATAR_JOB_LOCKS 等）仍由 admin 显式调用各自的清理函数——本函数范围仅限 session 桶。
-    """
+def discard_user_session(user_id: int) -> list[asyncio.Task]:
+    """注销某用户的 session 桶并触发 per-task 取消；返回被取消的 task 列表，调用方需在 DB 行删除前 ``asyncio.gather`` 它们。"""
     sess = _USER_SESSIONS.pop(user_id, None)
     if sess is None:
-        return
+        return []
+    pending: list[asyncio.Task] = []
     if sess.grace_timer_task and not sess.grace_timer_task.done():
         sess.grace_timer_task.cancel()
+        pending.append(sess.grace_timer_task)
     for t in list(sess.background_tasks):
         if not t.done():
             t.cancel()
+            pending.append(t)
+    for runtime in list(sess.runtime_sessions.values()):
+        if runtime.chat_task and not runtime.chat_task.done():
+            runtime.chat_task.cancel()
+            pending.append(runtime.chat_task)
     sess.runtime_sessions.clear()
+    return pending
 
 
 async def drain() -> None:
@@ -335,12 +338,9 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                         await asyncio.sleep(DISCONNECT_GRACE_SECONDS)
                         if not MANAGER.is_connected(uid):
                             logger.info("Grace period expired for disconnected user, performing full cleanup", extra={"user_id": uid})
-                            target_sess = _USER_SESSIONS.pop(uid, None)
-                            if target_sess is not None:
-                                for t in list(target_sess.background_tasks):
-                                    if not t.done():
-                                        t.cancel()
-                                target_sess.runtime_sessions.clear()
+                            pending = discard_user_session(uid)
+                            if pending:
+                                await asyncio.gather(*pending, return_exceptions=True)
 
                             from .connection import cancel_user_cron_turns
 
@@ -1112,8 +1112,8 @@ def _register_session_handlers(
                 await asyncio.wait_for(asyncio.shield(runtime.chat_task), timeout=0.3)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                pass
+            except TimeoutError:
+                logger.debug("chat_task shield wait timed out for session %s", runtime.session_id)
             if runtime.chat_task and not runtime.chat_task.done():
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
 

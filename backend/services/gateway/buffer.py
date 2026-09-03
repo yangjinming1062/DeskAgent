@@ -2,10 +2,6 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from components import get_logger
-
-logger = get_logger(__name__)
-
 DEFAULT_REPLAY_BUFFER_CAPACITY = 500
 DEFAULT_REPLAY_BUFFER_TTL_SECONDS = 60.0
 

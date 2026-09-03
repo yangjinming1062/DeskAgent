@@ -4,14 +4,12 @@ import io
 import zipfile
 from pathlib import Path
 
-from components import SETTINGS, get_logger, log_paid_call
+from components import SETTINGS, log_paid_call
 
 from ...base import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult
 from ...registry import register
 from . import client
 from .client import HunyuanApiError
-
-logger = get_logger(__name__)
 
 # TokenHub 接受裸 base64；自定义代理需要 data-URI 时改为前缀
 IMAGE_BASE64_PREFIX = ""

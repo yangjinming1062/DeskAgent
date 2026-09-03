@@ -106,7 +106,8 @@ async def run_chat_turn(
         )
     current_context = truncate_responses_context(compressed_context)
     # 视频内联在截断之后：窗口外的老视频已被占位替换，内联只处理幸存者（每请求上限 2 个）。
-    current_context["input"] = await inline_video_parts(current_context["input"])
+    # expected_session_id 防 stale DB 行 / 跨会话 URL 串到当前会话：跨会话或非法形态一律降级为 [video]。
+    current_context["input"] = await inline_video_parts(current_context["input"], expected_session_id=str(conv.id))
 
     guardrails = ToolCallGuardrailController()
     budget = IterationBudget(max_total=AGENT_MAX_LOOP_TURNS)

@@ -76,7 +76,7 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
-from components import get_logger, safe_json_loads
+from components import safe_json_loads
 from modules.companion import Persona, normalize_persona_aliases
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,8 +84,6 @@ from .llm_client import MissingLlmConfigError, client_for_config, provider_for_s
 from .llm_retry import call_with_retry
 from .providers import ProviderConfig, ServiceType, resolve_context_tokens
 from .responses import build_responses_kwargs
-
-logger = get_logger(__name__)
 
 
 def _strip_markdown_fence(raw: str) -> str:

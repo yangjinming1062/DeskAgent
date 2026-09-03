@@ -122,12 +122,6 @@ async def aclose_all() -> None:
     _clients_openai.clear()
 
 
-def cache_clear() -> None:
-    """测试夹具入口：清空两个缓存；conftest autouse 夹具同步调用此方法以隔离测试，AsyncClient.aclose 在事件循环销毁时尽力执行。"""
-    _clients.clear()
-    _clients_openai.clear()
-
-
 class _RetryAwareAsyncOpenAI(AsyncOpenAI):
     """在 SDK 默认 ``_should_retry`` 之外拦截 500/502 中的请求校验错误（畸形请求每次重试都失败），其余决策完全继承父类。"""
 

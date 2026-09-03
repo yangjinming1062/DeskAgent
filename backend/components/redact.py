@@ -3,9 +3,6 @@ import re
 from collections.abc import Callable
 
 from .constants import REDACT_PHONE_DIGIT_THRESHOLD, SECRET_MASK_HEAD_CHARS, SECRET_MASK_MIN_LENGTH, SECRET_MASK_TAIL_CHARS
-from .logger import get_logger
-
-logger = get_logger(__name__)
 
 _SENSITIVE_QUERY_PARAMS = frozenset(
     {
@@ -113,27 +110,28 @@ def _redact_form_body(text: str) -> str:
     return _redact_query_string(stripped) if _FORM_BODY_RE.match(stripped) else text
 
 
-def _sub_mask(match_value: str) -> str:
-    # 短串（含空串）统一返占位——f-string 切头尾在短串上会撞索引并泄漏字符。
+def _mask_secret(match_value: str) -> str:
+    """短串（含空串）统一返占位——f-string 切头尾在短串上会撞索引并泄漏字符。
+    与 runner/utils/redact.py::_mask_token 共用的脱敏形状；别处需要时也走这里。"""
     if len(match_value) < SECRET_MASK_MIN_LENGTH:
         return "***"
     return f"{match_value[:SECRET_MASK_HEAD_CHARS]}...{match_value[-SECRET_MASK_TAIL_CHARS:]}"
 
 
 def _sub_prefix(m: re.Match) -> str:
-    return _sub_mask(m.group(1))
+    return _mask_secret(m.group(1))
 
 
 def _sub_env(m: re.Match) -> str:
-    return f"{m.group(1)}={m.group(2)}{_sub_mask(m.group(3))}{m.group(2)}"
+    return f"{m.group(1)}={m.group(2)}{_mask_secret(m.group(3))}{m.group(2)}"
 
 
 def _sub_json(m: re.Match) -> str:
-    return f'{m.group(1)}: "{_sub_mask(m.group(2))}"'
+    return f'{m.group(1)}: "{_mask_secret(m.group(2))}"'
 
 
 def _sub_auth(m: re.Match) -> str:
-    return m.group(1) + _sub_mask(m.group(2))
+    return m.group(1) + _mask_secret(m.group(2))
 
 
 def _sub_telegram(m: re.Match) -> str:
@@ -145,7 +143,7 @@ def _sub_db_connstr(m: re.Match) -> str:
 
 
 def _sub_jwt(m: re.Match) -> str:
-    return _sub_mask(m.group(0))
+    return _mask_secret(m.group(0))
 
 
 def _sub_phone(m: re.Match) -> str:

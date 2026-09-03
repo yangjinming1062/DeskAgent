@@ -3,10 +3,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from components import as_bool, positive_int, safe_json_loads, sha256_hex
+from components import get_logger, safe_json_loads, sha256_hex
 
 from .file_safety import get_read_block_error, is_write_denied
 from .tool_dispatch_helpers import _append_subdir_hint_to_multimodal
+
+logger = get_logger(__name__)
 
 IDEMPOTENT_TOOL_NAMES = frozenset(
     {
@@ -119,25 +121,6 @@ class ToolCallGuardrailConfig:
     idempotent_tools: frozenset[str] = field(default_factory=lambda: IDEMPOTENT_TOOL_NAMES)
     mutating_tools: frozenset[str] = field(default_factory=lambda: MUTATING_TOOL_NAMES)
 
-    @classmethod
-    def from_mapping(cls, data: Mapping[str, Any] | None) -> "ToolCallGuardrailConfig":
-        if not isinstance(data, Mapping):
-            return cls()
-        warn_after = data.get("warn_after") if isinstance(data.get("warn_after"), Mapping) else {}
-        hard_stop_after = data.get("hard_stop_after") if isinstance(data.get("hard_stop_after"), Mapping) else {}
-        defaults = cls()
-        warn, block = _resolve_guardrail_thresholds(data, warn_after, hard_stop_after, defaults)
-        return cls(
-            warnings_enabled=as_bool(data.get("warnings_enabled"), defaults.warnings_enabled),
-            hard_stop_enabled=as_bool(data.get("hard_stop_enabled"), defaults.hard_stop_enabled),
-            exact_failure_warn_after=warn.exact_failure,
-            same_tool_failure_warn_after=warn.same_tool_failure,
-            no_progress_warn_after=warn.no_progress,
-            exact_failure_block_after=block.exact_failure,
-            same_tool_failure_halt_after=block.same_tool_failure,
-            no_progress_block_after=block.no_progress,
-        )
-
 
 @dataclass(frozen=True)
 class ToolCallSignature:
@@ -164,10 +147,6 @@ class ToolGuardrailDecision:
     tool_name: str = ""
     count: int = 0
     signature: ToolCallSignature | None = None
-
-    @property
-    def allows_execution(self) -> bool:
-        return self.action in {"allow", "warn"}
 
     @property
     def should_halt(self) -> bool:
@@ -375,7 +354,7 @@ def append_toolguard_guidance(result: str, decision: ToolGuardrailDecision) -> s
                 _append_subdir_hint_to_multimodal(parsed, suffix)
                 return json.dumps(parsed, ensure_ascii=False)
         except Exception:
-            pass
+            logger.debug("failed to parse tool result as JSON for multimodal hint", exc_info=True)
 
     return (result or "") + suffix
 
@@ -410,31 +389,3 @@ def _result_hash(result: str | None) -> str:
     else:
         canonical = str(parsed)
     return sha256_hex(canonical)
-
-
-@dataclass(frozen=True)
-class _GuardrailThresholdSet:
-    """共享同一键名的三条 warn/block 阈值。"""
-
-    exact_failure: int
-    same_tool_failure: int
-    no_progress: int
-
-
-def _resolve_guardrail_thresholds(
-    data: Mapping[str, Any],
-    warn_after: Mapping[str, Any],
-    hard_stop_after: Mapping[str, Any],
-    defaults: "ToolCallGuardrailConfig",
-) -> tuple[_GuardrailThresholdSet, _GuardrailThresholdSet]:
-    """将配置字典拆成 warn 级与硬停止级两组阈值三元组。"""
-    nested_keys = ("exact_failure", "same_tool_failure", "idempotent_no_progress")
-    warn_keys = ("exact_failure_warn_after", "same_tool_failure_warn_after", "no_progress_warn_after")
-    block_keys = ("exact_failure_block_after", "same_tool_failure_halt_after", "no_progress_block_after")
-
-    def _tier(tier_after: Mapping[str, Any], flat_keys: tuple[str, str, str], def_keys: tuple[str, str, str]) -> _GuardrailThresholdSet:
-        return _GuardrailThresholdSet(
-            *(positive_int(tier_after.get(nested, data.get(flat)), getattr(defaults, default_attr)) for nested, flat, default_attr in zip(nested_keys, flat_keys, def_keys)),
-        )
-
-    return _tier(warn_after, warn_keys, warn_keys), _tier(hard_stop_after, block_keys, block_keys)

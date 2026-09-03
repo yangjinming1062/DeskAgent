@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from .logger import get_logger
 
-logger = get_logger("paid_calls")
+logger = get_logger(__name__)
 
 
 def log_paid_call(provider: str, kind: str, *, task_id: str | None = None, user_id: int | None = None, level: Literal["info", "debug", "warning"] = "info", **extra: Any) -> None:
