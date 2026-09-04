@@ -17,18 +17,6 @@ logger = logging.getLogger(__name__)
 PLACEHOLDER_PATTERN = re.compile(r"\{\{([A-Z][A-Z0-9_]{2,40})\}\}")
 
 
-def _language_directive_block(config: AgentPromptConfig) -> str:
-    from .system_prompt import _language_directive
-
-    return _language_directive(config.language)
-
-
-def _help_guidance_block(config: AgentPromptConfig) -> str:
-    from .system_prompt import _HELP_GUIDANCES
-
-    return resolve_prompt_text(_HELP_GUIDANCES, config.language)
-
-
 def _persona_block(config: AgentPromptConfig) -> str | None:
     if not config.persona_extras:
         return None
@@ -142,12 +130,6 @@ def _user_identity_override_block(config: AgentPromptConfig) -> str:
     return resolve_prompt_text(_AGENT_IDENTITIES, config.language)
 
 
-def _volatile_header_block(config: AgentPromptConfig) -> str:
-    from .system_prompt import _format_volatile_header
-
-    return _format_volatile_header(config)
-
-
 def _message_timestamps_block(config: AgentPromptConfig) -> str:
     """每条 user/assistant 消息的 ``[HH:MM]`` 前缀与跨天分界线说明，含负向约束防止 LLM 自我模仿。"""
     lang = resolve_language(config.language)
@@ -187,6 +169,24 @@ def _message_timestamps_block(config: AgentPromptConfig) -> str:
         "Adding timestamps to your output will result in duplicate prefixes in subsequent turns.\n"
         "Likewise, NEVER generate date divider lines like `--- Saturday, August 29, 2026 ---`; dividers are injected by the system."
     )
+
+
+def _language_directive_block(config: AgentPromptConfig) -> str:
+    from .system_prompt import _language_directive
+
+    return _language_directive(config.language)
+
+
+def _help_guidance_block(config: AgentPromptConfig) -> str:
+    from .system_prompt import _HELP_GUIDANCES
+
+    return resolve_prompt_text(_HELP_GUIDANCES, config.language)
+
+
+def _volatile_header_block(config: AgentPromptConfig) -> str:
+    from .system_prompt import _format_volatile_header
+
+    return _format_volatile_header(config)
 
 
 BLOCK_RENDERERS: dict[str, Callable[[AgentPromptConfig], str | None]] = {

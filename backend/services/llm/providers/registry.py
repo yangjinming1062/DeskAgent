@@ -139,12 +139,13 @@ def providers_supporting(service_type: ServiceType | str) -> list[str]:
     return list(dict.fromkeys(name for registered_svc, name in _REGISTRY if registered_svc == svc))
 
 
-def resolve_context_tokens(provider: str, service_type: str) -> int:
+def resolve_context_tokens(provider: str, service_type: ServiceType | str) -> int:
     # 优先级：env 覆盖 → provider 类默认 → 全局兜底；拼错时打 warning，避免静默落到全局默认。
-    override = getattr(SETTINGS, f"{service_type}_context_tokens", None)
+    svc = service_type.value if isinstance(service_type, ServiceType) else service_type
+    override = getattr(SETTINGS, f"{svc}_context_tokens", None)
     if override is not None:
         return override
-    per_provider = default_context_tokens_for(provider, service_type)
+    per_provider = default_context_tokens_for(provider, svc)
     if per_provider > 0:
         return per_provider
     get_logger(__name__).warning(

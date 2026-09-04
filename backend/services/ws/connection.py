@@ -82,6 +82,14 @@ def _discard_cron_task(user_id: int, task: asyncio.Task) -> None:
             _cron_turn_tasks.pop(user_id, None)
 
 
+def _log_cron_task_failure(task: asyncio.Task) -> None:
+    """cron handler 抛错时落地日志；与 _discard_cron_task 拆开避免互相清理顺序耦合。"""
+    if task.cancelled():
+        return
+    if (exc := task.exception()) is not None:
+        logger.exception("cron turn handler raised", exc_info=exc)
+
+
 def cancel_user_cron_turns(user_id: int) -> int:
     user_tasks = _cron_turn_tasks.pop(user_id, None)
     if not user_tasks:
@@ -353,6 +361,7 @@ async def _process_events(seen: int = -1) -> int:
                 user_tasks = _cron_turn_tasks.setdefault(user_id, set())
                 user_tasks.add(task)
                 task.add_done_callback(lambda t, uid=user_id: _discard_cron_task(uid, t))
+                task.add_done_callback(_log_cron_task_failure)
                 cron_delivered_ids.append(event_id)
                 continue
 

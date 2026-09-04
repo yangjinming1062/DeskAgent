@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -7,6 +8,8 @@ from fastapi import HTTPException, Request, Response
 from starlette.responses import StreamingResponse
 
 from .asset_store import compute_file_sha256
+
+logger = logging.getLogger(__name__)
 
 _RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
 _CHUNK_SIZE = 256 * 1024  # 256 KB
@@ -25,7 +28,9 @@ def _get_file_sha256(file_path: Path) -> str:
             _SHA256_CACHE.pop(next(iter(_SHA256_CACHE)))
         _SHA256_CACHE[key] = sha
         return sha
-    except Exception:
+    except OSError:
+        # 缓存命中失败（stat 异常），落到原始计算路径；非 OSError 类异常继续传播。
+        logger.warning("sha256 cache lookup failed; recomputing", extra={"path": str(file_path)}, exc_info=True)
         return compute_file_sha256(file_path)
 
 

@@ -32,11 +32,13 @@ async def drain() -> None:
 
 
 async def _update_job(job_id: int, **fields) -> None:
-    """用全新短会话更新任务行——后台任务比请求会话长寿，绝不复用调用方的 ``db``；行在读写之间被 GC（管理员 DELETE 等）则提前返回。"""
+    """用全新短会话更新任务行——后台任务比请求会话长寿，绝不复用调用方的 ``db``；行在读写之间被 GC（管理员 DELETE 等）则提前返回。终态保护：succeeded/failed 行不再被覆写，避免晚到的 poll 失败翻转已成功状态。"""
 
     async with SESSION_LOCAL() as db:
         job = await db.get(VideoGenJob, job_id)
         if job is None:
+            return
+        if job.status in ("succeeded", "failed"):
             return
         for k, v in fields.items():
             setattr(job, k, v)

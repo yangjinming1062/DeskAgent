@@ -262,6 +262,7 @@ class WeixinIlinkAdapter(ChannelAdapter):
         self._login_task: asyncio.Task | None = None
         self._login_state: dict = {"state": "connected" if self.has_credentials() else "login_required"}
         self._client: httpx.AsyncClient | None = None
+        self._dispatch_tasks: set[asyncio.Task] = set()
 
     # ---- 基础 HTTP 层 ---------------------------------------------------------------
 
@@ -470,7 +471,9 @@ class WeixinIlinkAdapter(ChannelAdapter):
             except Exception:
                 logger.exception("weixin inbound turn failed", extra={"binding": self.snapshot.id, "peer": peer_id})
 
-        asyncio.create_task(_dispatch())
+        task = asyncio.create_task(_dispatch())
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
 
     # ---- 出站 -----------------------------------------------------------------------
 

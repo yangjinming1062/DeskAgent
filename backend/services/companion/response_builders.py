@@ -6,7 +6,7 @@ from modules.companion import AvatarAsset, AvatarAssetResponse, Companion3DModel
 from services.image_to_3d import provider_supports_multiview
 
 from .asset_store import get_companion_model_sha256
-from .avatar_service import _re_sign_bare_path
+from .avatar_service import re_sign_bare_path
 from .pipeline import signed_model_url
 
 
@@ -33,7 +33,7 @@ def outfit_response(outfit: CompanionOutfit) -> OutfitResponse:
         id=outfit.id,
         name=outfit.name,
         description=outfit.description,
-        fullbody_url=_re_sign_bare_path(outfit.fullbody_url) or "",
+        fullbody_url=re_sign_bare_path(outfit.fullbody_url) or "",
         style=outfit.style or "cel_shading",
         status=outfit.status,
         active=outfit.active,

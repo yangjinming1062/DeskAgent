@@ -56,8 +56,6 @@ async def _stream_with_timeout(
             except StopAsyncIteration:
                 return
             yield chunk
-    except asyncio.CancelledError:
-        raise
     except Exception as exc:
         classified = classify_api_error(exc, model=model)
         logger.warning("LLM stream raised mid-iteration", extra={"reason": classified.reason.value, "error_message": classified.message})
@@ -223,8 +221,6 @@ async def call_with_retry(
             stream=False,
         )
         return result
-    except asyncio.CancelledError:
-        raise
     except Exception as exc:
         classified = classify_api_error(exc, **classifier_kwargs)
         log_event(

@@ -74,7 +74,8 @@ async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
         sanitized = sanitized.strip()
         return sanitized if sanitized else prompt
     except Exception:
-        logger.debug("prompt sanitization LLM call failed", exc_info=True)
+        # 失败回退到原文属设计意图：内容审核改写是可选优化；保留 exc_info 供排查 LLM/网络层问题。
+        logger.warning("prompt sanitization LLM call failed; falling back to original prompt", extra={"user_id": user_id}, exc_info=True)
         return prompt
 
 
@@ -470,7 +471,7 @@ async def list_avatar_history(db: AsyncSession, user_id: int, limit: int = 20) -
     return assets
 
 
-def _re_sign_bare_path(bare_path: str | None) -> str | None:
+def re_sign_bare_path(bare_path: str | None) -> str | None:
     """把裸路径重新签名为新鲜 URL；temp-media 草稿则转为 /api/media/files/ 形式。"""
     if not bare_path:
         return None
@@ -489,13 +490,13 @@ def _re_sign_bare_path(bare_path: str | None) -> str | None:
 
 def _re_sign_avatar_url(asset: AvatarAsset) -> None:
     if asset.asset_url:
-        signed = _re_sign_bare_path(asset.asset_url)
+        signed = re_sign_bare_path(asset.asset_url)
         if signed:
             asset.asset_url = signed
     for attr in ("seed_front_2d_url", "seed_front_3d_url", "seed_back_url"):
         val = getattr(asset, attr, None)
         if val:
-            signed = _re_sign_bare_path(val)
+            signed = re_sign_bare_path(val)
             if signed:
                 setattr(asset, attr, signed)
 
@@ -740,7 +741,7 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
     return asset
 
 
-def _normalize_avatar_url_to_bare(url: str | None) -> str:
+def normalize_avatar_url_to_bare(url: str | None) -> str:
     if not url:
         return ""
     clean = url.strip().replace("\\", "/")
@@ -1041,7 +1042,7 @@ async def confirm_fullbody_front(
 
     effective_front_url = asset.seed_front_2d_url
     if front_url:
-        normalized_front = _normalize_avatar_url_to_bare(front_url)
+        normalized_front = normalize_avatar_url_to_bare(front_url)
         if normalized_front:
             effective_front_url = normalized_front
 

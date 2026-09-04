@@ -73,12 +73,27 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {_api_key()}", "Content-Type": "application/json"}
 
 
-def _envelope(payload: dict[str, Any]) -> dict[str, Any]:
+def _envelope(resp: httpx.Response) -> dict[str, Any]:
+    """检查 HTTP 状态再解信封：5xx / 4xx 立即抛 TripoApiError（带状态码），避免 HTML 网关页被当 JSON 解析。"""
+    if resp.status_code >= 400:
+        snippet = resp.text[:200]
+        raise TripoApiError(f"tripo HTTP {resp.status_code}: {snippet}")
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise TripoApiError(f"tripo returned non-JSON body: {resp.text[:200]}") from exc
     code = payload.get("code")
     status = payload.get("status")
     if code != 0 or status != "success":
         raise TripoApiError(f"tripo code={code} status={status}: {payload.get('message')}")
     return payload.get("data") or {}
+
+
+async def upload_file(file_bytes: bytes, filename: str, content_type: str = "image/jpeg") -> str:
+    """POST /v3/files —— multipart 上传，返回 ``file_token``（在 image-to-model 中作为 ``input`` 使用）。"""
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(f"{_base_url()}/files", headers={"Authorization": f"Bearer {_api_key()}"}, files={"file": (filename, file_bytes, content_type)})
+    return _envelope(resp)["file_token"]
 
 
 def _common_model_kwargs(
@@ -124,13 +139,6 @@ def tripo_common_kwargs_from_settings(*, model_version: str | None = None, textu
     return kwargs
 
 
-async def upload_file(file_bytes: bytes, filename: str, content_type: str = "image/jpeg") -> str:
-    """POST /v3/files —— multipart 上传，返回 ``file_token``（在 image-to-model 中作为 ``input`` 使用）。"""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{_base_url()}/files", headers={"Authorization": f"Bearer {_api_key()}"}, files={"file": (filename, file_bytes, content_type)})
-    return _envelope(resp.json())["file_token"]
-
-
 async def create_image_to_model(
     image_token: str,
     *,
@@ -172,7 +180,7 @@ async def create_image_to_model(
     async with httpx.AsyncClient(timeout=60.0) as client:
         endpoint = "generation/multiview-to-model" if inputs is not None else "generation/image-to-model"
         resp = await client.post(f"{_base_url()}/{endpoint}", headers=_auth_headers(), json=payload)
-    task_id = _envelope(resp.json())["task_id"]
+    task_id = _envelope(resp)["task_id"]
     log_paid_call("tripo", "image_to_3d_submit", task_id=task_id)
     return task_id
 
@@ -181,7 +189,7 @@ async def get_task(task_id: str) -> dict[str, Any]:
     """单次 GET /v3/tasks/{id}；状态映射由调用方负责。"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.get(f"{_base_url()}/tasks/{task_id}", headers={"Authorization": f"Bearer {_api_key()}"})
-    data = _envelope(resp.json())
+    data = _envelope(resp)
     if data.get("status") == "success":
         log_paid_call("tripo", "image_to_3d_result", task_id=task_id, urls=[(data.get("output") or {}).get("model_url")], level="debug")
     return data
@@ -191,7 +199,7 @@ async def rig_check(task_id: str) -> str:
     """启动 ``animate_prerigcheck`` 任务；返回 task_id，轮询以读取 ``output.rig_type`` 与 ``output.riggable``。"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/animations/rig-check", headers=_auth_headers(), json={"input": task_id})
-    return _envelope(resp.json())["task_id"]
+    return _envelope(resp)["task_id"]
 
 
 async def poll_rig_check(task_id: str, *, interval: float = 2.0, timeout: float = 60.0) -> dict[str, Any]:
@@ -225,7 +233,7 @@ async def rig(task_id: str, rig_type: str) -> str:
             headers=_auth_headers(),
             json={"input": task_id, "rig_type": rig_type, "spec": RIG_SPEC, "model": rig_model_version(rig_type)},
         )
-    return _envelope(resp.json())["task_id"]
+    return _envelope(resp)["task_id"]
 
 
 async def retarget(task_id: str, rig_type: str) -> str:
@@ -236,7 +244,7 @@ async def retarget(task_id: str, rig_type: str) -> str:
     payload = {"input": task_id, "animations": presets, "out_format": "glb", "bake_animation": True, "export_with_geometry": True}
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/animations/retarget", headers=_auth_headers(), json=payload)
-    new_task_id = _envelope(resp.json())["task_id"]
+    new_task_id = _envelope(resp)["task_id"]
     log_paid_call("tripo", "animate_bind_submit", task_id=new_task_id, urls=presets)
     return new_task_id
 

@@ -143,23 +143,6 @@ async def execute_with_fallback[T](
             )
             raise content_policy_error or last_error
 
-    # 链非空（上面已检查）且每轮要么 return 要么记录 last_error，因此以下仅作防御性兜底。
-    log_event(
-        call_id=chain_call_id,
-        service=service_type,
-        provider=chain[-1].provider_name,
-        model=chain[-1].model,
-        call_site=__name__,
-        phase="chain_result",
-        status="error",
-        chain_index=chain_size - 1,
-        chain_size=chain_size,
-        reason="chain_exhausted",
-        total_chain_latency_ms=int((time.monotonic() - chain_started) * 1000),
-        user_id=user_id,
-    )
-    raise content_policy_error or last_error  # type: ignore[misc]
-
 
 async def execute_stream_with_fallback[T](
     db: AsyncSession | None,
@@ -187,7 +170,14 @@ async def execute_stream_with_fallback[T](
             # 空流：显式转 RuntimeError，避免 StopAsyncIteration 逃逸进异步生成器框架被隐式转换。
             raise RuntimeError(f"{provider.provider_name} stream ended before first element")
 
-    first = await execute_with_fallback(db, user_id, service_type, open_and_first, _chain=_chain)
+    try:
+        first = await execute_with_fallback(db, user_id, service_type, open_and_first, _chain=_chain)
+    except Exception:
+        # 整链失败：链中各家流尚未被消费，需要在此处关闭避免 HTTP 连接泄漏。
+        for stream in opened:
+            with contextlib.suppress(Exception):
+                await stream.aclose()
+        raise
     try:
         yield first
         async for item in opened[-1]:

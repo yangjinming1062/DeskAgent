@@ -412,7 +412,8 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
                 _, _, user_local_dt, _ = get_local_day_utc_bounds(now, tz_str)
                 reference_utc = now - timedelta(days=1)
                 utc_start, utc_end, _, target_date_str = get_local_day_utc_bounds(reference_utc, tz_str)
-            except Exception:
+            except Exception as exc:
+                logger.warning("nightly eligibility: skip user due to timezone computation error", extra={"user_id": uid, "tz": tz_str, "error": str(exc)})
                 continue
 
             if not (NIGHTLY_WINDOW_START_HOUR <= user_local_dt.hour < NIGHTLY_WINDOW_END_HOUR):

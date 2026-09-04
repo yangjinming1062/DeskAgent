@@ -18,6 +18,22 @@ from .types import TrackTask
 
 logger = get_logger(__name__)
 
+# track_task=None 路径的兜底：模块级强引用集合，防止 CPython GC 在 await 期间销毁进行中的 task。
+# 与 scheduler/cron.py 的 _BG_TASTS 同模式。已 done 的 task 回调里从集合中移除，避免无限增长。
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _track_background_task(task: asyncio.Task) -> None:
+    """将 task 纳入模块级强引用集合，done 时自动移除并打日志。"""
+    _BACKGROUND_TASKS.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _BACKGROUND_TASKS.discard(t)
+        if not t.cancelled() and (exc := t.exception()) is not None:
+            logger.warning("background task raised after completion", exc_info=exc)
+
+    task.add_done_callback(_on_done)
+
 
 async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None:
     """主会话轮次从 LLM 上下文中丢弃原始 tool 帧，此行作为替代，故无论轮次如何结束都必须写入。"""
@@ -32,10 +48,7 @@ def _coerce_tool_result_content(content: Any) -> str:
     """Message.content 是 Text 列，非字符串负载 JSON 编码后提交，避免类型错误。"""
     if isinstance(content, str):
         return content
-    try:
-        return json.dumps(content, ensure_ascii=False, default=str)
-    except Exception:
-        return str(content)
+    return json.dumps(content, ensure_ascii=False, default=str)
 
 
 _MEDIA_TOOL_NAMES = frozenset({"image_generate", "video_generate"})
@@ -181,6 +194,8 @@ async def _persist_assistant_no_tool_turn(
         )
         if track_task:
             track_task(title_task)
+        else:
+            _track_background_task(title_task)
 
     # 优先读命名空间键（设置 UI 写入 ``agent.enable_background_review``），旧数据回退到裸键 ``enable_background_review``。
     bg_review = effective_settings.get("agent.enable_background_review") or effective_settings.get("enable_background_review") or BACKGROUND_REVIEW_DEFAULT
@@ -188,6 +203,8 @@ async def _persist_assistant_no_tool_turn(
         review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, copy_responses_context(context)))
         if track_task:
             track_task(review_task)
+        else:
+            _track_background_task(review_task)
 
     affect_payload: dict[str, Any] = {"emotion": emotion}
     if actions:

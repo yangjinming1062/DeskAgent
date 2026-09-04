@@ -12,7 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import asset_store
-from ..avatar_service import _normalize_avatar_url_to_bare, get_avatar_job_lock, load_avatar_bytes_as_data_uri
+from ..avatar_service import get_avatar_job_lock, load_avatar_bytes_as_data_uri, normalize_avatar_url_to_bare
 from ..room_backdrop_service import invalidate_room_for_outfit
 from ..seethrough import SeeThroughError, run_seethrough_split
 from .priority_queue import get_default_queue
@@ -93,7 +93,7 @@ def run_mesh2d_pipeline(
             await db.commit()
 
         try:
-            normalized_url = _normalize_avatar_url_to_bare(fullbody_url) or fullbody_url
+            normalized_url = normalize_avatar_url_to_bare(fullbody_url) or fullbody_url
             fullbody_bytes = _safe_load_avatar_bytes(normalized_url)
             manifest_json, layer_entries = await _generate(user_id, fullbody_bytes)
         except Mesh2DPipelineError as exc:

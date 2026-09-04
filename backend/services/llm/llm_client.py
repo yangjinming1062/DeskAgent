@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .llm_debug import log_event, new_call_id, truncate_for_log
 from .providers import (
     KNOWN_PROVIDERS,
+    OPENAI_COMPATIBLE_PROVIDERS,
     SERVICE_DEFAULT_PROVIDER,
     BaseProvider,
     EmbeddingProvider,
@@ -215,8 +216,6 @@ async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | No
         chain = await resolve_provider_chain(db, user_id, "embedding")
         if not chain:
             # 回退到 chat 供应商并使用 OpenAI 兼容的默认 embedding 模型，但仅限真正暴露 OpenAI 形态 ``/v1/embeddings`` 端点的供应商；原生供应商（minimax 用 ``texts`` 而非 ``input``）会 404 / 返回畸形 body —— 会静默降级语义记忆而不暴露误配。
-            from .providers import OPENAI_COMPATIBLE_PROVIDERS
-
             llm_cfg = await resolve_provider_config(db, user_id, "llm")
             if llm_cfg.provider_name not in OPENAI_COMPATIBLE_PROVIDERS:
                 return None
@@ -231,7 +230,11 @@ async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | No
             ]
         provider = provider_from_config(chain[0])
         return provider if isinstance(provider, EmbeddingProvider) else None
+    except (MissingLlmConfigError, LookupError):
+        # 配置缺失/无匹配供应商是预期的「关停语义记忆」路径；其它异常继续记录再降级，避免误配完全隐形。
+        return None
     except Exception:
+        logger.warning("embedding provider resolution failed; falling back to keyword-only memory", extra={"user_id": user_id}, exc_info=True)
         return None
 
 

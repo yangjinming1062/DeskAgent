@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -118,8 +119,6 @@ def _files_equal(a: Path, b: Path) -> bool:
 
 
 def _sha256(path: Path) -> str:
-    import hashlib
-
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(256 * 1024), b""):

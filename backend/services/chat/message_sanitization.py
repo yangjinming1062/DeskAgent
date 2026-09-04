@@ -73,7 +73,9 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
             json.loads(fixed)
             break
         except json.JSONDecodeError:
-            if fixed.endswith("}") and fixed.count("}") > fixed.count("{") or fixed.endswith("]") and fixed.count("]") > fixed.count("["):
+            trailing_curly = fixed.endswith("}") and fixed.count("}") > fixed.count("{")
+            trailing_bracket = fixed.endswith("]") and fixed.count("]") > fixed.count("[")
+            if trailing_curly or trailing_bracket:
                 fixed = fixed[:-1]
             else:
                 break

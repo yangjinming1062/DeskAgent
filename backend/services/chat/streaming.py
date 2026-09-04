@@ -156,7 +156,7 @@ async def _stream_llm_response(
         nonlocal flush_task
         if flush_task is not None and flush_task is not asyncio.current_task():
             flush_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
+            with contextlib.suppress(asyncio.CancelledError):
                 await flush_task
             flush_task = None
         if not batch_buf:

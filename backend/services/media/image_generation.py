@@ -81,7 +81,7 @@ async def generate_images(
         raise ImageGenerationError("图片生成服务未配置", internal=str(e)) from e
     except Exception as e:
         logger.exception("image generation failed", extra={"user_id": user_id})
-        raise ImageGenerationError(str(e), internal=str(e)) from e
+        raise ImageGenerationError("图片生成失败，请稍后重试", internal=str(e)) from e
 
     if not result.images:
         raise ImageGenerationError("图片生成服务返回空结果")

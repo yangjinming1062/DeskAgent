@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .llm_client import resolve_provider_chain
+
 
 def merge_provider_json(slots: list[ProviderSlot], existing: UserModelConfig | None) -> str:
     """把供应商槽位序列化为 JSON；空 api_key 保留已有 key（前端看不见原值，"留空"必须等于"无修改"）。"""
@@ -43,8 +45,6 @@ class UserLlmConfig(BaseModel):
 
 async def resolve_user_llm_config(db: AsyncSession | None, user_id: int) -> UserLlmConfig:
     # 所有凭据都来自 chat 路径同一链头，下游调用方（scheduler、title 生成）看到一致的供应商。``db=None`` 允许无 session 的启动场景。
-    from .llm_client import resolve_provider_chain
-
     config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none() if db is not None else None
     chain = await resolve_provider_chain(db, user_id, "llm", user_cfg=config)
     head = chain[0] if chain else None

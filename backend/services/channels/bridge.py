@@ -243,6 +243,14 @@ class ChannelTurnEmitter:
         self._on_start: Callable[[], Awaitable[None]] | None = None
         self._on_progress: Callable[[str], Awaitable[None]] | None = None
         self._progress_buffer: list[str] = []
+        self._typing_task: asyncio.Task | None = None
+
+    def _clear_typing_task(self, task: asyncio.Task) -> None:
+        # 仅当仍是当前 task 时清空：新一轮 typing 已覆盖时，旧回调安全跳过。
+        if self._typing_task is task:
+            self._typing_task = None
+        if not task.cancelled() and (exc := task.exception()) is not None:
+            logger.warning("channel typing callback raised", exc_info=exc)
 
     def bind_typing(self, on_start: Callable[[], Awaitable[None]]) -> None:
         self._on_start = on_start
@@ -264,7 +272,8 @@ class ChannelTurnEmitter:
         self.frames.append(data)
         frame_type = data.get("type")
         if frame_type == "message.start" and self._on_start is not None:
-            asyncio.create_task(self._on_start())
+            self._typing_task = asyncio.create_task(self._on_start())
+            self._typing_task.add_done_callback(self._clear_typing_task)
         elif frame_type == "chunk":
             self._progress_buffer.append(data.get("content", ""))
         elif frame_type == "tool_start" and self._on_progress is not None:

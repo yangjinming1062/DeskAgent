@@ -281,8 +281,10 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
             session_client_context: ChatRequestClientContext | None = None
             if payload and "ctx" in payload:
-                with contextlib.suppress(Exception):
+                try:
                     session_client_context = ChatRequestClientContext(**payload["ctx"])
+                except Exception:
+                    logger.debug("client context parse failed; continuing without context", extra={"user_id": user_id, "ctx_keys": list((payload.get("ctx") or {}).keys())})
 
             ws_emitter = WSEmitter(websocket)
 
@@ -328,8 +330,10 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         except Exception:
             logger.exception("WebSocket boot initialization failed", extra={"user_id": user_id})
             MANAGER.disconnect(websocket, user_id)
-            with contextlib.suppress(Exception):
+            try:
                 await websocket.close(code=1011)
+            except Exception:
+                logger.warning("failed to close websocket after boot init failure", extra={"user_id": user_id}, exc_info=True)
             return
 
     try:
