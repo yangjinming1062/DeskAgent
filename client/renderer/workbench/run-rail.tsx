@@ -1,63 +1,139 @@
-// 工作台 Run Rail：本轮工具调用、最新的终端片段 / diff / 截图 / 生成媒体、本会话工件。
-//
-// 一期按计划 §4.4「纯 Client 投影」实现：读 chat-store 派生；后续工具进程结果回流后
-// 直接在 chip 旁展开摘要/媒体。
+// 工作台运行轨迹：本轮工具调用、最新输出与本会话工件
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 
-import { $chatMessageBodies, $chatMessageList, type ChatMessageBody } from '@/chat/chat-store'
+import { ChatMediaCard } from '@/chat/chat-media-card'
+import { X } from '@/shared/lib/icons'
+import type { ChatMediaItem } from '@/shared/types/spiritagent'
+import { $artifacts, $isRailOpen, $runRound, setRailOpen, toggleRail } from '@/workbench/run-rail-store'
+
+import styles from './workbench.module.css'
 
 export function RunRail(): React.JSX.Element {
-  const list = useStore($chatMessageList)
-  const bodies = useStore($chatMessageBodies)
+  const open = useStore($isRailOpen)
+  const round = useStore($runRound)
+  const artifacts = useStore($artifacts)
 
-  // 从尾部扫第一条 assistant 消息，避免 list.reverse() 拷一份 + 反转。
-  let lastBody: ChatMessageBody | undefined
-
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].role === 'assistant') {
-      lastBody = bodies[list[i].id]
-
-      break
-    }
+  // 用户手动折叠右栏后保留 0 宽，仅一个唤起条；展开恢复 320。
+  if (!open) {
+    return (
+      <aside className={styles.runRailCollapsed}>
+        <button
+          aria-label="展开运行轨迹"
+          className={styles.runRailExpand}
+          onClick={() => setRailOpen(true)}
+          type="button"
+        >
+          <span className={styles.runRailExpandLabel}>运行轨迹</span>
+        </button>
+      </aside>
+    )
   }
 
-  // 与 MessageBubble 里的 ToolTimeline 同步：单条 toolName 也算一轮。
-  const tools = lastBody?.tools?.length ? lastBody.tools : lastBody?.toolName ? [lastBody.toolName] : []
-
-  const lastToolName = lastBody?.toolName ?? null
-
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-line-standard bg-surface-chrome">
-      <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
-        <h3 className="text-xs font-semibold text-body">本轮</h3>
-        <span className="text-[10px] text-faint">{tools.length} 步</span>
-      </div>
+    <aside className={styles.runRail}>
+      <header className={styles.runRailHeader}>
+        <div>
+          <h3 className={styles.runRailTitle}>运行轨迹</h3>
+          <span className={styles.runRailSubtitle}>{round ? `${round.steps.length} 步 · 本轮` : '空闲中'}</span>
+        </div>
+        <button
+          aria-label="折叠运行轨迹"
+          className={styles.runRailCollapse}
+          onClick={() => toggleRail()}
+          title="折叠"
+          type="button"
+        >
+          <X className="size-3.5" />
+        </button>
+      </header>
 
-      <div className="space-y-1 px-3 pb-3">
-        {tools.length === 0 ? (
-          <p className="py-6 text-center text-xs text-faint">还没有工具调用</p>
-        ) : (
-          tools.map((name, index) => (
-            <div
-              className={`flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] ${
-                index === tools.length - 1 && lastToolName === name
-                  ? 'border-accent-line bg-accent-soft text-accent'
-                  : 'border-line-standard text-muted'
-              }`}
-              key={`${name}-${index}`}
-            >
-              <span className="font-mono">{name}</span>
+      <div className={styles.runRailBody}>
+        <Section subtitle={round?.steps.length ? `${round.steps.length} 步` : '尚未动手'} title="本轮工具">
+          {round && round.steps.length > 0 ? (
+            <ol className={styles.steps}>
+              {round.steps.map((step, idx) => (
+                <li className={`${styles.step} ${step.active ? styles.stepActive : ''}`} key={`${step.name}-${idx}`}>
+                  <span className={styles.stepIndex}>{idx + 1}</span>
+                  <span className={styles.stepName}>{step.name}</span>
+                  {step.active ? <span aria-hidden="true" className={styles.stepPulse} /> : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className={styles.sectionEmpty}>{round?.active ? '准备中…' : '这一轮还没动手'}</p>
+          )}
+        </Section>
+
+        <Section subtitle={round?.active ? '正在执行' : '已落定'} title="最新输出">
+          <LatestOutput active={Boolean(round?.active)} media={round?.outputMedia} text={round?.outputText ?? ''} />
+        </Section>
+
+        <Section subtitle={artifacts.length ? `${artifacts.length} 项` : '尚无'} title="本会话工件">
+          {artifacts.length > 0 ? (
+            <div className={styles.artifacts}>
+              {artifacts.map(artifact => (
+                <ChatMediaCard item={{ type: artifact.kind, url: artifact.url }} key={artifact.id} />
+              ))}
             </div>
-          ))
-        )}
-      </div>
-
-      <div className="border-t border-line-standard px-3 py-2">
-        <h4 className="text-[10px] uppercase tracking-wider text-faint">最新输出</h4>
-        <p className="mt-1 text-xs text-muted">终端片段、diff 摘要与媒体将在 C2 后续小节接入。</p>
+          ) : (
+            <p className={styles.sectionEmpty}>这一轮还没有生成图或视频</p>
+          )}
+        </Section>
       </div>
     </aside>
+  )
+}
+
+interface SectionProps {
+  children: React.ReactNode
+  subtitle?: string
+  title: string
+}
+
+function Section({ children, subtitle, title }: SectionProps): React.JSX.Element {
+  return (
+    <section className={styles.section}>
+      <header className={styles.sectionHeader}>
+        <h4 className={styles.sectionTitle}>{title}</h4>
+        {subtitle ? <span className={styles.sectionSubtitle}>{subtitle}</span> : null}
+      </header>
+      <div className={styles.sectionBody}>{children}</div>
+    </section>
+  )
+}
+
+interface LatestOutputProps {
+  active: boolean
+  media?: ChatMediaItem[]
+  text: string
+}
+
+function LatestOutput({ active, media, text }: LatestOutputProps): React.JSX.Element {
+  const trimmed = text.trim()
+  const showStreamingHint = active && !trimmed && !media?.length
+
+  const textPreview = trimmed.length > 800 ? `${trimmed.slice(0, 800)}…` : trimmed
+
+  if (showStreamingHint) {
+    return <p className={styles.sectionEmpty}>正在准备输出…</p>
+  }
+
+  return (
+    <div className={styles.outputStack}>
+      {textPreview ? (
+        <pre className={styles.outputText} data-empty={!trimmed}>
+          {textPreview}
+        </pre>
+      ) : null}
+      {media?.length ? (
+        <div className={styles.outputMedia}>
+          {media.map(m => (
+            <ChatMediaCard item={{ type: m.type, url: m.url }} key={m.url} />
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
 }

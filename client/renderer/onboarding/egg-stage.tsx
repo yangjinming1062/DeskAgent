@@ -2,8 +2,8 @@ import { useStore } from '@nanostores/react'
 import { clamp } from '@runtime'
 import { useEffect, useRef, useState } from 'react'
 
-import { $chatOpen } from '@/chat'
 import { openContextMenu } from '@/companion'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 // 桌面常驻「蛋」：透明置顶窗口里呼吸 / 裂纹闪光 / hover 注视，等待用户戳击启动 onboarding。
 // 设计来源：DESIGN.md §4 / §5.1——「蛋破碎后开始对话」意味着蛋必须作为独立桌面存在物，
@@ -28,7 +28,7 @@ interface EggStageProps {
 export function EggStage({ size = 280, onTap }: EggStageProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const eyesRef = useRef<SVGGElement>(null)
-  const chatOpen = useStore($chatOpen)
+  const surfaceOpen = useStore($surfaceOpen)
   const [promptVisible, setPromptVisible] = useState(false)
 
   useEffect(() => {
@@ -107,7 +107,7 @@ export function EggStage({ size = 280, onTap }: EggStageProps): React.JSX.Elemen
         onTap()
       }}
       ref={containerRef}
-      style={{ width: size, height: size, opacity: chatOpen ? 0.25 : 1 }}
+      style={{ width: size, height: size, opacity: surfaceOpen !== null ? 0.25 : 1 }}
     >
       <svg aria-label="SpiritAgent Egg" className="overflow-visible" height={size} viewBox="0 0 320 320" width={size}>
         <defs>

@@ -1,14 +1,7 @@
-import type { SurfaceId } from '@ipc/contracts'
 import { atom, computed } from 'nanostores'
 
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
-import { requestOpenSurface as requestOpenSurfaceIpc } from '@/shared/store/surfaces'
-
-// requestOpenSurface 直接走主进程 surface 互斥。
-export function requestOpenSurface(surface: SurfaceId, options?: { sessionId?: string; view?: string }): void {
-  void requestOpenSurfaceIpc(surface, options)
-}
 
 // 渲染层按 unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'

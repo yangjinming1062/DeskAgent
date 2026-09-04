@@ -45,7 +45,6 @@ export const $chatMessageBodies = map<Record<string, ChatMessageBody>>({})
 export const $lastAssistantStreaming = atom<boolean>(false)
 export const $chatStreamingTick = atom<number>(0)
 export const $chatSessionId = atom<string | null>(storedString(CHAT_SESSION_ID_KEY))
-export const $chatOpen = atom(false)
 // IM 守卫与语音入口的权威 kind 源：写值由 hydrate 把服务端 info.kind 注入。
 export const $chatSessionKind = atom<string>('standard')
 
@@ -159,10 +158,6 @@ export function pushExternalAttachment(paths: string[]): void {
 
 export function clearExternalAttachment(): void {
   $pendingExternalAttachment.set(null)
-}
-
-export function setChatOpen(open: boolean): void {
-  $chatOpen.set(open)
 }
 
 export function setChatSession(id: string | null): void {
@@ -406,7 +401,6 @@ registerStorageClearHandler(() => {
   $chatMessageBodies.set({})
   $lastAssistantStreaming.set(false)
   $chatStreamingTick.set(0)
-  $chatOpen.set(false)
   $chatSessionKind.set('standard')
   $sessionSettings.set({})
   $sessionContextUsage.set({

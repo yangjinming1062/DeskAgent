@@ -15,10 +15,7 @@ import {
   isCompanionSession,
   switchSession
 } from '@/chat/session-list-store'
-import { useChatSubmit } from '@/chat/use-chat-submit'
-import { useVoiceRecorder } from '@/companion/hooks/use-voice-recorder'
-import { type ChatSubmitState, ConversationInput, ConversationSurface } from '@/conversation'
-import { resolveDroppedFiles } from '@/shared/lib/file-drop'
+import { ChatPanel } from '@/conversation/chat-panel'
 import { Home, SlidersHorizontal, Terminal } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -40,9 +37,6 @@ export function WorkbenchRoot(): React.JSX.Element {
   const isReadOnlySession = sessionKind === 'im'
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const attachMenuRef = useRef<HTMLDivElement>(null)
-  const externalPathsRef = useRef<string[]>([])
 
   const [settingsOpen, setSettingsOpen] = useState(() => {
     if (typeof window !== 'undefined' && window.location.hash) {
@@ -51,29 +45,6 @@ export function WorkbenchRoot(): React.JSX.Element {
 
     return false
   })
-
-  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
-
-  const submit = useChatSubmit({
-    externalPathsRef,
-    gatewayState,
-    isReadOnlySession,
-    onClearExternalPaths: () => undefined,
-    onPreCheckFail: () => undefined
-  })
-
-  const { text, setText, pending, setPending, sending, send, handleStop } = submit
-  const { recording, start: startRecording, stop: stopRecording } = useVoiceRecorder({ isReadOnlySession })
-
-  const submitState: ChatSubmitState = {
-    gatewayState,
-    isGenerating: gatewayState === 'open' && sending,
-    isReadOnlySession,
-    pending,
-    recording,
-    sending,
-    text
-  }
 
   // 保证工作台不处于生活空间的「陪伴」会话下
   useEffect(() => {
@@ -195,49 +166,14 @@ export function WorkbenchRoot(): React.JSX.Element {
         </div>
 
         <main className={styles.center}>
-          <ConversationSurface className={styles.chatSurface} scrollRef={scrollRef} />
-
-          <div className={styles.chatInputWrapper}>
-            <ConversationInput
-              attachMenuOpen={attachMenuOpen}
-              externalPathsRef={externalPathsRef}
-              inputRef={inputRef}
-              onAttachMenuToggle={setAttachMenuOpen}
-              onDrop={e => {
-                const paths = resolveDroppedFiles(e.dataTransfer?.files)
-
-                if (paths.length > 0) {
-                  e.preventDefault()
-                }
-              }}
-              onRecordingPointerCancel={e => {
-                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                  e.currentTarget.releasePointerCapture(e.pointerId)
-                }
-
-                void stopRecording()
-              }}
-              onRecordingPointerDown={e => {
-                e.currentTarget.setPointerCapture(e.pointerId)
-                void startRecording()
-              }}
-              onRecordingPointerUp={e => {
-                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                  e.currentTarget.releasePointerCapture(e.pointerId)
-                }
-
-                void stopRecording()
-              }}
-              onSend={() => {
-                void send()
-              }}
-              onSetPending={setPending}
-              onSetText={setText}
-              onStop={handleStop}
-              setAttachMenuRef={attachMenuRef}
-              submit={submitState}
-            />
-          </div>
+          <ChatPanel
+            gatewayState={gatewayState}
+            inputWrapperClassName={styles.chatInputWrapper}
+            isReadOnlySession={isReadOnlySession}
+            scrollRef={scrollRef}
+            surfaceClassName={styles.chatSurface}
+            variant="workbench"
+          />
         </main>
 
         <RunRail />

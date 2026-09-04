@@ -1,8 +1,10 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 
+import { $spriteEmotion, $spriteState } from '@/companion/companion-store'
 import { $persona } from '@/companion/persona-store'
 import { $portraitUrl } from '@/companion/portrait-store'
+import { triggerHaptic } from '@/shared/lib/haptics'
 import {
   ArrowRight,
   CalendarPlus,
@@ -26,14 +28,88 @@ interface NavEntry {
 }
 
 const NAV_ENTRIES: NavEntry[] = [
-  { icon: MessageSquareText, id: 'chat', label: '陪伴对话' },
-  { icon: Sparkles, id: 'moments', label: '生活片刻' },
-  { icon: CalendarPlus, id: 'diary', label: '自然日记' },
-  { icon: Shirt, id: 'wardrobe', label: '衣橱换装' },
-  { icon: Palette, id: 'appearance', label: '伙伴形象' },
-  { icon: Globe, id: 'channels', label: '跨端通道' },
-  { icon: Settings, id: 'settings', label: '设置中心' }
+  { icon: MessageSquareText, id: 'chat', label: '对话' },
+  { icon: Sparkles, id: 'moments', label: '片刻' },
+  { icon: CalendarPlus, id: 'diary', label: '日记' },
+  { icon: Shirt, id: 'wardrobe', label: '衣橱' },
+  { icon: Palette, id: 'appearance', label: '形象' },
+  { icon: Globe, id: 'channels', label: '通道' },
+  { icon: Settings, id: 'settings', label: '设置' }
 ]
+
+// 状态文案随动画状态走，不要写死"陪伴中 · 栖息"——静态文案会让人觉得她没在动。
+function describeState(state: string, emotion: string | null): string {
+  if (emotion && emotion !== 'neutral') {
+    return `${stateLabel(state)} · ${emotionLabel(emotion)}`
+  }
+
+  return stateLabel(state)
+}
+
+function stateLabel(state: string): string {
+  switch (state) {
+    case 'thinking':
+      return '在想事情'
+
+    case 'working':
+      return '在忙'
+
+    case 'speaking':
+      return '在说话'
+
+    case 'listening':
+      return '在听'
+
+    case 'emotional':
+      return '有小情绪'
+
+    case 'interacting':
+      return '在陪'
+
+    default:
+      return '陪伴中'
+  }
+}
+
+function emotionLabel(emotion: string): string {
+  switch (emotion) {
+    case 'happy':
+      return '开心'
+
+    case 'sad':
+      return '低落'
+
+    case 'angry':
+      return '闹别扭'
+
+    case 'surprised':
+      return '惊讶'
+
+    case 'shy':
+      return '害羞'
+
+    case 'curious':
+      return '好奇'
+
+    case 'sleepy':
+      return '犯困'
+
+    case 'excited':
+      return '兴奋'
+
+    case 'playful':
+      return '玩耍'
+
+    case 'concerned':
+      return '担心'
+
+    case 'scared':
+      return '害怕'
+
+    default:
+      return '陪伴中'
+  }
+}
 
 interface LivingRailProps {
   onGoToWorkbench: () => void
@@ -43,21 +119,31 @@ export function LivingRail({ onGoToWorkbench }: LivingRailProps): React.JSX.Elem
   const persona = useStore($persona)
   const portrait = useStore($portraitUrl)
   const view = useStore($livingView)
+  const spriteState = useStore($spriteState)
+  const emotion = useStore($spriteEmotion)
   const displayName = persona?.name ?? '伙伴'
+  const statusText = describeState(spriteState, emotion)
 
   return (
     <aside className={styles.rail}>
       <div className={styles.identity}>
-        <div className={styles.avatar}>
+        <button
+          aria-label={`${displayName} 的表情反馈`}
+          className={styles.avatar}
+          data-emotion={emotion && emotion !== 'neutral' ? emotion : undefined}
+          data-state={spriteState}
+          onClick={() => triggerHaptic('tap')}
+          type="button"
+        >
           {portrait ? (
             <img alt={displayName} className={styles.avatarImage} src={portrait} />
           ) : (
             <span className={styles.avatarFallback}>{displayName.slice(0, 1)}</span>
           )}
-        </div>
+        </button>
         <div className={styles.identityText}>
           <p className={styles.displayName}>{displayName}</p>
-          <span className={styles.statusDesc}>陪伴中 · 栖息</span>
+          <span className={styles.statusDesc}>{statusText}</span>
         </div>
       </div>
 
@@ -81,7 +167,7 @@ export function LivingRail({ onGoToWorkbench }: LivingRailProps): React.JSX.Elem
       </nav>
 
       <button className={styles.workbenchButton} onClick={onGoToWorkbench} style={{ marginTop: 'auto' }} type="button">
-        <span>切换到工作台</span>
+        <span>去工作台</span>
         <ArrowRight size={13} />
       </button>
     </aside>

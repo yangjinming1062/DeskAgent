@@ -3,10 +3,11 @@ import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } fro
 
 import { $mesh2dHitmap } from '@/2d'
 import { $sprite3DHitTest } from '@/3d'
-import { $chatOpen, clearExternalAttachment, pushExternalAttachment } from '@/chat'
-import { $clipOverride, $spriteAction, requestOpenSurface, setSpriteState } from '@/companion/companion-store'
+import { clearExternalAttachment, pushExternalAttachment } from '@/chat'
+import { $clipOverride, $spriteAction, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
+import { $surfaceOpen, requestOpenSurface } from '@/shared/store/surfaces'
 
 import { handleDragEndInteraction, handlePetInteraction } from '../interaction'
 import {
@@ -196,7 +197,7 @@ export function SpriteStage({
 
         // 拖拽释放比显示器切换早到——也要重映射静止位置，否则精灵会停在旧视口
         // 坐标上（新显示器上看不见）。自主移动已经算出新空间位置时跳过。
-        if (!dragging && ($spatialLocomotion.get() !== 'still' || $chatOpen.get())) {
+        if (!dragging && ($spatialLocomotion.get() !== 'still' || $surfaceOpen.get() !== null)) {
           return
         }
 
@@ -234,7 +235,7 @@ export function SpriteStage({
     clearExternalAttachment()
     pushExternalAttachment(paths)
     // 投喂文件时自动打开生活空间聊天的文件投递；
-    // 走主进程 surface 互斥（不能直接 setChatOpen，避免与 workbench 冲突）。
+    // 走主进程 surface 互斥（不能直接写 $surfaceOpen，避免与工作台冲突）。
     void requestOpenSurface('living')
   }
 

@@ -2,15 +2,16 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { memo, useState } from 'react'
 
-import { ChevronDown } from '@/shared/lib/icons'
+import { ToolChipTimeline } from '@/conversation/tool-chip-timeline'
+import { ArrowRight, ChevronDown } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { requestOpenSurface } from '@/shared/store/surfaces'
 
 import { ChatMediaCard } from './chat-media-card'
 import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
-import { $chatMessageBodies } from './chat-store'
-import type { ChatMessageBody, ChatMessageListItem } from './chat-store'
+import { $chatMessageBodies, $chatSessionId, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
 const SYSTEM_PILL_SUBTYPES = new Set([
@@ -25,28 +26,29 @@ const SYSTEM_PILL_SUBTYPES = new Set([
 // 走独立分支而不是 pill —— 视觉权重要让用户意识到这是个有信息量的节点。
 const COMPRESS_CARD_SUBTYPES = new Set(['compress_summary'])
 
-function ToolTimeline({ active, tools }: { active: boolean; tools: string[] }): React.JSX.Element {
-  const current = tools[tools.length - 1]
-  const count = tools.length
+export type ConversationVariant = 'living' | 'workbench'
+
+interface MessageBubbleProps {
+  message: ChatMessageListItem
+  variant?: ConversationVariant
+}
+
+// 生活空间在工具回合里的跳转入口
+function GoHandleItBadge({ sessionId }: { sessionId: string | null }): React.JSX.Element {
+  const openWorkbench = (): void => {
+    void requestOpenSurface('workbench', sessionId ? { sessionId } : {})
+  }
 
   return (
-    <details className="mx-auto my-1.5 w-fit">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-full border border-line-standard bg-surface-card/70 px-3 py-1 text-xs text-muted shadow-xs backdrop-blur-glass transition hover:bg-fill-hover">
-        <span className={`size-1.5 rounded-full bg-accent ${active ? 'animate-pulse' : ''}`} />
-        <span className="text-muted">{active ? `它正在忙… (${current})` : `它做了 ${count} 步`}</span>
-        <ChevronDown className="size-3 text-faint transition-transform duration-200" />
-      </summary>
-      <div className="mt-1 flex flex-col items-center gap-1">
-        {tools.map((name, index) => (
-          <div
-            className="inline-flex items-center gap-1.5 rounded-full border border-line-hairline bg-surface-panel/80 px-2.5 py-0.5 font-mono text-[11px] text-muted shadow-xs"
-            key={`${name}-${index}`}
-          >
-            {name}
-          </div>
-        ))}
-      </div>
-    </details>
+    <button
+      className="mx-auto my-1.5 inline-flex items-center gap-1.5 rounded-full border border-line-hairline bg-accent-soft px-3 py-1 text-xs text-strong shadow-xs backdrop-blur-glass transition hover:brightness-110"
+      onClick={openWorkbench}
+      type="button"
+    >
+      <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+      <span>我去忙一下</span>
+      <ArrowRight className="size-3" />
+    </button>
   )
 }
 
@@ -66,7 +68,7 @@ function stripAttachmentDirectives(text: string): string {
     .join('\n')
 }
 
-function MessageBubbleInner({ message }: { message: ChatMessageListItem }): React.JSX.Element {
+function MessageBubbleInner({ message, variant }: MessageBubbleProps): React.JSX.Element {
   // 仅订阅本 id 的 body，避免流式增量触发全局重渲染。
   const bodies = useStore($chatMessageBodies, { keys: [message.id], deps: [message.id] })
   const body: ChatMessageBody | undefined = bodies[message.id]
@@ -75,18 +77,24 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
     return <></>
   }
 
-  return <MessageBubbleWithBody body={body} message={message} />
+  return <MessageBubbleWithBody body={body} message={message} variant={variant ?? 'living'} />
 }
 
 function MessageBubbleWithBody({
   body,
-  message
+  message,
+  variant
 }: {
   body: ChatMessageBody
   message: ChatMessageListItem
+  variant: ConversationVariant
 }): React.JSX.Element {
   const subtype = message.subtype || ''
   const isUser = message.role === 'user'
+
+  // 会话 id：生活空间跳转工作台时附带 sessionId，跳到对应会话。
+  // 必须在所有早返回之前订阅，避免 hooks 顺序错位。
+  const sessionId = useStore($chatSessionId)
 
   // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
   const [compressExpanded, setCompressExpanded] = useState(false)
@@ -186,6 +194,7 @@ function MessageBubbleWithBody({
   const hideTextBubble = isUser && !visibleText.trim() && Boolean(body.attachments?.length)
   const tools = body.tools?.length ? body.tools : body.toolName ? [body.toolName] : []
   const toolOnly = tools.length > 0 && !visibleText.trim() && !body.error && !body.cancelled
+  const showToolIndicator = !isUser && tools.length > 0
 
   return (
     <div className={`group/message relative flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -197,14 +206,25 @@ function MessageBubbleWithBody({
             ))}
           </div>
         ) : null}
-        {tools.length > 0 ? <ToolTimeline active={toolOnly} tools={tools} /> : null}
+        {showToolIndicator && variant === 'workbench' ? <ToolChipTimeline active={toolOnly} tools={tools} /> : null}
+        {showToolIndicator && variant === 'living' ? <GoHandleItBadge sessionId={sessionId} /> : null}
         {!hideTextBubble && !toolOnly ? (
           <div
-            className={`relative whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+            className={cn(
+              'relative whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm backdrop-blur-md',
               isUser
-                ? 'rounded-br-sm border border-line-standard bg-fill-hover text-strong shadow-sm backdrop-blur-md'
-                : 'rounded-bl-sm border border-line-standard bg-surface-card/45 text-strong shadow-sm backdrop-blur-md'
-            }`}
+                ? variant === 'workbench'
+                  ? 'rounded-br-sm border border-line-standard bg-fill-hover text-strong'
+                  : 'rounded-br-sm border border-accent-line/40 text-strong'
+                : variant === 'workbench'
+                  ? 'rounded-bl-sm border border-line-standard bg-surface-card/45 text-strong'
+                  : 'rounded-bl-sm border border-line-hairline bg-surface-card/20 text-strong'
+            )}
+            style={
+              isUser && variant === 'living'
+                ? { backgroundColor: 'color-mix(in srgb, var(--ui-accent) 14%, transparent)' }
+                : undefined
+            }
           >
             {body.error ? (
               <span className="text-amber-500">{body.error}</span>

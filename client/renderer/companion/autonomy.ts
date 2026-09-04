@@ -1,8 +1,8 @@
 ﻿import { clamp } from '@runtime'
 
-import { $chatOpen } from '@/chat'
 import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
 import { $effectiveTier, lockGazeToPoint } from './companion-store'
@@ -66,7 +66,7 @@ function approachLocomotion(target: { x: number; y: number }): 'walk' | 'fly' {
 // 途中视线锁定目标中心，数秒后交还指针跟随（镜像 events.ts 的 perch cue 模式）。
 function executeApproach(): void {
   // 锁屏不搭话；聊天开着时空间决策本就冻结。
-  if ($screenLocked.get() || $chatOpen.get()) {
+  if ($screenLocked.get() || $surfaceOpen.get() !== null) {
     return
   }
 

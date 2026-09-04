@@ -10,19 +10,19 @@
 // 消费方：主进程路由分发、托盘菜单、精灵右键与桌面双击入口。
 
 import {
+  type DesktopSurfaceBounds,
   type DesktopSurfaceChangedEvent,
   type DesktopSurfaceOpenPayload,
   IPC,
   normalizeSurfaceId,
   type SurfaceId
 } from '@ipc/contracts'
-import { BrowserWindow, type IpcMain } from 'electron'
+import { BrowserWindow, type IpcMain, screen } from 'electron'
 
 import * as runnerConfigStore from '../shared/lib/runner-config-store'
 
 export interface SurfacesManager {
   closeSurface: () => Promise<void>
-  focusSurface: () => Promise<void>
   getState: () => DesktopSurfaceChangedEvent
   hydrateLastSurface: () => SurfaceId
   onWindowClosed: (id: SurfaceId, win: BrowserWindow) => void
@@ -34,6 +34,7 @@ interface SurfacesManagerOptions {
   createWindow: (id: SurfaceId, payload?: DesktopSurfaceOpenPayload) => Promise<BrowserWindow>
   navigateWindow?: (win: BrowserWindow, id: SurfaceId, payload: DesktopSurfaceOpenPayload) => Promise<void> | void
   rememberLog?: (chunk: string) => void
+  syncSpriteToDisplay?: (display: Electron.Display) => void
 }
 
 const LAST_SURFACE_KEY_PATH = ['ui', 'last_surface'] as const
@@ -56,8 +57,31 @@ async function persistLastSurface(id: SurfaceId): Promise<void> {
   await runnerConfigStore.patch(LAST_SURFACE_KEY_PATH, { value: id })
 }
 
+// 上报工作台窗口相对于当前屏幕工作区的坐标
+function captureBounds(
+  win: BrowserWindow,
+  syncSpriteToDisplay?: (display: Electron.Display) => void
+): DesktopSurfaceBounds | null {
+  if (win.isDestroyed()) {
+    return null
+  }
+
+  const b = win.getBounds()
+  const display = screen.getDisplayMatching(b)
+  syncSpriteToDisplay?.(display)
+
+  return {
+    displayId: display.id,
+    height: b.height,
+    width: b.width,
+    x: b.x - display.workArea.x,
+    y: b.y - display.workArea.y
+  }
+}
+
 export function createSurfacesManager(options: SurfacesManagerOptions): SurfacesManager {
   const windows = new Map<SurfaceId, BrowserWindow>()
+  const boundsUnbinders = new Map<SurfaceId, () => void>()
   let openSurfaceId: null | SurfaceId = null
   let pendingChain: Promise<unknown> = Promise.resolve()
   let lastSurface: SurfaceId = 'living'
@@ -68,7 +92,57 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
   }
 
   function snapshot(): DesktopSurfaceChangedEvent {
-    return { lastSurface, open: openSurfaceId }
+    const open = openSurfaceId
+    // 栖息目标坐标仅在工作台开窗时下发，生活空间不携带
+    const win = open === 'workbench' ? windows.get(open) : null
+
+    return {
+      bounds: open === 'workbench' && win ? captureBounds(win, options.syncSpriteToDisplay) : null,
+      lastSurface,
+      open
+    }
+  }
+
+  function bindBoundsReporting(id: SurfaceId, win: BrowserWindow): void {
+    // 同一窗口被复用时先解绑，避免重复监听；createWindow 路径只触发一次。
+    boundsUnbinders.get(id)?.()
+
+    let reporterRaf: ReturnType<typeof setTimeout> | null = null
+
+    const rebroadcast = (): void => {
+      if (openSurfaceId !== id) {
+        return
+      }
+
+      broadcastAll(snapshot())
+    }
+
+    const onChange = (): void => {
+      // 拖动期间节流：合帧避免每像素都广播。
+      if (reporterRaf !== null) {
+        return
+      }
+
+      reporterRaf = setTimeout(() => {
+        reporterRaf = null
+        rebroadcast()
+      }, 16)
+    }
+
+    win.on('move', onChange)
+    win.on('resize', onChange)
+    win.on('show', rebroadcast)
+
+    boundsUnbinders.set(id, () => {
+      if (reporterRaf !== null) {
+        clearTimeout(reporterRaf)
+        reporterRaf = null
+      }
+
+      win.off('move', onChange)
+      win.off('resize', onChange)
+      win.off('show', rebroadcast)
+    })
   }
 
   function withMutex<T>(task: () => Promise<T>): Promise<T> {
@@ -84,6 +158,8 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     }
 
     windows.delete(id)
+    boundsUnbinders.get(id)?.()
+    boundsUnbinders.delete(id)
 
     if (openSurfaceId === id) {
       openSurfaceId = null
@@ -112,6 +188,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
       if (!win || win.isDestroyed()) {
         win = await options.createWindow(id, payload)
         windows.set(id, win)
+        bindBoundsReporting(id, win)
       } else if (payload.view || payload.sessionId) {
         await options.navigateWindow?.(win, id, payload)
       }
@@ -149,19 +226,6 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     })
   }
 
-  const focusSurface = async (): Promise<void> => {
-    const win = openSurfaceId ? windows.get(openSurfaceId) : null
-
-    if (win && !win.isDestroyed()) {
-      if (win.isMinimized()) {
-        win.restore()
-      }
-
-      win.show()
-      win.focus()
-    }
-  }
-
   const getState = (): DesktopSurfaceChangedEvent => snapshot()
 
   const hydrateLastSurface = (): SurfaceId => {
@@ -192,8 +256,6 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
 
     ipcMain.handle(IPC.invoke.surfaceClose, () => closeSurface())
 
-    ipcMain.handle(IPC.invoke.surfaceFocus, () => focusSurface())
-
     ipcMain.handle(IPC.invoke.surfaceGetState, () => snapshot())
   }
 
@@ -201,7 +263,6 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
 
   return {
     closeSurface,
-    focusSurface,
     getState,
     hydrateLastSurface,
     onWindowClosed,

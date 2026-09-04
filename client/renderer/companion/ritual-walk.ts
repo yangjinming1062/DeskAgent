@@ -1,6 +1,5 @@
 ﻿import { clamp, sleep } from '@runtime'
 
-import { $chatOpen } from '@/chat'
 import { $screenLocked } from '@/companion/activity'
 import { $gazeTarget, $spriteAction, lockGazeToPoint, setSpriteState } from '@/companion/companion-store'
 import { speakProactive } from '@/companion/proactive/proactive'
@@ -14,6 +13,7 @@ import {
   moveTo,
   updateSpatialDecision
 } from '@/companion/spatial'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 const RETRY_MS = 300
 const RETRY_COUNT = 5
@@ -80,7 +80,7 @@ export async function performRitualWalk<T>(
   execute: () => Promise<T>,
   opts?: { previewClick?: boolean }
 ): Promise<T> {
-  if ($chatOpen.get() || $screenLocked.get()) {
+  if ($surfaceOpen.get() !== null || $screenLocked.get()) {
     return execute()
   }
 

@@ -137,7 +137,7 @@ html[data-theme='day'] .workbenchButton:hover {
   flex-direction: column;
   flex-shrink: 0;
   padding: 16px 10px;
-  width: 224px;
+  width: 240px;
 }
 
 html[data-theme='day'] .rail {
@@ -166,19 +166,70 @@ html[data-theme='day'] .identity {
   background: rgba(255, 255, 255, 0.1);
   border: 1.5px solid rgba(255, 255, 255, 0.22);
   border-radius: 9999px;
-  box-shadow: 0 0 14px rgba(138, 160, 200, 0.25);
+  box-shadow: 0 0 14px var(--ui-accent-soft);
+  cursor: pointer;
   display: flex;
   flex-shrink: 0;
   height: 42px;
   justify-content: center;
   overflow: hidden;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 0;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.4s ease,
+    border-color 0.4s ease;
   width: 42px;
 }
 
 .avatar:hover {
-  box-shadow: 0 0 20px rgba(138, 160, 200, 0.45);
+  box-shadow: 0 0 20px var(--ui-accent-line);
   transform: scale(1.04);
+}
+
+.avatar:active {
+  transform: scale(0.96);
+}
+
+/* 思考时头像轻微律动；工作时主色描边 */
+.avatar[data-state='thinking'] {
+  animation: avatarPulse 1.6s ease-in-out infinite;
+  border-color: var(--ui-accent-line);
+}
+
+.avatar[data-state='working'] {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 18px var(--ui-accent-soft);
+}
+
+.avatar[data-state='speaking'] {
+  border-color: var(--ui-accent);
+}
+
+.avatar[data-state='emotional'] {
+  border-color: var(--ui-accent-line);
+}
+
+.avatar[data-emotion='happy'],
+.avatar[data-emotion='excited'],
+.avatar[data-emotion='playful'] {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 22px var(--ui-accent-soft);
+}
+
+.avatar[data-emotion='sad'],
+.avatar[data-emotion='sleepy'] {
+  filter: saturate(0.85);
+}
+
+@keyframes avatarPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 .avatarImage {

@@ -39,7 +39,7 @@ export function RoomBackdrop(): React.JSX.Element {
       <div className={styles.overlay} />
       {status === 'failed' && (
         <div className={styles.failedGlass}>
-          <p className={styles.failedText}>房间还没准备好…</p>
+          <p className={styles.failedText}>房间还在收拾…</p>
         </div>
       )}
       {status === 'pending' && !prevUrl && (

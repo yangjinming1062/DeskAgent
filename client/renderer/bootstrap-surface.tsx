@@ -3,8 +3,11 @@ import './styles.css'
 import type React from 'react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { HashRouter } from 'react-router-dom'
 
-import { initCompanionPrefsSync } from '@/companion'
+import { initCompanionPrefsSync, initPersonaSkin } from '@/companion'
+import { hydratePersona } from '@/companion/persona-store'
+import { hydratePortrait } from '@/companion/portrait-store'
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { applyNoBlurIfNeeded } from '@/shared/lib/apply-no-blur'
@@ -18,6 +21,9 @@ export function bootstrapSurface(label: string, RootComponent: React.ComponentTy
   initUiThemeSync()
   initCompanionPrefsSync()
   hydrateSurfaces()
+  void hydratePersona()
+  void hydratePortrait()
+  initPersonaSkin()
 
   const container = document.getElementById('root')
 
@@ -29,7 +35,9 @@ export function bootstrapSurface(label: string, RootComponent: React.ComponentTy
     <StrictMode>
       <ErrorBoundary label={label}>
         <HapticsProvider>
-          <RootComponent />
+          <HashRouter>
+            <RootComponent />
+          </HashRouter>
         </HapticsProvider>
       </ErrorBoundary>
     </StrictMode>

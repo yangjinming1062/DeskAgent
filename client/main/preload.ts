@@ -111,7 +111,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   surface: {
     close: () => ipcRenderer.invoke(IPC.invoke.surfaceClose),
-    focus: () => ipcRenderer.invoke(IPC.invoke.surfaceFocus),
     getState: () => ipcRenderer.invoke(IPC.invoke.surfaceGetState),
     onChanged: (cb: (payload: DesktopSurfaceChangedEvent) => void) => subscribe(IPC.event.surfaceChanged, cb),
     open: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceOpen, payload)

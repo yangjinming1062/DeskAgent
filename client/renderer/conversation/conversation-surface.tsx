@@ -8,7 +8,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { type RefObject, useEffect } from 'react'
 
-import { MessageBubble } from '@/chat/chat-dock-message-bubble'
+import { type ConversationVariant, MessageBubble } from '@/chat/chat-dock-message-bubble'
 import {
   $chatMessageList,
   $chatStreamingTick,
@@ -22,6 +22,7 @@ interface ConversationSurfaceProps {
   className?: string
   emptyHint?: string
   scrollRef: RefObject<HTMLDivElement | null>
+  variant?: ConversationVariant
 }
 
 function AutoFollowScroll({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }): null {
@@ -43,7 +44,8 @@ function AutoFollowScroll({ scrollRef }: { scrollRef: RefObject<HTMLDivElement |
 export function ConversationSurface({
   className,
   emptyHint = '说点什么，或发送文件/图片/视频给我看看～',
-  scrollRef
+  scrollRef,
+  variant = 'living'
 }: ConversationSurfaceProps): React.JSX.Element {
   const list = useStore($chatMessageList)
   const lastAssistantStreaming = useStore($lastAssistantStreaming)
@@ -55,10 +57,10 @@ export function ConversationSurface({
   const showTyping = isTurnPendingOrInFlight && !lastAssistantStreaming && gatewayState === 'open'
 
   return (
-    <div className={className ?? 'flex-1 space-y-3 overflow-y-auto px-4 py-4'} ref={scrollRef}>
+    <div className={className ?? 'flex-1 space-y-3 overflow-y-auto px-4 py-4'} data-surface={variant} ref={scrollRef}>
       {list.length === 0 && <p className="mt-8 text-center text-sm text-faint">{emptyHint}</p>}
       {list.map(item => (
-        <MessageBubble key={item.id} message={item} />
+        <MessageBubble key={item.id} message={item} variant={variant} />
       ))}
       {showTyping && (
         <div className="flex justify-start">

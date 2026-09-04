@@ -736,7 +736,16 @@ registerPrefsIpc({ ipcMain })
 surfaces = createSurfacesManager({
   createWindow: createSurfaceWindow,
   navigateWindow: navigateSurfaceWindow,
-  rememberLog: (chunk: string) => rememberLog(chunk)
+  rememberLog: (chunk: string) => rememberLog(chunk),
+  syncSpriteToDisplay: display => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const currentMatching = screen.getDisplayMatching(mainWindow.getBounds())
+
+      if (currentMatching.id !== display.id) {
+        mainWindow.setBounds(display.workArea)
+      }
+    }
+  }
 })
 surfaces.registerIpcHandlers({ ipcMain })
 surfaces.hydrateLastSurface()

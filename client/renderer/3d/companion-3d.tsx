@@ -1,7 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
-import { $chatOpen } from '@/chat'
 import {
   $clipOverride,
   $contextMenuOpen,
@@ -21,6 +20,7 @@ import {
   useInteractiveRegion
 } from '@/companion'
 import { log } from '@/shared/lib/log'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 import { Engine } from './Engine'
 import { fetchGlbWithCache } from './glb-opfs-cache'
@@ -140,7 +140,7 @@ export function Companion3D(): React.JSX.Element {
           return
         }
 
-        if ($chatOpen.get() || $spatialLocomotion.get() === 'drag' || $contextMenuOpen.get()) {
+        if ($surfaceOpen.get() !== null || $spatialLocomotion.get() === 'drag' || $contextMenuOpen.get()) {
           eng.character.setLookTarget(0, 0)
 
           return

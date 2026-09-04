@@ -3,7 +3,7 @@ import { IconBrandWechat } from '@tabler/icons-react'
 import type React from 'react'
 
 import { FloatingPanel } from '@/companion'
-import { AudioLines, Brain, Cpu, Info, Keyboard, Palette, Settings, Sparkles } from '@/shared/lib/icons'
+import { AudioLines, Brain, Cpu, Home, Info, Keyboard, Palette, Settings, Sparkles } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { type NavItemDescriptor, SettingsNav, SURFACE_CHROME } from '@/shared/panel'
 import { strings } from '@/shared/strings'
@@ -12,6 +12,7 @@ import { AboutSettings } from '../settings/about-settings'
 import { AppearanceSettings } from '../settings/appearance-settings'
 import { ChannelsSettings } from '../settings/channels-settings'
 import { InferenceSettings } from '../settings/inference-settings'
+import { RoomSettings } from '../settings/room-settings'
 import { RunnerSettings } from '../settings/runner-settings'
 import { ShortcutsSettings } from '../settings/shortcuts-settings'
 import { SkillsToolsTabs } from '../settings/skills-tools-tabs'
@@ -19,7 +20,7 @@ import { SpeechSettings } from '../settings/speech-settings'
 
 import { $appSettingsView, type AppSettingsView } from './app-settings-view'
 
-// 应用设置独立入口面板：八个应用层（原工具窗）。
+// 应用设置独立入口面板：八个应用层（原工具窗）+ 房间管理。
 export function AppSettingsPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
   const view = useStore($appSettingsView)
   const t = strings
@@ -29,6 +30,7 @@ export function AppSettingsPanel({ onClose }: { onClose: () => void }): React.JS
     { id: 'speech', label: t.speech.title, icon: AudioLines },
     { id: 'channels', label: t.settings.nav.channels, icon: IconBrandWechat },
     { id: 'appearance', label: t.settings.nav.appearance, icon: Palette },
+    { id: 'room', label: '房间管理', icon: Home },
     { id: 'shortcuts', label: t.settings.nav.shortcuts, icon: Keyboard },
     { id: 'runner', label: t.settings.nav.runner, icon: Cpu },
     { id: 'skills', label: t.settings.nav.skills, icon: Sparkles },
@@ -63,6 +65,8 @@ export function AppSettingsPanel({ onClose }: { onClose: () => void }): React.JS
             <ChannelsSettings />
           ) : view === 'appearance' ? (
             <AppearanceSettings />
+          ) : view === 'room' ? (
+            <RoomSettings />
           ) : view === 'shortcuts' ? (
             <ShortcutsSettings />
           ) : view === 'runner' ? (

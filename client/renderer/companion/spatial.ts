@@ -12,7 +12,7 @@ import {
 } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
-import { $surfaceOpen } from '@/shared/store/surfaces'
+import { $surfaceBounds, $surfaceOpen } from '@/shared/store/surfaces'
 
 export function getBaseSpriteHeight(): number {
   // 默认高度为显示器高度的 1/3，限制在 [260, 960] 区间内
@@ -273,6 +273,29 @@ export function moveTo(target: { x: number; y: number }, locomotion: 'walk' | 'f
   rafId = requestAnimationFrame(tick)
 }
 
+// 重新瞄准正在飞行的目标，拖拽窗口时合帧重瞄避免中断
+export function retargetMove(target: { x: number; y: number }): boolean {
+  if (rafId === null || !moveStart || !moveTarget) {
+    return false
+  }
+
+  const current = $spatialPos.get()
+  const dist = Math.hypot(target.x - current.x, target.y - current.y)
+
+  if (dist < 2) {
+    moveTarget = target
+
+    return true
+  }
+
+  moveStart = { ...current }
+  moveTarget = target
+  moveStartTime = performance.now()
+  moveDuration = Math.min(Math.max((dist / FLY_SPEED) * 1000, 50), 90)
+
+  return true
+}
+
 export function cancelMovement(notifyArrive = false): void {
   if (rafId !== null) {
     cancelAnimationFrame(rafId)
@@ -415,10 +438,12 @@ export function updateSpatialDecision(): void {
     return
   }
 
-  if ($surfaceOpen.get() === 'living') {
-    stopRoam()
-    cancelMovement()
-    $spatialLocomotion.set('still')
+  if ($surfaceOpen.get() === 'workbench') {
+    const bounds = $surfaceBounds.get()
+
+    if (bounds) {
+      applyWorkbenchPerch(bounds)
+    }
 
     return
   }
@@ -491,6 +516,38 @@ function generateRoamWaypoint(): { x: number; y: number } {
     x: REST_MARGIN + Math.random() * Math.max(0, vw - w - 2 * REST_MARGIN),
     y: Math.max(REST_MARGIN, vh * 0.5 + Math.random() * Math.max(0, vh * 0.4 - h))
   }
+}
+
+// 工作台窗外侧伴工栖息：右侧优先，溢出翻转至左侧，空间不足时按比例缩身
+function applyWorkbenchPerch(bounds: { height: number; width: number; x: number; y: number }): void {
+  // 当前正在拖拽或别的应用抢占焦点时不要强行挪动精灵，让用户握住的精灵先跟完手势。
+  if ($spatialLocomotion.get() === 'drag') {
+    return
+  }
+
+  const maxScale = $defaultScale.get()
+
+  const perch = computePerchPlacement({ h: bounds.height, w: bounds.width, x: bounds.x, y: bounds.y }, maxScale)
+
+  if (!perch) {
+    return
+  }
+
+  const workspaceScale = Math.max(0.5, perch.scale)
+
+  // 已在飞行中且 locale 仍是 perch → 重瞄目标；其他情况照常启动新的飞行。
+  if ($spatialLocale.get() === 'perch' && retargetMove(perch.pos)) {
+    perchScaleLimit = workspaceScale
+    updateAdaptiveScale()
+
+    return
+  }
+
+  setLocale('perch', {
+    locomotion: 'fly',
+    position: perch.pos,
+    scaleLimit: workspaceScale
+  })
 }
 
 export function startRoam(): void {
@@ -621,8 +678,9 @@ export function endDragAt(pos: { x: number; y: number }): void {
   const c = contentBox()
   const dockMargin = 40
 
-  // 1. 优先判定屏幕左右边缘吸附（仅在生活空间未打开时吸附）
-  if ($surfaceOpen.get() !== 'living') {
+  // 1. 优先判定屏幕左右边缘吸附——只有无入口窗时贴边（生活 / 工作台打开都禁掉）。
+  // 工作台打开时精灵在窗外侧伴工栖息，用户拖到屏边不该把它甩出窗外。
+  if ($surfaceOpen.get() === null) {
     const leftDist = pos.x + c.left
     const rightDist = vw - (pos.x + c.right)
 
@@ -782,9 +840,41 @@ export function initSpatial(): () => void {
       stopRoam()
       cancelMovement()
       $spatialLocomotion.set('still')
+    } else if (open === 'workbench') {
+      // 工作台窗是伴工栖息的唯一目标（plan §B3）：主进程 show/move/resize 时下发 bounds，
+      // 不依赖焦点碰巧在工作台。bounds 尚未到达时不要触发任何自动移动。
+      const bounds = $surfaceBounds.get()
+
+      if (bounds) {
+        applyWorkbenchPerch(bounds)
+      }
     } else {
+      if ($spatialLocale.get() === 'perch') {
+        setLocale('home')
+      }
+
       updateSpatialDecision()
     }
+  })
+
+  // 工作台窗移动 / 缩放：精灵平滑跟到新外侧，不能让用户把它甩在身后。
+  // bounds 缺失代表窗口尚未完成 show()——保持上一帧落位，等下一次下发。
+  const unlistenBounds = $surfaceBounds.listen((bounds, prev) => {
+    if ($surfaceOpen.get() !== 'workbench' || !bounds) {
+      return
+    }
+
+    if (
+      prev &&
+      prev.x === bounds.x &&
+      prev.y === bounds.y &&
+      prev.width === bounds.width &&
+      prev.height === bounds.height
+    ) {
+      return
+    }
+
+    applyWorkbenchPerch(bounds)
   })
 
   const unlistenState = $spriteState.listen(() => {
@@ -865,6 +955,7 @@ export function initSpatial(): () => void {
   return () => {
     settleSavedRectWait()
     unlistenSurface()
+    unlistenBounds()
     unlistenState()
     unlistenEmotion()
     unlistenTier()

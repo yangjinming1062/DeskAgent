@@ -12,10 +12,13 @@ import {
   type PointerEvent,
   type RefObject,
   type SetStateAction,
+  useEffect,
+  useRef,
   useState
 } from 'react'
 
 import { attachVideoFile, pickFile, pickFolder, pickImage, pickVideo } from '@/chat/chat-attach-picker'
+import type { ConversationVariant } from '@/chat/chat-dock-message-bubble'
 import { PendingAttachmentView } from '@/chat/chat-pending-attachment'
 import type { PendingAttachment } from '@/chat/chat-store'
 import { SlashCommandPopover } from '@/chat/slash-command-popover'
@@ -39,7 +42,7 @@ export interface SlashState {
   highlightIndex?: number
   items?: ScoredSlashCommand[]
   onHighlight?: (index: number) => void
-  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void
   onSelect?: (cmd: SlashCommandMeta, args: string[]) => void
   popoverOpen?: boolean
   query?: string
@@ -48,7 +51,6 @@ export interface SlashState {
 export interface ConversationInputProps {
   attachMenuOpen?: boolean
   externalPathsRef: RefObject<string[]>
-  inputRef: RefObject<HTMLInputElement | null>
   onAttachMenuToggle?: Dispatch<SetStateAction<boolean>>
   onDrop?: (e: React.DragEvent) => void
   onPaste?: (e: ClipboardEvent) => void | Promise<void>
@@ -59,17 +61,20 @@ export interface ConversationInputProps {
   onSetPending: Dispatch<SetStateAction<PendingAttachment | null>>
   onSetText: (next: string) => void
   onStop: () => void
-  onTyping?: () => void
   setAttachMenuRef: RefObject<HTMLDivElement | null>
   slash?: SlashState
   submit: ChatSubmitState
+  variant?: ConversationVariant
 }
+
+// 工作台指挥台的展开阈值：超过这个长度、存在附件或聚焦时，长成 2–4 行 textarea。
+// 生活空间始终走单行胶囊。
+const COMMAND_LINE_THRESHOLD = 80
 
 export function ConversationInput(props: ConversationInputProps): React.JSX.Element {
   const {
     attachMenuOpen = false,
     externalPathsRef,
-    inputRef,
     onAttachMenuToggle,
     onDrop,
     onPaste,
@@ -80,10 +85,10 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
     onSetPending,
     onSetText,
     onStop,
-    onTyping,
     setAttachMenuRef,
     slash,
-    submit
+    submit,
+    variant = 'living'
   } = props
 
   const { gatewayState, isGenerating, isReadOnlySession, pending, recording, sending, text } = submit
@@ -100,6 +105,21 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
 
   const [internalSlashDismissed, setInternalSlashDismissed] = useState(false)
   const [internalHighlightIndex, setInternalHighlightIndex] = useState(0)
+  const [focused, setFocused] = useState(false)
+
+  // 工作台只在「要打字了」时升格成指挥台——空闲保持胶囊形态。
+  const expanded = variant === 'workbench' && (focused || Boolean(pending) || text.length >= COMMAND_LINE_THRESHOLD)
+
+  const editorRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+
+  // 升格后把焦点同步进 textarea，避免升格瞬间丢失焦点。
+  useEffect(() => {
+    if (expanded && editorRef.current && document.activeElement !== editorRef.current) {
+      editorRef.current.focus()
+      const len = editorRef.current.value.length
+      editorRef.current.setSelectionRange(len, len)
+    }
+  }, [expanded])
 
   const derivedSlashQuery = (() => {
     if (slashQuery !== undefined) {
@@ -127,7 +147,7 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
       onSlashSelect(cmd, [])
     } else {
       onSetText(`/${cmd.name} `)
-      inputRef.current?.focus()
+      editorRef.current?.focus()
     }
 
     setInternalSlashDismissed(true)
@@ -140,6 +160,98 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
         gatewayState !== 'open' ||
         (!text.trim() && !pending && externalPathsRef.current.length === 0) ||
         (pending?.type === 'video' && pending.status !== 'ready')))
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    setInternalSlashDismissed(false)
+    setInternalHighlightIndex(0)
+    onSetText(e.target.value)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    onSlashKeyDown?.(e)
+
+    if (isOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        const next = (highlightIdx + 1) % items.length
+        setInternalHighlightIndex(next)
+        onSlashHighlight?.(next)
+
+        return
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        const next = (highlightIdx - 1 + items.length) % items.length
+        setInternalHighlightIndex(next)
+        onSlashHighlight?.(next)
+
+        return
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        const chosen = items[highlightIdx]
+
+        if (chosen) {
+          handleSlashSelect(chosen.cmd)
+        }
+
+        return
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setInternalSlashDismissed(true)
+
+        return
+      }
+
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+        const chosen = items[highlightIdx]
+
+        if (chosen && derivedSlashQuery.length > 0) {
+          e.preventDefault()
+          handleSlashSelect(chosen.cmd)
+
+          return
+        }
+      }
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      onSend()
+    }
+  }
+
+  const commonEditorProps = {
+    disabled: isReadOnlySession,
+    onBlur: () => setFocused(false),
+    onChange: handleChange,
+    onFocus: () => setFocused(true),
+    onKeyDown: handleKeyDown,
+    onPaste,
+    placeholder: strings.chat.inputPlaceholder,
+    value: text
+  }
+
+  // 工作台指挥台：textarea；生活空间：单行 input。
+  const editorElement = expanded ? (
+    <textarea
+      {...commonEditorProps}
+      className="w-full flex-1 resize-none bg-transparent border-0 outline-none text-xs text-strong placeholder:text-faint px-1.5 py-1.5 min-h-[2.4em] max-h-[7.2em] leading-snug"
+      ref={editorRef as unknown as RefObject<HTMLTextAreaElement>}
+      rows={Math.min(4, Math.max(2, Math.ceil((text.match(/\n/g)?.length ?? 0) + 1)))}
+    />
+  ) : (
+    <input
+      {...commonEditorProps}
+      className="h-full flex-1 bg-transparent border-0 outline-none text-xs text-strong placeholder:text-faint px-1.5"
+      ref={editorRef as unknown as RefObject<HTMLInputElement>}
+      type="text"
+    />
+  )
 
   return (
     <div
@@ -161,7 +273,12 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
         </div>
       )}
 
-      <div className="relative flex h-10 w-full items-center gap-1.5 rounded-full border border-line-standard bg-fill-faint px-2 transition focus-within:border-accent/60 focus-within:bg-fill-hover shadow-xs">
+      <div
+        className={cn(
+          'relative flex w-full items-center gap-1.5 border border-line-standard bg-fill-faint px-2 transition focus-within:border-accent/60 focus-within:bg-fill-hover shadow-xs',
+          expanded ? 'rounded-2xl min-h-[3.6em] items-start py-1.5' : 'rounded-full h-10'
+        )}
+      >
         {isOpen && (
           <SlashCommandPopover
             highlightedIndex={highlightIdx}
@@ -227,80 +344,9 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
           )}
         </div>
 
-        <input
-          className="h-full flex-1 bg-transparent border-0 outline-none text-xs text-strong placeholder:text-faint px-1.5"
-          disabled={isReadOnlySession}
-          onChange={e => {
-            setInternalSlashDismissed(false)
-            setInternalHighlightIndex(0)
-            onSetText(e.target.value)
-            onTyping?.()
-          }}
-          onKeyDown={e => {
-            onSlashKeyDown?.(e)
+        {editorElement}
 
-            if (isOpen) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault()
-                const next = (highlightIdx + 1) % items.length
-                setInternalHighlightIndex(next)
-                onSlashHighlight?.(next)
-
-                return
-              }
-
-              if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                const next = (highlightIdx - 1 + items.length) % items.length
-                setInternalHighlightIndex(next)
-                onSlashHighlight?.(next)
-
-                return
-              }
-
-              if (e.key === 'Tab') {
-                e.preventDefault()
-                const chosen = items[highlightIdx]
-
-                if (chosen) {
-                  handleSlashSelect(chosen.cmd)
-                }
-
-                return
-              }
-
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                setInternalSlashDismissed(true)
-
-                return
-              }
-
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                const chosen = items[highlightIdx]
-
-                if (chosen && derivedSlashQuery.length > 0) {
-                  e.preventDefault()
-                  handleSlashSelect(chosen.cmd)
-
-                  return
-                }
-              }
-            }
-
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              onSend()
-            }
-          }}
-          onPaste={onPaste}
-          placeholder={strings.chat.inputPlaceholder}
-          ref={inputRef}
-          type="text"
-          value={text}
-        />
-
-        <div className="flex items-center gap-1 shrink-0">
+        <div className={cn('flex items-center gap-1 shrink-0', expanded && 'self-end pb-0.5')}>
           <button
             className={cn(
               'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-40',

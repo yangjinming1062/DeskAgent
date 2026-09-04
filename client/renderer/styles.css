@@ -84,6 +84,13 @@
     --ui-accent-line: rgba(138, 160, 200, 0.45);
     --ui-focus-line: rgba(138, 160, 200, 0.7);
     --ui-success: rgb(52, 211, 153);
+    /* 角色皮肤取色产物：由 companion/persona-skin.ts 在客户端启动
+       与每次半身像更新时覆写；初值与默认 accent 保持一致避免首帧灰白。 */
+    --persona-primary: #8aa0c8;
+    --persona-secondary: #5b6f8f;
+    --persona-highlight: #d8c2a8;
+    --persona-room-overlay: linear-gradient(180deg, rgba(91, 111, 143, 0.2) 0%, rgba(8, 10, 16, 0.55) 100%);
+    --persona-skin-transition: 0ms;
     --sprite-state-idle: rgba(226, 232, 240, 0.45);
     --sprite-state-listening: rgba(251, 113, 133, 0.55);
     --sprite-state-thinking: rgba(168, 85, 247, 0.55);
@@ -119,6 +126,15 @@
   /* 工具窗面板头（图标 + 标题 + 关闭钮）的高度——通知栈据此让位，不压在头部上。 */
   html[data-role='tool'] {
     --titlebar-height: 3rem;
+  }
+
+  /* persona-skin 取色时的过渡——accent / accent-soft / accent-line / persona-* 在换装
+     后变更时，按 --persona-skin-transition 平滑过渡 1.5s。 */
+  :root {
+    transition:
+      color var(--persona-skin-transition) ease,
+      background-color var(--persona-skin-transition) ease,
+      border-color var(--persona-skin-transition) ease;
   }
 
   /* 日色主题：高质感浅色液态玻璃 + 深石墨文字 + 优雅沉静质感 */

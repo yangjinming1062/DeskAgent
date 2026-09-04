@@ -4,12 +4,7 @@ import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'rea
 import { $mesh2dHitmap, $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
 import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/3d'
 import { startActivityMonitor } from '@/companion/activity'
-import {
-  $companionLifecycle,
-  reportUserActivity,
-  requestOpenSurface,
-  setCompanionLifecycle
-} from '@/companion/companion-store'
+import { $companionLifecycle, reportUserActivity, setCompanionLifecycle } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
@@ -27,13 +22,14 @@ import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/a
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
-import { $lastSurface, $surfaceOpen } from '@/shared/store/surfaces'
+import { $lastSurface, $surfaceOpen, requestCloseSurface, requestOpenSurface } from '@/shared/store/surfaces'
 import { strings } from '@/shared/strings'
 
 import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
 import { handlePetInteraction, handlePokeInteraction, isPokeActive, normalizeRegion } from './interaction'
 import { MediaViewerOverlay } from './media-viewer-overlay'
+import { initPersonaSkin } from './persona-skin'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
 import { SpriteContextMenu } from './sprite/context-menu'
@@ -108,13 +104,20 @@ export function CompanionRoot(): React.JSX.Element {
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
   useMainProcessListener('onTrayActivate', () => setActivationOpen(true), [])
 
-  // 全局快捷键「打开/关闭对话」：已登录时打开生活空间，未登录时显示激活浮层。
+  // 全局快捷键「打开/关闭对话」：已登录时切换生活空间显示；未登录时显示激活浮层。
+  // 严格互斥（plan §2.3）：生活空间开着就关，开着工作台就关工作台再开生活空间。
   useEffect(() => {
     const off = window.spiritagent.shortcuts?.onToggleChat?.(() => {
-      if (auth.kind === 'authenticated') {
-        void requestOpenSurface('living')
-      } else {
+      if (auth.kind !== 'authenticated') {
         setActivationOpen(true)
+
+        return
+      }
+
+      if ($surfaceOpen.get() === 'living') {
+        void requestCloseSurface()
+      } else {
+        void requestOpenSurface('living')
       }
     })
 
@@ -203,10 +206,15 @@ export function CompanionRoot(): React.JSX.Element {
       }
     }
 
+    // persona-skin：每次 $portraitUrl 变化（首次水合、换装、重生）重新取色；
+    // 模块内部已自带防重复，根处不需要再判断。返回的解绑函数在 effect 清理时调用。
+    const disposeSkin = initPersonaSkin()
+
     void checkState()
 
     return () => {
       cancelled = true
+      disposeSkin()
     }
   }, [auth.kind, requestGateway])
 

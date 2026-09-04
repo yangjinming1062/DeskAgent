@@ -118,7 +118,17 @@ export interface DesktopSurfaceOpenPayload {
   view?: string
 }
 
+export interface DesktopSurfaceBounds {
+  displayId: number
+  height: number
+  width: number
+  x: number
+  y: number
+}
+
 export interface DesktopSurfaceChangedEvent {
+  /** 工作台窗口屏幕坐标边界。生活空间不下发，工作台显示、移动或调整尺寸时下发。 */
+  bounds?: DesktopSurfaceBounds | null
   lastSurface: SurfaceId
   open: null | SurfaceId
 }
@@ -454,7 +464,6 @@ export const IPC = {
     shortcutsReset: 'spiritagent:shortcuts:reset',
     surfaceOpen: 'spiritagent:surface:open',
     surfaceClose: 'spiritagent:surface:close',
-    surfaceFocus: 'spiritagent:surface:focus',
     surfaceGetState: 'spiritagent:surface:get-state',
     skillsList: 'spiritagent:skills:list',
     skillSetEnabled: 'spiritagent:skill:set-enabled',
