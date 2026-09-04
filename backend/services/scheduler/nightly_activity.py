@@ -13,10 +13,8 @@ from components import (
     NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_TOKENS,
     NIGHTLY_DIARY_MAX_TOKENS,
-    NIGHTLY_MESSAGE_TRUNCATE_CHARS,
     NIGHTLY_PLANNING_MAX_TOKENS,
     NIGHTLY_REFLECTION_MAX_TOKENS,
-    format_message_timestamp,
     get_logger,
     parse_llm_json,
     safe_json_loads,
@@ -35,7 +33,10 @@ from services.companion import (
     KIND_TO_PREFIX,
     RECALL_TAGS,
     backfill_memory_embeddings,
+    get_local_day_utc_bounds,
     list_memories,
+    prefilter_messages_for_nightly,
+    project_today,
     read_today_summary,
     resolve_user_timezone,
     upsert_slotted_memory,
@@ -188,45 +189,6 @@ Output valid JSON only:
   "gaps": [...]
 }}
 """
-
-
-def _preprocess_conversation_for_nightly(
-    messages: list[Message],
-    *,
-    user_tz: str | None = None,
-) -> list[dict[str, str]]:
-    """清洗会话流：去掉工具调用、系统 prompt 与纯工具执行；user/assistant turn 在 content 前 prepend ``[HH:MM]``（用户本地时区）。"""
-    clean: list[dict[str, str]] = []
-    for msg in messages:
-        if msg.role in ("system", "tool"):
-            continue
-        ts_prefix = format_message_timestamp(msg.created_at, user_tz) or ""
-        if msg.role == "assistant":
-            if text_content := (msg.content or "").strip():
-                content = f"{ts_prefix} {text_content}".rstrip() if ts_prefix else text_content
-                clean.append({"role": "assistant", "content": content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
-        elif msg.role == "user":
-            text_content = (msg.content or "").strip()
-            if getattr(msg, "content_type", "text") == "multimodal_v1":
-                parsed = safe_json_loads(msg.content or "")
-                if isinstance(parsed, list):
-                    text_content = "\n".join(t for p in parsed if isinstance(p, dict) and p.get("type") in {"input_text", "text"} and (t := (p.get("text") or "").strip()))
-            if text_content:
-                content = f"{ts_prefix} {text_content}".rstrip() if ts_prefix else text_content
-                clean.append({"role": "user", "content": content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
-    return clean
-
-
-def get_local_day_utc_bounds(now_utc: datetime, tz_str: str) -> tuple[datetime, datetime, datetime, str]:
-    """计算用户本地午夜的 UTC aware 边界。"""
-    zone = ZoneInfo(tz_str)
-    user_now = now_utc.astimezone(zone)
-    local_start = datetime(user_now.year, user_now.month, user_now.day, 0, 0, 0, tzinfo=zone)
-    local_end = local_start + timedelta(days=1)
-    utc_start = local_start.astimezone(ZoneInfo("UTC"))
-    utc_end = local_end.astimezone(ZoneInfo("UTC"))
-    local_today_str = user_now.strftime("%Y-%m-%d")
-    return utc_start, utc_end, user_now, local_today_str
 
 
 def _local_9am_cron(tz_str: str | None) -> str:
@@ -519,10 +481,10 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         main_msgs = [m for m, p in all_today_tuples if p == "companion"]
         work_msgs = [m for m, p in all_today_tuples if p != "companion"]
 
-        clean_main_messages = _preprocess_conversation_for_nightly(main_msgs, user_tz=tz_str)
-        clean_work_messages = _preprocess_conversation_for_nightly(work_msgs, user_tz=tz_str)
+        clean_main_messages = prefilter_messages_for_nightly(main_msgs, user_tz=tz_str)
+        clean_work_messages = prefilter_messages_for_nightly(work_msgs, user_tz=tz_str)
         # 跨两类按时间顺序——日记和创作 prompt 把这一天的对话视为整体，简单拼接会凭空造出从未发生的顺序。
-        clean_messages = _preprocess_conversation_for_nightly([m for m, _ in all_today_tuples], user_tz=tz_str)
+        clean_messages = prefilter_messages_for_nightly([m for m, _ in all_today_tuples], user_tz=tz_str)
         if not any(m["role"] == "user" for m in clean_messages):
             logger.info("nightly_activity: no clean user messages today", extra={"user_id": user_id})
             return False
@@ -630,12 +592,16 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     async def _checkpoint() -> None:
         await run_daily_checkpoint(llm_cfg, user_id, utc_start, utc_end, local_today_str)
 
+    async def _journal_project() -> bool:
+        return await project_today(user_id, reference_utc=now_utc, pre_messages=clean_main_messages, llm_cfg=llm_cfg)
+
     results = await asyncio.gather(
         _checkpoint(),
         _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str),
+        _journal_project(),
         return_exceptions=True,
     )
-    for label, result in zip(("daily checkpoint", "stage 5 creation"), results, strict=True):
+    for label, result in zip(("daily checkpoint", "stage 5 creation", "journal nightly"), results, strict=True):
         if isinstance(result, Exception):
             # 不在 except 块里——必须显式传异常，否则 exc_info 为空，traceback 丢失。
             logger.error(f"nightly_activity: {label} failed", exc_info=result, extra={"user_id": user_id})

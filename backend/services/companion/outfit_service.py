@@ -37,6 +37,7 @@ from .avatar_service import (
 )
 from .mesh2d.pipeline import run_mesh2d_pipeline
 from .persona_service import get_or_create_persona, load_persona_definition
+from .room_backdrop_service import invalidate_room_for_outfit
 
 logger = get_logger(__name__)
 
@@ -396,6 +397,11 @@ async def activate_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Com
         )
         await db.commit()
         await db.refresh(outfit)
+    # 换装成功 → 让当前 active 房间图失效并 schedule origin=outfit 重建
+    try:
+        await invalidate_room_for_outfit(user_id, new_fingerprint=str(outfit.id))
+    except Exception:
+        logger.warning("outfit activate -> room invalidation failed", extra={"user_id": user_id, "outfit_id": outfit.id}, exc_info=True)
     return outfit
 
 

@@ -14,6 +14,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+# 房间政策默认值；同步显式字符串以便其他地方引用。Persona.backdrop_policy 字符串与该字面量同源。
+BACKDROP_POLICY_DEFAULT: str = "llm_may_replace"
+
 if TYPE_CHECKING:
     from modules.auth import User
 
@@ -115,6 +118,10 @@ class Persona(ModelBase, TimestampMixin):
     portrait_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 渲染模式：2d（默认 PSD 木偶动画版）或 3d（云端 GLB 模型）；3d 失败自动回退到 2d。
     render_mode: Mapped[str] = mapped_column(String(8), default="2d", server_default=text("'2d'"), index=True)
+    # 当前激活的房间图行；None = 尚未生成。
+    active_backdrop_id: Mapped[int | None] = mapped_column(ForeignKey("companion_room_backdrops.id", ondelete="SET NULL"), nullable=True)
+    # 房间图政策：llm_may_replace（默认，LLM 可主动换房）/ locked（用户锁住，LLM 主动换房被拒）。
+    backdrop_policy: Mapped[str] = mapped_column(String(16), default=BACKDROP_POLICY_DEFAULT, server_default=text(f"'{BACKDROP_POLICY_DEFAULT}'"))
 
     user: Mapped["User"] = relationship(back_populates="persona")
 

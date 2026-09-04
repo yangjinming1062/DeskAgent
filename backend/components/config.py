@@ -197,6 +197,12 @@ class Settings(BaseSettings):
     companion_avatar_generate_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_outfit_generate_rate_limit_per_hour: int
+    room_llm_replace_per_24h: int = 1
+    room_max_attempts: int = 3
+    room_history_keep: int = 5
+    moment_system_per_day: int = 5
+    moment_llm_per_day: int = 3
+    diary_nightly_enabled: bool = True
     rate_limit_storage_url: str = ""
 
     metrics_enabled: bool = True

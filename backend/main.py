@@ -25,7 +25,7 @@ from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.channels import start_channel_manager, stop_channel_manager
-from services.companion import drain_persona_background, recover_stuck_model_generations, resume_inflight_pipelines
+from services.companion import drain_persona_background, drain_room_backdrop_jobs, recover_stuck_model_generations, resume_inflight_pipelines
 from services.gateway import drain_user_sessions, execute_cron_turn
 from services.llm import aclose_all
 from services.media import drain_video_jobs, resume_pending_video_jobs
@@ -97,7 +97,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await stop_scheduler()
 
         # 释放引擎前先 drain 模块级任务集合；避免 SIGTERM 把持有连接池的协程留在 commit 中途。
-        await asyncio.gather(drain_cron(), drain_persona_background(), drain_video_jobs(), drain_cron_turns(), drain_user_sessions(), return_exceptions=True)
+        await asyncio.gather(
+            drain_cron(),
+            drain_persona_background(),
+            drain_room_backdrop_jobs(),
+            drain_video_jobs(),
+            drain_cron_turns(),
+            drain_user_sessions(),
+            return_exceptions=True,
+        )
 
         # IM 通道桥在 outbox 专线关闭前停稳：适配器任务可能还在写 WSEvent / 开 DB session。
         await stop_channel_manager()

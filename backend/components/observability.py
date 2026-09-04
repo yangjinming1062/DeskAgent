@@ -13,6 +13,25 @@ from .config import SETTINGS
 RPC_REQUESTS_TOTAL = Counter("spiritagent_rpc_requests_total", "Total JSON-RPC requests handled over WebSocket", ["method", "status"])
 RPC_REQUEST_DURATION_SECONDS = Histogram("spiritagent_rpc_request_duration_seconds", "JSON-RPC execution duration in seconds", ["method"])
 
+# 房间图生图成本与成功率：origin 区分 onboarding / outfit / user_request / llm；result 区分 ready / failed。
+ROOM_BACKDROP_IMAGES_TOTAL = Counter(
+    "spiritagent_room_backdrop_images_total",
+    "Total room backdrop image generation attempts by origin and result",
+    ["origin", "result"],
+)
+# LLM 主动触发房间图的当日成功计数（按用户本地日统计在应用层；这里只打原始事件）。
+ROOM_BACKDROP_LLM_TRIGGERS_TOTAL = Counter(
+    "spiritagent_room_backdrop_llm_triggers_total",
+    "LLM-triggered room backdrop tool calls by outcome (accepted / rejected_locked / rejected_quota / rejected_work_preset / rejected_silent)",
+    ["outcome"],
+)
+# 失败的人格化 utterance 标签（避免暴露 provider 名）
+ROOM_BACKDROP_FAILURES_TOTAL = Counter(
+    "spiritagent_room_backdrop_failures_total",
+    "Room backdrop generation failures by stage (brief / imagine / store / image_error)",
+    ["stage"],
+)
+
 _CURRENT_TRACE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_trace_id", default=None)
 _CURRENT_SPAN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_span_id", default=None)
 

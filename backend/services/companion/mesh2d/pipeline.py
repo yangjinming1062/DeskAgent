@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import asset_store
 from ..avatar_service import _normalize_avatar_url_to_bare, get_avatar_job_lock, load_avatar_bytes_as_data_uri
+from ..room_backdrop_service import invalidate_room_for_outfit
 from ..seethrough import SeeThroughError, run_seethrough_split
 from .priority_queue import get_default_queue
 
@@ -190,6 +191,11 @@ def run_mesh2d_pipeline(
             if event_outfit_name:
                 payload["name"] = event_outfit_name
             await _emit_outfit_event(user_id, "companion.outfit.updated", payload)
+            if worn:
+                try:
+                    await invalidate_room_for_outfit(user_id, new_fingerprint=str(event_outfit_id))
+                except Exception:
+                    logger.warning("mesh2d wear -> room invalidation failed", extra={"user_id": user_id, "outfit_id": event_outfit_id}, exc_info=True)
 
     async def _submit() -> None:
         _ACTIVE_MODEL_IDS.add(model_id)

@@ -20,7 +20,10 @@ async def image_generation_tool(
     subject: str | None = None,
     **kwargs,
 ) -> str:
-    """通过 image_gen 供应商链生成图片，base64 结果会落地为本服务的 /api/media/files/<id> 链接。"""
+    """通过 image_gen 供应商链生成图片，base64 结果会落地为本服务的 /api/media/files/<id> 链接。
+
+    注意：本工具仅产生会话媒体卡片，禁止用于替换房间背景图（换房请使用 room_backdrop_update）。
+    """
     if subject == "self":
         if user_id is None:
             return tool_error("生成自己的形象需要用户上下文")
@@ -49,7 +52,12 @@ IMAGE_GENERATION_SIZES = ["1024x1024", "1024x1792", "1792x1024", "1:1", "16:9", 
 
 IMAGE_GENERATION_SCHEMA = {
     "name": "image_generate",
-    "description": "Generate an image from a text description. Returns the generated image URLs (locally-served for base64 payloads, provider-hosted for URL-mode responses). Requires an image generation provider configured — default MiniMax image-01, also supports OpenAI DALL·E.",
+    "description": (
+        "Generate an image from a text description. Returns the generated image URLs "
+        "(locally-served for base64 payloads, provider-hosted for URL-mode responses). "
+        "Requires an image generation provider configured — default MiniMax image-01, also supports OpenAI DALL·E. "
+        "NOTE: Prohibited from replacing the companion room background. To update room backdrop, use 'room_backdrop_update'."
+    ),
     "parameters": {
         "type": "object",
         "properties": {

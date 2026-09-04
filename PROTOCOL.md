@@ -25,6 +25,10 @@
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不继续尝试。
 - **WS 鉴权用短时 ticket**：客户端连接前持 Bearer JWT 调 POST /api/user/ws-ticket 现铸 60s TTL 的专用 token（purpose=ws），经查询串携带；长效 JWT 不进 URL（避免落入代理/访问日志）。`?token=` 直传 JWT 仅限后端内部调用。
 
+### 1.0 后端不下发窗口开关与工位背景
+
+生活空间与工作台两个入口的互斥开窗完全由客户端负责。后端仅暴露房间、时刻、日记、会话与工具等资源，不下发窗口像素指令，也不为工作台单独生成工位背景（工作台由客户端直接渲染伙伴立绘）。常规对话生图仅产生会话媒体卡片，绝不触碰激活房间背景；更换房间必须走房间生成接口或专属换房工具。改此处需同步：后端房间端点、房间服务与客户端房间组件。
+
 ---
 
 ## 1. Backend ↔ Client 契约
@@ -86,6 +90,12 @@
 | companion.render_mode.changed | 用户在设置中或多端同步切换渲染模式（`2d` / `3d`） | Client 切换展示画布 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | companion.outfit.updated / .failed | 换装外观状态变化（切分就绪 / 穿着翻转 / 删除，载荷含 outfit_id 与 worn 标记）/ 切分失败（含原因） | Client 重拉衣柜列表；worn 变化时重水合 2D 渲染层（与 2d.ready 双触发幂等，事件只当刷新触发、列表端点是真相源） |
+| companion.room.progress | 房间图生图三段进度（brief / imagine / store），载荷 `{backdrop_id, stage}` | Client 在生活空间显示生成进度条 |
+| companion.room.ready | 房间图就绪，载荷 `{backdrop_id, url, brief, origin, outfit_fingerprint}` | Client 把生活空间背景切到新图 |
+| companion.room.failed | 房间图生成失败（无供应商名），载荷 `{backdrop_id, utterance}` | Client 用取色玻璃底展示失败态，并朗读 utterance |
+| companion.room.invalidated | 当前激活背景因换装 / 政策变更失效，载荷 `{reason, active_backdrop_id?}` | Client 切回玻璃底或继续等 companion.room.ready |
+| companion.moment.created | 生活空间新增一条时刻 | Client 增量 push 到时间线 |
+| companion.diary.upserted | 一篇日记被写入或更新 | Client 在打开日记页时才消费（不发主动气泡） |
 | video_gen.completed / .failed | 视频生成结果；completed 载荷含 task_id / url / session_id / media，兼作后台视频的异步送达通道（见下方「对话内生成媒体」） | Client 对话窗媒体卡与提示跳转 |
 | channel.status | IM 通道绑定状态变化（connected / login_required / error 等，载荷 {channel, status, account_name?, error?}） | Client 通知/toast；Hub 状态以 REST 读为准（Hub 窗口无 WS） |
 | channel.peer_request | 陌生对端首次来信触发配对审批（载荷 {channel, peer_id, peer_name, preview}） | Client 通知引导主人到通道设置审批 |

@@ -94,6 +94,9 @@ from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
 from .network import download_capped, is_safe_outbound, safe_outbound_async_client, safe_outbound_async_transport
 from .observability import (
+    ROOM_BACKDROP_FAILURES_TOTAL,
+    ROOM_BACKDROP_IMAGES_TOTAL,
+    ROOM_BACKDROP_LLM_TRIGGERS_TOTAL,
     RPC_REQUEST_DURATION_SECONDS,
     RPC_REQUESTS_TOTAL,
     async_trace_span,
@@ -154,6 +157,9 @@ __all__ = [
     "NIGHTLY_WINDOW_END_HOUR",
     "NIGHTLY_WINDOW_START_HOUR",
     "REQUEST_ID_HEADER",
+    "ROOM_BACKDROP_FAILURES_TOTAL",
+    "ROOM_BACKDROP_IMAGES_TOTAL",
+    "ROOM_BACKDROP_LLM_TRIGGERS_TOTAL",
     "RPC_REQUESTS_TOTAL",
     "RPC_REQUEST_DURATION_SECONDS",
     "SEARCH_INPUT_MAX_LEN",

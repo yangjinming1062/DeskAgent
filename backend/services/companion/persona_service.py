@@ -1,15 +1,18 @@
 import json
 from typing import Any
 
-from components import DEFAULT_LANGUAGE, resolve_prompt_text, safe_json_loads
-from modules.companion import AvatarAsset, Persona, normalize_persona_aliases
+from components import DEFAULT_LANGUAGE, get_logger, resolve_prompt_text, safe_json_loads
+from modules.companion import AvatarAsset, MomentKind, Persona, normalize_persona_aliases
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.conversation import ensure_system_conversations_for_user
 
+from .journal_service import write_system_moment
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
+
+logger = get_logger(__name__)
 
 # 双语伙伴人设块标题。字段 label（key.replace("_", " ").capitalize()）属协议级展示，保持英文不译。
 _PERSONA_LABELS_TEXTS: dict[str, str] = {
@@ -143,6 +146,17 @@ async def confirm_portrait(db: AsyncSession, user_id: int) -> Persona:
     persona.portrait_confirmed_at = func.now()
     await db.commit()
     await db.refresh(persona)
+    # onboarding 形象确认后启动首张房间图与问候时刻；与 2D/3D 资产生成并行，不挡问候
+    try:
+        from .room_backdrop_service import schedule_initial_room
+
+        await schedule_initial_room(user_id)
+    except Exception:
+        logger.warning("failed to schedule initial room backdrop", extra={"user_id": user_id}, exc_info=True)
+    try:
+        await write_system_moment(user_id, kind=MomentKind.GREETING.value, event_key="greeting")
+    except Exception:
+        logger.warning("failed to write greeting moment", extra={"user_id": user_id}, exc_info=True)
     return persona
 
 

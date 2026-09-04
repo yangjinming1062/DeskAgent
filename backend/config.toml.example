@@ -219,6 +219,18 @@ companion_avatar_generate_rate_limit_per_minute = 3
 companion_model_generate_rate_limit_per_minute = 1
 # 伴侣外观（换装）生成接口每小时限制——每套外观 = 一次立绘生成 + 一切分，成本显著高于头像
 companion_outfit_generate_rate_limit_per_hour = 1
+# 伙伴主动换房（origin=llm 工具触发）每用户每 24h 成功上限；用户 HTTP 换房不占此配额
+room_llm_replace_per_24h = 1
+# 房间图单次生成失败时的重试上限（最大尝试次数）
+room_max_attempts = 3
+# 同 persona 保留最近多少张 ready 房间图供回滚，更早的 superseded 可清媒体
+room_history_keep = 5
+# 系统自动写 moment 的每日节流（greeting / milestone / scene 等），每用户每天上限
+moment_system_per_day = 5
+# 角色主动 moment_create 工具的每日配额，每用户每天上限
+moment_llm_per_day = 3
+# 夜间日记批处理总开关；false 时夜间不投影到 diary
+diary_nightly_enabled = true
 # 限流存储后端 URL（留空使用内存存储，分布式环境可配置 Redis 例如 "redis://localhost:6379/0"）
 rate_limit_storage_url = ""
 
