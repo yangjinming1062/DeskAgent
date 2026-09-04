@@ -7,9 +7,11 @@ import {
   type DesktopAuthSnapshot,
   type DesktopPrefsHydrated,
   type DesktopShortcutsConfig,
+  getThemeBackgroundColor,
   IPC,
-  SPIRITAGENT_UI_THEMES,
-  type SpiritAgentConnection
+  normalizeUiTheme,
+  type SpiritAgentConnection,
+  type SpiritAgentUiTheme
 } from '@ipc/contracts'
 import { sleep } from '@runtime'
 import {
@@ -150,16 +152,16 @@ const configSync = createConfigSync({
   fetchImpl: (url, init) => electronNet.fetch(url, init),
   log: chunk => rememberLog(chunk),
   onHydrated: ({ companion, shortcuts, ui }) => {
-    const themeValue = ui.theme
-    const theme = SPIRITAGENT_UI_THEMES.find(candidate => candidate === themeValue)
+    const theme = normalizeUiTheme(ui.theme)
 
     const payload: DesktopPrefsHydrated = {
       companion,
       shortcuts: shortcuts as DesktopShortcutsConfig | undefined,
-      ui: theme ? { theme } : {}
+      ui: { theme }
     }
 
     syncShortcutsFromConfig()
+    applyToolWindowTheme(theme)
 
     for (const win of [mainWindow, toolWindow]) {
       sendToMain(win, IPC.event.prefsHydrated, payload)
@@ -370,8 +372,8 @@ function htmlFileNameForRole(role?: string): string {
     return 'sprite.html'
   }
 
-  if (role === 'tool' || role === 'hub') {
-    return 'hub.html'
+  if (role === 'tool' || role === 'setting') {
+    return 'setting.html'
   }
 
   if (role === 'clip' || role === 'anim' || role === 'animation') {
@@ -534,10 +536,21 @@ function rendererUrlFor(role: string): string {
   return pathToFileURL(resolveRendererHtml(htmlFile)).toString()
 }
 
+function applyToolWindowTheme(theme: SpiritAgentUiTheme): void {
+  if (toolWindow && !toolWindow.isDestroyed()) {
+    const target = getThemeBackgroundColor(theme)
+
+    if (toolWindow.getBackgroundColor() !== target) {
+      toolWindow.setBackgroundColor(target)
+    }
+  }
+}
+
 function createToolWindow(): void {
   const icon = getAppIconPath() || undefined
+  const initialTheme = normalizeUiTheme((runnerConfigStore.read().ui as Record<string, unknown> | undefined)?.theme)
   toolWindow = new BrowserWindow({
-    backgroundColor: '#0d0d0d',
+    backgroundColor: getThemeBackgroundColor(initialTheme),
     height: 640,
     icon,
     minHeight: 540,

@@ -1,6 +1,6 @@
-import type * as THREE from 'three'
+﻿import type * as THREE from 'three'
 
-import type { RigType } from '@/companion/3d/rig'
+import type { RigType } from '@/3d'
 
 export type { RigType }
 

@@ -1,4 +1,4 @@
-import { $chatOpen, setProactiveBubble } from '@/companion/chat-store'
+﻿import { $chatOpen, setProactiveBubble } from '@/chat'
 import { $effectiveTier, setSpriteState } from '@/companion/companion-store'
 
 import { speak } from '../tts'

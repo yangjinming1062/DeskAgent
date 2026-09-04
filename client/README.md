@@ -47,45 +47,47 @@ client/
 ├── shared/                # 跨进程共享契约定义（@ipc/contracts 别名）
 │   └── ipc/               # 强类型 IPC 通道、载荷与运行时常量
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
-│   ├── shared/            # 跨窗口共享层
-│   ├── companion/         # 伙伴层（精灵窗口 + 2D/3D 渲染 + onboarding + chat UI）
-│   │   ├── 3d/            # Three.js 引擎 + 供应商烘焙 clip 的兑现逻辑
-│   │   ├── mesh2d/        # 2D 拆分状态、命中检测与渲染模式 store
-│   │   └── puppet/        # 2D 分层 PSD 木偶渲染链
-│   ├── hub/               # 枢纽层（托盘唤起的工具窗口）
+│   ├── shared/            # 跨窗口共享层（主题、通知、通用面板、基础工具）
+│   ├── companion/         # 伙伴层（桌宠 Overlay、状态机、情绪、桌面空间行为与交互）
+│   ├── 2d/                # 2D 渲染模块（分层 PSD 木偶 PuppetStage、网格渲染、表情头像）
+│   ├── 3d/                # 3D 渲染模块（Three.js 引擎、骨骼装配、clip 动作系统与物理倾角）
+│   ├── chat/              # 对话模块（贴身浮层、消息流、会话参数调优、上下文进度条、会话抽屉）
+│   ├── onboarding/        # 引导模块（破蛋阶段、问卷流、激活与网关启动流水线）
+│   ├── setting/           # 设置模块（应用设置窗口 + 伙伴专属设置面板与微调）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点
-│   └── main.tsx
+│   ├── sprite-entry.tsx   # 精灵窗口入口
+│   └── setting-entry.tsx  # 设置窗口入口
 ├── scripts/               # 构建/测试钩子
-└── assets/                # icon
+└── assets/                # icon 与 wasm 资源
 ```
 
 **TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（`tsup` 编译至 `dist-electron/`；preload 单独走 CJS 的理由见 §4），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `shared/ipc/contracts.ts` 统一声明的强类型 IPC 契约与运行时常量，在主进程与渲染进程之间实现编译期通道和载荷同步校验。
 
-**renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——两个窗口的代码不得相互依赖：
+**renderer 内部跨模块边界**：`companion` ↔ `setting/settings` 是**两个窗口**而非一个工程的两个层——系统设置与桌面精灵的代码不得相互耦合：
 
-| 起点 → 终点            | 许可                                                                 |
-| ---------------------- | -------------------------------------------------------------------- |
-| `companion` → `shared` | ✓                                                                    |
-| `hub` → `shared`       | ✓                                                                    |
-| `companion` ↔ `hub`    | ✗（任何 `from '@/hub/...'` 出现在 companion 文件都会被 ESLint 拒绝） |
-| `shared` → 任何        | ✗                                                                    |
+| 起点 → 终点                                    | 许可 |
+| ---------------------------------------------- | ---- |
+| 任何模块 → `shared`                           | ✓    |
+| `companion` → `2d` / `3d` / `chat` / `onboarding` | ✓ |
+| `setting/settings` ↔ `companion`               | ✗（系统全局设置与桌宠状态机互不耦合） |
+| `shared` → 任何                                | ✗    |
 
-ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**` 各设一道拦截。**唯一例外**是 `renderer/app.tsx`——这是角色分发点，需要同时 import 两个 root。
+ESLint `no-restricted-imports` 在模块间设置拦截。**唯一例外**是 `renderer/app.tsx`——这是角色分发点，需要同时 import 对应 root。
 
-模块公共面经 `index.ts` barrel 暴露（`@/companion`、`@/hub`、`@/shared`）。模块内部细节不出 barrel。
+模块公共面经 `index.ts` barrel 暴露（`@/companion`、`@/setting`、`@/chat`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
 
 ## 4. 关键设计决策
 
 - **preload 必须保持 CJS（即便主进程已迁 ESM）**：沙盒 preload 由运行时虚拟机执行脚本，不按 ESM 解析——输出含 import 语句即抛语法错，渲染桥的全局对象变 `undefined`，根组件的兜底页把整棵子树（含激活码录入页）一起埋掉。打包分两条流水线：主进程入口走 ESM，preload 走 CJS、扩展名 `.cjs`。**不要**把 preload 重新合成 ESM——沙盒层限制绕不过模块解析。
 - **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零 JS 涂色、零组件重渲染；色值权威全在 CSS，TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名与预览色板。新增控件进 panel kit，不新增硬编码色值。
-- **主题切换入口仅 Hub，持久化双层**：用户在工具窗设置「外观」页切换（经典暗色 / 经典浅色 / 赛博玻璃 / 浅紫玻璃 / 全息 HUD）；选中值写 localStorage（`da.ui.theme`，各窗口即时缓存）并经 send 通道到主进程校验后广播两窗实时生效；主进程同时把 `ui.theme` 漏斗进配置镜像随云端管道上云，跨端经水合广播（uiThemeChanged 复用）回写 localStorage。两个 entry 在模块加载期（首帧前）应用已存主题，避免闪烁。主题不覆盖伙伴形象本体（蛋 / 2D puppet / 3D / VFX）与 dev 调试页（clip-debugger / puppet，自带配色）。
-- **主题特效挂在表面工具类上，用 background-image 分层实现**：噪点、渐变洗色、扫描线、角括弧、扫掠光带、呼吸发光由 `[data-theme]` 门控规则作用在 `bg-surface-*` 工具类上，特异性压过单类工具类。特效不用伪元素、不改 `position`——表面元素中 fixed（Hub 根）、absolute（浮层）、static（聊天窗体列）混布，注入定位会破坏后两者的布局；代价是主题规则会整体替换这些元素的 shadow-* 工具类（各主题 box-shadow 已含等价投影）。holo 的动画特效尊重 `prefers-reduced-motion`。
-- **工具窗的 `data-role` 必须是 `tool`**：hub.html 打的角色属性是样式侧按窗口分流的键——精灵窗的透明规则只匹配 `data-role='sprite'`，工具窗的通知让位覆写（`--titlebar-height` 抬到面板头高度）只匹配 `data-role='tool'`。写成别的值（如 `hub`）会让通知栈压在面板头上。
+- **主题切换入口仅工具窗，夜色与日色液态玻璃**：用户在工具窗设置「外观」页切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；工具窗背景色随主题更新（日色 `#f8f7f5`、夜色 `#0e0f14`），避免浅色模式黑底穿透。样式库 `:root` 首帧直出夜色变量，加载不闪烁。
+- **液态玻璃表面与集成显卡降级**：以毛玻璃（24px 模糊）、0.6px 细描边、大圆角与低饱和强调色为视觉基座。低功耗与集成显卡环境下给根节点加 `.no-blur`，关闭高开销 backdrop-filter 并将表面不透明度提升至 0.94~0.96，避免集显掉帧。
+- **工具窗的 `data-role` 必须是 `tool`**：setting.html 打的角色属性是样式侧按窗口分流的键——精灵窗的透明规则只匹配 `data-role='sprite'`，工具窗的通知让位覆写（`--titlebar-height` 抬到面板头高度）只匹配 `data-role='tool'`。写成别的值会让通知栈压在面板头上。
 - **精灵窗口透明需要双重保证**：窗口级透明标志**加**渲染层 body 透明（由内嵌脚本在 head 解析时同步设置角色属性）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
 - **交互范围仅限可见矩形（透明窗口交互陷阱）**：Electron 的鼠标穿透是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，所有弹层与精灵实体把自身矩形注册到统一的交互区域登记处，由顶层常驻的鼠标捕获机制统一做命中测试与穿透切换。任何弹层都不能自行一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
 - **弹层交互契约**：面板头部统一接同一拖拽钩子（位移本地持久化、命中区域自动跟随）、打开入口统一经互斥收口——同一时刻最多一个面板在屏，避免弹层堆叠。
-- **工具窗与伙伴设置共用同一面板形态**：外壳是同一款面板头（图标 + 标题 + 关闭钮，头部即窗口拖拽区，见 `shared/panel` 的 PanelHeader），不绘制系统原生窗口控件——Win/Linux 不建 WCO、mac 隐藏红绿灯，关闭只走应用侧（关闭钮 / Esc，经关闭拦截器隐藏而非销毁）。窗口常驻置顶（floating 层，失焦不被其它应用盖住；mac 上精灵窗在更高的 screen-saver 层保持压在其上）。通知栈的顶部让位由 `--titlebar-height` 派生，工具窗经 `html[data-role='tool']` 覆写为面板头高度；主进程背景色仍钉死同一深色。
+- **工具窗与伙伴设置共用同一面板形态**：外壳是同一款面板头（图标 + 标题 + 关闭钮，头部即窗口拖拽区，见 `shared/panel` 的 PanelHeader），不绘制系统原生窗口控件——Win/Linux 不建 WCO、mac 隐藏红绿灯，关闭只走应用侧（关闭钮 / Esc，经关闭拦截器隐藏而非销毁）。窗口常驻置顶（floating 层，失焦不被其它应用盖住；mac 上精灵窗在更高的 screen-saver 层保持压在其上）。通知栈的顶部让位由 `--titlebar-height` 派生，工具窗经 `html[data-role='tool']` 覆写为面板头高度；工具窗主进程背景色随夜色/日色主题切换。
 - **激活码持久 + 会话 JWT 仅内存**：磁盘只持久化加密激活码 + 服务地址 + 用户；每次启动用激活码换取新的会话 JWT（含主动刷新机制）。为什么不持久会话 JWT：一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
 - **用户配置云端真源 + 本地镜像（config-sync 协调器）**：backend `user_settings` 为真源，`desktop-settings.json` 是镜像；`shared/lib/config-sync.ts` 挂在 runner-config-store 的写路径上（`setCloudSync` 委托），每次变更走 镜像原子写 → 推 Runner → 防抖 PUT `/api/config`。为什么按节白名单而不是整文件上云：本地文件含明文机密（terminal 节）与设备路径，白名单 + 节内本机键剔除（browser.profile_dir）把机密钉死在本机（PROTOCOL §5.3）；镜像带 sync.user_id 归属戳，换号残留按不信任处理（清空同步节、不上传），防止把 A 的编辑泄给 B。离线编辑照常写镜像，恢复后由水合的键级播种（本地有而云端无的键回传）自愈补传——多端为按保存 LWW、无合并，另一端的改动下次水合收敛。推理与对话/语音键（language/agent.* 等）无本地消费者，不入镜像、由设置页直连云端读写，与镜像键集天然不相交（PUT 只 upsert 传入键，见 PROTOCOL §2.4）。
 - **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../PROTOCOL.md)。
@@ -120,5 +122,5 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 限制                                  | 说明                                                                               |
 | ------------------------------------- | ---------------------------------------------------------------------------------- |
 | **WebGPU 透明合成依赖 premultiplied** | 透明画布按预乘 alpha 配置；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
-| **非默认主题冷启动一帧石墨色**        | 主进程建窗先于渲染层跑，BrowserWindow 背景色固定 #0d0d0d，而主题持久化在渲染层 localStorage，主进程读不到。要消除需把主题 id 落 userData（readRestPosition 先例），暂未做 |
-| **赛博玻璃的 backdrop-blur 成本**     | 透明置顶精灵窗内 blur 采样桌面合成，成本随面板面积与拖拽上升；blur 只下放在 surface-panel/chrome 两级。集成显卡明显掉帧时按 `html[data-role='sprite'][data-theme='cyber-glass']` 覆写提高表面 alpha 并去 blur |
+| **非默认主题冷启动一帧石墨色**        | 工具窗建窗时按配置镜像里的主题设背景色；渲染层 localStorage 与镜像若短暂不一致，仍可能闪一帧。精灵窗保持透明，不受此限 |
+| **液态玻璃的 backdrop-blur 成本**     | 透明置顶精灵窗内 blur 采样桌面合成，成本随面板面积与拖拽上升；blur 只下放在 surface-panel/chrome 两级。集成显卡或系统要求降低透明度时根节点加 `.no-blur`，提高表面 alpha 并去掉 blur |

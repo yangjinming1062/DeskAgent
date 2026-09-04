@@ -2,10 +2,10 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import { useEffect, useRef, useState } from 'react'
 
+import { $engineFps, $powerProfile, $rendererBackend } from '@/3d'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { X } from '@/shared/lib/icons'
 
-import { $engineFps, $powerProfile, $rendererBackend } from './3d/engine-diagnostics'
 import { $spriteEmotion, $spriteState } from './companion-store'
 
 export const $devMode = atom<boolean>(false)

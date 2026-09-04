@@ -1,6 +1,6 @@
 import type { DesktopUpdateEvent } from '@ipc/contracts'
 
-import { setUpdateStatus } from '@/hub/settings-store'
+import { setUpdateStatus } from '@/shared/store/update'
 
 type UpdateHandlerMap = {
   [E in DesktopUpdateEvent as E['type']]: (event: E) => void

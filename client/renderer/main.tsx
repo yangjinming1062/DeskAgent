@@ -6,12 +6,14 @@ import { HashRouter } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
+import { applyNoBlurIfNeeded } from '@/shared/lib/apply-no-blur'
 import { installClipboardShim } from '@/shared/lib/clipboard'
 import { installUpdateBridge } from '@/shared/lib/update-bridge'
 
 import App from './app'
 
 installClipboardShim()
+applyNoBlurIfNeeded()
 const offUpdateBridge = installUpdateBridge()
 
 if (import.meta.hot) {

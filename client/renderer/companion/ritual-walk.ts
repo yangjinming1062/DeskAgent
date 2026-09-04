@@ -1,7 +1,7 @@
-import { clamp, sleep } from '@runtime'
+﻿import { clamp, sleep } from '@runtime'
 
+import { $chatOpen } from '@/chat'
 import { $screenLocked } from '@/companion/activity'
-import { $chatOpen } from '@/companion/chat-store'
 import { $gazeTarget, $spriteAction, lockGazeToPoint, setSpriteState } from '@/companion/companion-store'
 import { speakProactive } from '@/companion/proactive/proactive'
 import {

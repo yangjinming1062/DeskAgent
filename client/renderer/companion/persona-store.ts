@@ -1,6 +1,6 @@
-import { atom } from 'nanostores'
+﻿import { atom } from 'nanostores'
 
-import { $renderMode, setRenderMode } from '@/companion/mesh2d/mesh2d-store'
+import { $renderMode, setRenderMode } from '@/2d'
 import { authedApi } from '@/shared/lib/authed-api'
 import { safeJsonParse } from '@/shared/lib/safe-json'
 import { registerStorageClearHandler } from '@/shared/lib/storage'

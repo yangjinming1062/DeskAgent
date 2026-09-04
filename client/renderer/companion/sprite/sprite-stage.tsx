@@ -1,14 +1,14 @@
-import { useStore } from '@nanostores/react'
+﻿import { useStore } from '@nanostores/react'
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
-import { $chatOpen, clearExternalAttachment, pushExternalAttachment } from '@/companion/chat-store'
+import { $mesh2dHitmap } from '@/2d'
+import { $sprite3DHitTest } from '@/3d'
+import { $chatOpen, clearExternalAttachment, pushExternalAttachment } from '@/chat'
 import { $clipOverride, $spriteAction, requestOpenDock, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 
-import { $sprite3DHitTest } from '../3d/silhouette-hit'
 import { handleDizzyInteraction, handleDragEndInteraction, handlePetInteraction } from '../interaction'
-import { $mesh2dHitmap } from '../mesh2d/mesh2d-store'
 import {
   $edgeDockSide,
   $homePosition,
@@ -26,6 +26,7 @@ import {
 } from '../spatial'
 import { emitVfx, Mesh2DVfxOverlay } from '../vfx'
 
+import { FootGlow } from './foot-glow'
 import { Mesh2DGestureTracker } from './gesture-tracker'
 
 interface SpriteStageProps {
@@ -484,6 +485,7 @@ export function SpriteStage({
             transition: 'transform 420ms cubic-bezier(0.33, 1, 0.68, 1)'
           }}
         >
+          <FootGlow />
           {children}
           <Mesh2DVfxOverlay />
         </div>

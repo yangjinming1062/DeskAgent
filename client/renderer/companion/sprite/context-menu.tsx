@@ -1,10 +1,17 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import { isRegionHit, useInteractiveRegion } from '@/companion/interactive-regions'
-import { EyeOff, KeyRound, MessageSquareText, Settings, SlidersHorizontal } from '@/shared/lib/icons'
-import type { IconComponent } from '@/shared/lib/icons'
+import {
+  EyeOff,
+  type IconComponent,
+  KeyRound,
+  MessageSquareText,
+  Settings,
+  SlidersHorizontal
+} from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
+
+import { isRegionHit, useInteractiveRegion } from '../interactive-regions'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 

@@ -20,7 +20,7 @@ export default defineConfig({
       input: {
         index: path.resolve(__dirname, 'index.html'),
         sprite: path.resolve(__dirname, 'sprite.html'),
-        hub: path.resolve(__dirname, 'hub.html'),
+        setting: path.resolve(__dirname, 'setting.html'),
         'clip-debugger': path.resolve(__dirname, 'clip-debugger.html'),
         puppet: path.resolve(__dirname, 'puppet.html')
       },
@@ -56,7 +56,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './renderer'),
       '@shared': path.resolve(__dirname, './renderer/shared'),
       '@companion': path.resolve(__dirname, './renderer/companion'),
-      '@hub': path.resolve(__dirname, './renderer/hub'),
+      '@setting': path.resolve(__dirname, './renderer/setting'),
+      '@2d': path.resolve(__dirname, './renderer/2d'),
+      '@3d': path.resolve(__dirname, './renderer/3d'),
+      '@chat': path.resolve(__dirname, './renderer/chat'),
+      '@onboarding': path.resolve(__dirname, './renderer/onboarding'),
       '@ipc/contracts': path.resolve(__dirname, './shared/ipc/contracts'),
       '@runtime': path.resolve(__dirname, './shared/runtime')
     },

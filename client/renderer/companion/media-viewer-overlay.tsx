@@ -3,10 +3,9 @@ import { atom } from 'nanostores'
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
+import { useResolvedMediaSrc } from '@/chat'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import type { ChatMediaItem } from '@/shared/types/spiritagent'
-
-import { useResolvedMediaSrc } from './chat-media-src'
 
 // 富媒体查看器：聊天窗媒体卡点击后全屏放大；图片查看与视频播放共用一个遮罩。
 const $mediaViewer = atom<ChatMediaItem | null>(null)

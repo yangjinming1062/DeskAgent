@@ -1,9 +1,8 @@
 import { atom, computed } from 'nanostores'
 
+import type { SettingsView } from '@/setting'
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
-
-import type { SettingsView } from './settings/settings-view'
 
 interface DockOpenRequest {
   kind: 'chat' | 'settings'

@@ -1,13 +1,10 @@
 import { useStore } from '@nanostores/react'
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/companion/3d/model-store'
+import { $mesh2dHitmap, $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
+import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/3d'
+import { $chatOpen, ChatDock, setChatOpen } from '@/chat'
 import { startActivityMonitor } from '@/companion/activity'
-import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
-import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
-import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { useMainProcessListener } from '@/companion/boot/use-main-process-listener'
-import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import {
   $companionLifecycle,
   $openDockRequest,
@@ -15,11 +12,19 @@ import {
   setCompanionLifecycle
 } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
-import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
-import { $puppetReady, hydratePuppet } from '@/companion/puppet/puppet-store'
-import { initSpatial, resetToHomePosition } from '@/companion/spatial'
+import { initSpatial, resetToHomePosition, updateSpatialDecision } from '@/companion/spatial'
+import {
+  ActivationOverlay,
+  BootFailureOverlay,
+  EggStage,
+  OnboardingFlow,
+  useGatewayBoot,
+  useGatewayRequest,
+  useMainProcessListener
+} from '@/onboarding'
+import { CompanionSettings, setSettingsView, type SettingsView } from '@/setting'
 import { NotificationStack } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -27,19 +32,12 @@ import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 import { strings } from '@/shared/strings'
 
-import { ActivationOverlay } from './activation/activation-overlay'
-import { ChatDock } from './chat-dock'
 import { DeveloperOverlay } from './developer-overlay'
-import { EggStage } from './egg-stage'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
 import { MediaViewerOverlay } from './media-viewer-overlay'
-import { $mesh2dHitmap } from './mesh2d/mesh2d-store'
-import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
-import { CompanionSettings } from './settings/settings-panel'
-import { setSettingsView, type SettingsView } from './settings/settings-view'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
@@ -49,10 +47,10 @@ import { checkCompanionVoiceValidity } from './voice-validity'
 // 从启动关键路径挪走。Onboarding 期间 (showOnboarding 为 true) 本来就不挂载它们，
 // 让 Vite 把 three.module.js + draco_decoder.wasm 等 25MB 模块拆成单独 chunk，
 // 在 lifecycle=ready 后按需请求，避开启动尖峰把风扇拉满。
-const Companion3D = lazy(() => import('./3d/companion-3d').then(m => ({ default: m.Companion3D })))
+const Companion3D = lazy(() => import('@/3d').then(m => ({ default: m.Companion3D })))
 // puppet（PSD 链）沿用 WebGL/vite 懒加载策略：PSD 装配 + vendor
 // rigger/ag-psd 都不在启动关键路径上（Phase 6）。
-const PuppetStage = lazy(() => import('./puppet/PuppetStage').then(m => ({ default: m.PuppetStage })))
+const PuppetStage = lazy(() => import('@/2d').then(m => ({ default: m.PuppetStage })))
 
 // 把 gateway 启动挂在 mount effect 里——这样只在已鉴权时才会跑。
 // 当 $auth 切回未鉴权（登出 / 过期）时这里会卸载，useGatewayBoot 的 cleanup
@@ -96,6 +94,11 @@ export function CompanionRoot(): React.JSX.Element {
 
     setChatOpen(kind === 'chat')
     setSettingsOpen(kind === 'settings')
+  }, [])
+
+  const handleCloseChat = useCallback((): void => {
+    setChatOpen(false)
+    updateSpatialDecision()
   }, [])
 
   useEffect(() => {
@@ -414,7 +417,7 @@ export function CompanionRoot(): React.JSX.Element {
       {activationOpen && !authed && <ActivationOverlay onClose={() => setActivationOpen(false)} />}
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
-        hidden={chatOpen || showOnboarding}
+        hidden={showOnboarding}
         onContextMenu={e => {
           $contextMenuPos.set({ x: e.clientX, y: e.clientY })
         }}
@@ -432,7 +435,7 @@ export function CompanionRoot(): React.JSX.Element {
         onOpenChat={() => openDock('chat')}
         onOpenSettings={() => openDock('settings')}
       />
-      {authed && chatOpen && <ChatDock onClose={() => setChatOpen(false)} />}
+      {authed && chatOpen && <ChatDock onClose={handleCloseChat} />}
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {authed && <ProactiveBubble />}
       {authed && <MediaViewerOverlay />}

@@ -17,7 +17,7 @@ export default [
       'assets/**',
       'public/**',
       'src/**/*.js',
-      'renderer/companion/puppet/vendor/**',
+      'renderer/2d/puppet/vendor/**',
       '*.config.*'
     ]
   },
@@ -149,8 +149,12 @@ export default [
         {
           patterns: [
             {
-              group: ['@/hub', '@/hub/*', '../hub', '../hub/*', '../../hub', '../../hub/*'],
-              message: 'companion must not import hub — review design before coupling the two windows.'
+              group: ['@/setting/settings', '@/setting/settings/*', '../setting/settings', '../setting/settings/*'],
+              message: 'companion must not import setting/settings — review design before coupling.'
+            },
+            {
+              group: ['@/2d/*', '@/3d/*', '@/chat/*', '@/onboarding/*'],
+              message: 'cross-module imports must go through the target barrel (@/2d, @/3d, @/chat, @/onboarding).'
             }
           ]
         }
@@ -158,7 +162,7 @@ export default [
     }
   },
   {
-    files: ['renderer/hub/**/*.{ts,tsx}'],
+    files: ['renderer/setting/settings/**/*.{ts,tsx}'],
     ignores: ['**/node_modules/**'],
     rules: {
       'no-restricted-imports': [
@@ -174,7 +178,59 @@ export default [
                 '../../companion',
                 '../../companion/*'
               ],
-              message: 'hub must not import companion — review design before coupling the two windows.'
+              message: 'system settings must not import companion — review design before coupling the two windows.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: ['renderer/shared/**/*.{ts,tsx}'],
+    ignores: ['**/node_modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/companion',
+                '@/companion/*',
+                '@/setting',
+                '@/setting/*',
+                '@/2d',
+                '@/2d/*',
+                '@/3d',
+                '@/3d/*',
+                '@/chat',
+                '@/chat/*',
+                '@/onboarding',
+                '@/onboarding/*'
+              ],
+              message: 'shared must not import feature modules.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: [
+      'renderer/setting/companion/**/*.{ts,tsx}',
+      'renderer/clip-debugger/**/*.{ts,tsx}',
+      'renderer/puppet-entry.tsx',
+      'renderer/sprite-entry.tsx'
+    ],
+    ignores: ['**/node_modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/2d/*', '@/3d/*', '@/chat/*', '@/onboarding/*', '@/companion/*', '@/setting/*'],
+              message: 'cross-module imports must go through the target barrel.'
             }
           ]
         }
@@ -187,7 +243,15 @@ export default [
     // SPA 回退的 index.html。后端数据与字节一律走主进程桥（api / apiAsset /
     // apiAssetBuffer / apiAssetModelUrl）。独立调试页（puppet-entry / clip-debugger，
     // 部分在纯浏览器跑）不在此列；确需直连处逐行 eslint-disable 写明 URL 来源。
-    files: ['renderer/companion/**/*.{ts,tsx}', 'renderer/hub/**/*.{ts,tsx}', 'renderer/shared/**/*.{ts,tsx}'],
+    files: [
+      'renderer/companion/**/*.{ts,tsx}',
+      'renderer/setting/**/*.{ts,tsx}',
+      'renderer/chat/**/*.{ts,tsx}',
+      'renderer/onboarding/**/*.{ts,tsx}',
+      'renderer/2d/**/*.{ts,tsx}',
+      'renderer/3d/**/*.{ts,tsx}',
+      'renderer/shared/**/*.{ts,tsx}'
+    ],
     rules: {
       'no-restricted-syntax': [
         'error',

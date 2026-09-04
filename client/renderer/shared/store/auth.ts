@@ -25,11 +25,9 @@ export async function hydrateAuth(): Promise<void> {
     if (snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
       $auth.set({ kind: 'authenticated', snapshot })
     } else {
-      await clearCompanionStorage()
       $auth.set({ kind: 'unauthenticated' })
     }
   } catch (error) {
-    await clearCompanionStorage()
     $auth.set({
       error: error instanceof Error ? error.message : String(error),
       kind: 'unauthenticated'

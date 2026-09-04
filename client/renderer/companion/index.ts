@@ -1,1 +1,123 @@
+export { $focusContext, $screenLocked, reportInteractionStat } from './activity'
+export { isLatestGen, nextGen, playDataUrl, registerAmplitudeSink, warmAudioContext } from './audio-track'
+export { cancelAutoVoice } from './auto-voice-stream'
+export { startAutonomyProvision, stopAutonomyProvision } from './autonomy'
+export {
+  clearDraftRefImage,
+  loadDraftRefImage,
+  pickAvatarImage,
+  type PickedImage,
+  resolvePortraitUrl,
+  saveDraftRefImage
+} from './avatar-image'
+export {
+  $clipOverride,
+  $companionLifecycle,
+  $effectiveTier,
+  $gazeTarget,
+  $spriteAction,
+  $spriteActionQueue,
+  $spriteEmotion,
+  $spriteState,
+  $userPreferredTier,
+  type DisturbanceTier,
+  pushEffectiveDisturbanceTier,
+  setDisturbanceTier,
+  setSpriteState,
+  type SpriteEmotion,
+  type SpriteStateName
+} from './companion-store'
+export { DISTURBANCE_TIERS } from './disturbance-tiers'
+export { usePanelDrag } from './hooks/use-panel-drag'
+export { usePanelResize } from './hooks/use-panel-resize'
+export { useVoiceRecorder } from './hooks/use-voice-recorder'
+export { probeInteractiveRegions, useInteractiveRegion } from './interactive-regions'
+export { openMediaViewer } from './media-viewer-overlay'
+export { $memoryBrowserTab, type MemoryTab, setMemoryBrowserTab } from './memory-browser-store'
+export { FloatingPanel, RESIZE_HANDLES } from './panel/floating-panel'
+export { WizardModal } from './panel/wizard-modal'
+export {
+  assembleCharacterPersona,
+  assemblePersona,
+  MAX_APPEARANCE,
+  MAX_USER_TEXT,
+  type OnboardingAnswers
+} from './persona'
+export {
+  APPEARANCE_PRESETS,
+  CHARACTER_GENDER_PRESETS,
+  PERSONALITY_PRESETS,
+  type PersonalityPreset,
+  RELATIONSHIP_PRESETS,
+  type RelationshipPreset,
+  SPEAKING_STYLE_PRESETS,
+  type SpeakingStylePreset,
+  SPECIES_PRESETS,
+  USER_AGE_BUCKET_PRESETS,
+  USER_GENDER_PRESETS,
+  VOICE_PRESETS
+} from './persona-presets'
+export { $persona, hydratePersona } from './persona-store'
+export {
+  $activeAvatarId,
+  $portraitHistory,
+  $portraitSelectedIdx,
+  $portraitUrl,
+  $regenFeedback,
+  applyPortrait,
+  clearPortraitHistory,
+  hydratePortraitHistory,
+  type PortraitEntry,
+  pushPortraitEntry,
+  selectAvatar,
+  selectPortraitEntry
+} from './portrait-store'
+export {
+  $companionVoiceId,
+  $llmAffect,
+  $llmAutonomy,
+  $llmReactions,
+  $responseMode,
+  initCompanionPrefsSync,
+  llmAffectPref,
+  llmAutonomyPref,
+  llmReactionsPref,
+  type ResponseMode,
+  setCompanionVoiceId,
+  setResponseMode
+} from './prefs'
 export { CompanionRoot } from './root'
+export {
+  $defaultScale,
+  $dragVelocity,
+  $edgeDockSide,
+  $isEdgeDocked,
+  $spatialLocomotion,
+  $spatialPos,
+  $spriteContentRect,
+  $viewport,
+  computeCompanionChatAnchor,
+  getBaseSpriteHeight,
+  getBaseSpriteWidth,
+  type Locomotion,
+  setDefaultScale
+} from './spatial'
+export { $contextMenuOpen, openContextMenu } from './sprite/context-menu-store'
+export { speakChatMessage, speakScripted, stopSpeaking } from './tts'
+export { useRegeneratePortrait } from './use-regenerate-portrait'
+export { clearVfx, emitVfx } from './vfx'
+export {
+  designVoice,
+  fetchVoiceCatalogRaw,
+  GENDER_OPTIONS,
+  LANGUAGE_LABELS,
+  matchVoicePreference,
+  nextVoice,
+  sampleLine,
+  type VoiceCatalog,
+  type VoiceDesignPreview,
+  type VoiceOption
+} from './voice'
+export { $voicePreparing, beginVoicePreparing, endVoicePreparing } from './voice-state'
+export { useOutfitDesignSession } from './wardrobe/design-session'
+export { $outfits, activateOutfit, deleteOutfit, hydrateWardrobe } from './wardrobe/wardrobe-store'

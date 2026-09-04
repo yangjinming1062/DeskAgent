@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react'
 
 import { CompanionRoot } from '@/companion'
-import { ToolRoot } from '@/hub'
+import { SettingRoot } from '@/setting'
 
 const ClipDebugger = React.lazy(async () => {
   const mod = await import('@/clip-debugger/clip-debugger')
@@ -47,5 +47,5 @@ export default function App(): React.JSX.Element {
     )
   }
 
-  return <ToolRoot />
+  return <SettingRoot />
 }

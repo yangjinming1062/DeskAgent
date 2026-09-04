@@ -1,10 +1,10 @@
-import { clamp } from '@runtime'
+﻿import { clamp } from '@runtime'
 
+import { $chatOpen } from '@/chat'
 import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
-import { $chatOpen } from './chat-store'
 import { $effectiveTier, lockGazeToPoint } from './companion-store'
 import { $llmAutonomy } from './prefs'
 import { gazeTowardsPoint } from './ritual-walk'

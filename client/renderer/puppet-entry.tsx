@@ -12,13 +12,16 @@ import { clamp } from '@runtime'
 import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import { $gazeTarget, $spriteEmotion } from '@/companion/companion-store'
-import { $mesh2dHitmap } from '@/companion/mesh2d/mesh2d-store'
-import type { PuppetRuntime } from '@/companion/puppet/puppet-runtime'
-import { $puppetInfo } from '@/companion/puppet/puppet-store'
-import type { Rig } from '@/companion/puppet/puppet-types'
-import { PuppetCanvas, type PuppetCanvasHandle } from '@/companion/puppet/PuppetCanvas'
-import { PuppetStage } from '@/companion/puppet/PuppetStage'
+import {
+  $mesh2dHitmap,
+  $puppetInfo,
+  PuppetCanvas,
+  type PuppetCanvasHandle,
+  type PuppetRuntime,
+  PuppetStage,
+  type Rig
+} from '@/2d'
+import { $gazeTarget, $spriteEmotion } from '@/companion'
 
 /** ?stage=1 — 挂真实 PuppetStage 并注入内置 PSD；断言 hitmap 区域 + 情绪/视线驱动可视。 */
 function PuppetStageApp() {

@@ -1,6 +1,6 @@
-import { atom, map } from 'nanostores'
+﻿import { atom, map } from 'nanostores'
 
-import type { RigType } from '@/companion/3d/rig'
+import type { RigType } from '@/3d'
 
 import type {
   ClipItem,

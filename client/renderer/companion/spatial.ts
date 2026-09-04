@@ -1,8 +1,8 @@
 import { clamp } from '@runtime'
 import { atom } from 'nanostores'
 
+import { $chatOpen } from '@/chat'
 import { $focusContext, $lastIdleSeconds } from '@/companion/activity'
-import { $chatOpen } from '@/companion/chat-store'
 import {
   $clipOverride,
   $effectiveTier,
@@ -212,13 +212,64 @@ export function computeOverlayAnchorBesideSprite(opts: {
   return { left, top }
 }
 
+/** 肩线取立绘顶部向下 22%；用默认比例内容盒，避免情绪瞬时缩放带动卡片。 */
+export function computeCompanionChatAnchor(opts: {
+  pos: { x: number; y: number }
+  cardW: number
+  cardH: number
+  vw: number
+  vh: number
+  gap?: number
+}): { left: number; top: number; side: 'left' | 'right' } {
+  const { pos, cardW, cardH, vw, vh, gap = 16 } = opts
+  const c = contentBox($defaultScale.get())
+  const charLeft = pos.x + c.left
+  const charRight = pos.x + c.right
+  const charTop = pos.y + c.top
+  const charHeight = Math.max(100, c.bottom - c.top)
+  const charCenterX = (charLeft + charRight) / 2
+
+  const shoulderTop = charTop + charHeight * 0.22
+
+  const fitsLeft = charLeft - gap - cardW >= 8
+  const fitsRight = charRight + gap + cardW <= vw - 8
+
+  const preferLeft = charCenterX > vw / 2
+
+  const side: 'left' | 'right' = preferLeft
+    ? fitsLeft
+      ? 'left'
+      : fitsRight
+        ? 'right'
+        : 'left'
+    : fitsRight
+      ? 'right'
+      : fitsLeft
+        ? 'left'
+        : 'right'
+
+  const targetLeft = side === 'left' ? charLeft - gap - cardW : charRight + gap
+
+  const left = clamp(targetLeft, 8, Math.max(8, vw - cardW - 8))
+  const top = clamp(shoulderTop, 8, Math.max(8, vh - cardH - 8))
+
+  return { left, top, side }
+}
+
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 }
 
 function tick(now: number): void {
-  if (!moveStart || !moveTarget) {
+  if (!moveStart || !moveTarget || $chatOpen.get()) {
     rafId = null
+    moveStart = null
+    moveTarget = null
+    moveOnArrive = null
+
+    if ($spatialLocomotion.get() !== 'drag') {
+      $spatialLocomotion.set('still')
+    }
 
     return
   }
@@ -267,7 +318,7 @@ export function moveTo(target: { x: number; y: number }, locomotion: 'walk' | 'f
   rafId = requestAnimationFrame(tick)
 }
 
-export function cancelMovement(): void {
+export function cancelMovement(notifyArrive = false): void {
   if (rafId !== null) {
     cancelAnimationFrame(rafId)
     rafId = null
@@ -282,7 +333,9 @@ export function cancelMovement(): void {
     $spatialLocomotion.set('still')
   }
 
-  cb?.()
+  if (notifyArrive) {
+    cb?.()
+  }
 }
 
 function tickScale(now: number): void {
@@ -478,7 +531,7 @@ function generateRoamWaypoint(): { x: number; y: number } {
 }
 
 export function startRoam(): void {
-  if (roaming || $isEdgeDocked.get()) {
+  if (roaming || $isEdgeDocked.get() || $chatOpen.get()) {
     return
   }
 
@@ -516,7 +569,7 @@ function roamStep(): void {
   })
 }
 
-function stopRoam(): void {
+export function stopRoam(): void {
   roaming = false
 
   if (roamTimer !== null) {

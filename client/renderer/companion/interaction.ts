@@ -1,8 +1,7 @@
+import { $availableClipNames, $clipMap, resolveClip } from '@/3d'
 import { $gateway } from '@/shared/store/gateway'
 import type { ReactionBucket } from '@/shared/types/reactions'
 
-import { resolveClip } from './3d/AnimationMap'
-import { $availableClipNames, $clipMap } from './3d/model-store'
 import { $lastIdleSeconds, reportInteractionStat } from './activity'
 import { $clipOverride, $spriteAction, $spriteEmotion, setSpriteState } from './companion-store'
 import { $personalityTags } from './persona-store'

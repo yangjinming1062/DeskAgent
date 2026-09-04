@@ -1,7 +1,7 @@
-import * as THREE from 'three'
+﻿import * as THREE from 'three'
 
-import { createGLTFLoader } from '@/companion/3d/gltf-loader-factory'
-import type { RigType } from '@/companion/3d/rig'
+import { createGLTFLoader } from '@/3d'
+import type { RigType } from '@/3d'
 
 import type { ClipItem, ModelStats, MorphTargetInfo } from './types'
 

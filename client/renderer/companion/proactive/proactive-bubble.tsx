@@ -1,10 +1,10 @@
 import { useStore } from '@nanostores/react'
 import { useRef } from 'react'
 
-import { $chatOpen, $chatSessionId, $proactiveBubble, setChatOpen } from '@/companion/chat-store'
-import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { switchSession } from '@/companion/session-list-store'
-import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
+import { $chatOpen, $chatSessionId, $proactiveBubble, setChatOpen, switchSession } from '@/chat'
+
+import { useInteractiveRegion } from '../interactive-regions'
+import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '../spatial'
 
 // 伙伴主动消息的临时气泡：聊天面板关闭时显示在伙伴身边（DESIGN §6.2）。
 // 聊天面板打开时，消息已经在对话流里出现，这里不再重复显示。

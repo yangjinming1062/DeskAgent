@@ -1,8 +1,8 @@
-import { useStore } from '@nanostores/react'
+﻿import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useMemo } from 'react'
 
-import { SUPPORTED_RIG_TYPES } from '@/companion/3d/rig'
+import { SUPPORTED_RIG_TYPES } from '@/3d'
 
 import {
   $activeClip,

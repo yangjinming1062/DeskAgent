@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { IM_VOICE_BAR_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
-import { convertBlobToWav } from '@/companion/audio-wav'
-import { markAssistantTerminal, pushPendingPrompt, pushUserMessage, schedulePendingFlush } from '@/companion/chat-store'
-import { setSpriteState } from '@/companion/companion-store'
-import { ensureChatSession } from '@/companion/session-list-store'
+import {
+  ensureChatSession,
+  markAssistantTerminal,
+  pushPendingPrompt,
+  pushUserMessage,
+  schedulePendingFlush
+} from '@/chat'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
+
+import { IM_VOICE_BAR_AUDIO_CONSTRAINTS } from '../audio-constraints'
+import { convertBlobToWav } from '../audio-wav'
+import { setSpriteState } from '../companion-store'
 
 // IM 语音条仍走 MediaRecorder（webm/opus 整段录制 → 客户端转 16kHz WAV → REST 转写）。
 const PREFERRED_OPUS_MIME_TYPES = [

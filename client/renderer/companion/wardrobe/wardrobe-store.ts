@@ -1,7 +1,7 @@
-import { atom } from 'nanostores'
+﻿import { atom } from 'nanostores'
 
+import { hydrateMesh2D } from '@/2d'
 import { resolvePortraitUrl } from '@/companion/avatar-image'
-import { hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 

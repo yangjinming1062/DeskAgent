@@ -21,7 +21,11 @@
       "@/*": ["./renderer/*"],
       "@shared/*": ["./renderer/shared/*"],
       "@companion/*": ["./renderer/companion/*"],
-      "@hub/*": ["./renderer/hub/*"],
+      "@setting/*": ["./renderer/setting/*"],
+      "@2d/*": ["./renderer/2d/*"],
+      "@3d/*": ["./renderer/3d/*"],
+      "@chat/*": ["./renderer/chat/*"],
+      "@onboarding/*": ["./renderer/onboarding/*"],
       "@ipc/contracts": ["./shared/ipc/contracts"],
       "@runtime": ["./shared/runtime"]
     }

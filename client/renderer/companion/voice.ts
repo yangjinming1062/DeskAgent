@@ -34,10 +34,6 @@ const DEFAULT_VOICE: VoiceOption = {
   description: '使用引擎默认音色。'
 }
 
-export function playDataUrl(dataUrl: string): void {
-  void new Audio(dataUrl).play().catch(() => {})
-}
-
 interface CatalogResponse {
   provider?: string
   voices?: VoiceOption[]

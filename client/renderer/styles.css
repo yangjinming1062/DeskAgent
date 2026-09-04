@@ -58,33 +58,44 @@
 }
 
 @layer base {
-  /* 经典暗色（默认主题）：与旧硬编码外观像素等价。 */
-  :root {
+  /* 夜色（默认主题）：液态毛玻璃 + 细描边 + 大圆角 + 低饱和蓝灰强调色 */
+  :root,
+  html[data-theme='night'] {
     color-scheme: dark;
 
-    --ui-app-bg: #0d0d0d;
-    --ui-surface-chrome: #0f0f11;
-    --ui-surface-panel: #141416;
-    --ui-surface-card: #1c1c21;
-    --ui-glass-bg: rgb(0 0 0 / 0.65);
-    --ui-glass-blur: 1rem;
-    --ui-line-hairline: rgb(255 255 255 / 0.08);
-    --ui-line-standard: rgb(255 255 255 / 0.12);
-    --ui-line-strong: rgb(255 255 255 / 0.2);
-    --ui-fill-faint: rgb(255 255 255 / 0.05);
-    --ui-text-strong: rgb(255 255 255 / 0.92);
-    --ui-text-body: rgb(255 255 255 / 0.78);
-    --ui-text-muted: rgb(255 255 255 / 0.5);
-    --ui-text-faint: rgb(255 255 255 / 0.36);
-    --ui-accent: #6c8aff;
-    --ui-accent-soft: rgb(108 138 255 / 0.15);
-    --ui-accent-line: rgb(108 138 255 / 0.5);
-    --ui-focus-line: rgb(108 138 255 / 0.7);
-    --ui-success: rgb(52 211 153);
+    --ui-app-bg: #0e0f14;
+    --ui-surface-chrome: rgba(16, 16, 20, 0.65);
+    --ui-surface-panel: rgba(20, 20, 24, 0.55);
+    --ui-surface-card: rgba(28, 28, 34, 0.5);
+    --ui-glass-bg: rgba(20, 20, 24, 0.55);
+    --ui-glass-blur: 24px;
+    --ui-line-hairline: rgba(255, 255, 255, 0.1);
+    --ui-line-standard: rgba(255, 255, 255, 0.18);
+    --ui-line-strong: rgba(255, 255, 255, 0.28);
+    --ui-fill-faint: rgba(255, 255, 255, 0.05);
+    --ui-fill-hover: rgba(255, 255, 255, 0.09);
+    --ui-fill-trough: rgba(0, 0, 0, 0.3);
+    --ui-text-strong: #f0f2f5;
+    --ui-text-body: #c8ccd4;
+    --ui-text-muted: #8c92a0;
+    --ui-text-faint: #5a6070;
+    --ui-accent: #8aa0c8;
+    --ui-accent-soft: rgba(138, 160, 200, 0.16);
+    --ui-accent-line: rgba(138, 160, 200, 0.45);
+    --ui-focus-line: rgba(138, 160, 200, 0.7);
+    --ui-success: rgb(52, 211, 153);
+    --sprite-state-idle: rgba(226, 232, 240, 0.45);
+    --sprite-state-listening: rgba(251, 113, 133, 0.55);
+    --sprite-state-thinking: rgba(168, 85, 247, 0.55);
+    --sprite-state-speaking: rgba(138, 160, 200, 0.55);
+    --sprite-state-working: rgba(245, 158, 11, 0.55);
+    --sprite-state-emotional: rgba(244, 114, 182, 0.55);
+    --sprite-state-interacting: rgba(45, 212, 191, 0.55);
+    --sprite-state-disconnected: rgba(239, 68, 68, 0.45);
+    --sprite-state-completed: rgba(16, 185, 129, 0.65);
+    --sprite-state-failed: rgba(239, 68, 68, 0.65);
 
     --ui-on-accent: rgb(255 255 255);
-    --ui-fill-hover: rgb(255 255 255 / 0.08);
-    --ui-fill-trough: rgb(0 0 0 / 0.3);
     --ui-inverse-surface: rgb(255 255 255);
     --ui-inverse-surface-hover: rgb(235 235 235);
     --ui-inverse-fg: rgb(0 0 0);
@@ -100,7 +111,7 @@
       'Cascadia Code', 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace, 'Apple Color Emoji',
       'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
 
-    --radius-scalar: 0.6;
+    --radius-scalar: 0.7;
     /* 顶部浮层（通知栈）的让位基准；工具窗按 data-role 覆写为面板头高度。 */
     --titlebar-height: 34px;
   }
@@ -110,140 +121,40 @@
     --titlebar-height: 3rem;
   }
 
-  /* 赛博玻璃：玻璃拟态半透 + 低饱和蓝紫渐变 + 像素噪点 + 发光描边。
-     表面带 alpha——精灵窗浮层直接透出桌面；工具窗 body 用不透明渐变兜底。 */
-  html[data-theme='cyber-glass'] {
-    --ui-app-bg: linear-gradient(160deg, #0a0c18, #0c1024 55%, #100f26);
-    --ui-surface-chrome: rgb(10 12 24 / 0.72);
-    --ui-surface-panel: rgb(16 19 36 / 0.66);
-    --ui-surface-card: rgb(24 28 52 / 0.6);
-    --ui-glass-bg: rgb(8 10 22 / 0.55);
-    --ui-glass-blur: 1.5rem;
-    --ui-line-hairline: rgb(122 143 255 / 0.14);
-    --ui-line-standard: rgb(139 158 255 / 0.2);
-    --ui-line-strong: rgb(168 184 255 / 0.32);
-    --ui-fill-faint: rgb(140 155 255 / 0.07);
-    --ui-fill-hover: rgb(140 155 255 / 0.14);
-    --ui-fill-trough: rgb(0 0 0 / 0.3);
-    --ui-text-strong: rgb(238 242 255 / 0.95);
-    --ui-text-body: rgb(232 238 255 / 0.8);
-    --ui-text-muted: rgb(226 234 255 / 0.52);
-    --ui-text-faint: rgb(226 234 255 / 0.38);
-    --ui-accent: #7d9bff;
-    --ui-accent-soft: rgb(125 155 255 / 0.18);
-    --ui-accent-line: rgb(125 155 255 / 0.55);
-    --ui-focus-line: rgb(125 155 255 / 0.75);
-    --ui-grad-a: rgb(93 116 255 / 0.16);
-    --ui-grad-b: rgb(158 106 255 / 0.12);
-    --ui-glow: rgb(125 155 255 / 0.28);
-    --ui-glow-line: rgb(125 155 255 / 0.35);
-    --ui-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-  }
-
-  /* 经典浅色：与 classic 暗色结构对位的白底镜像，浅蓝强调，纸感白面板。 */
-  html[data-theme='classic-light'] {
+  /* 日色主题：高质感浅色液态玻璃 + 深石墨文字 + 优雅沉静质感 */
+  html[data-theme='day'] {
     color-scheme: light;
 
-    --ui-app-bg: #fafafa;
-    --ui-surface-chrome: #f4f4f5;
-    --ui-surface-panel: #ffffff;
-    --ui-surface-card: #ffffff;
-    --ui-glass-bg: rgb(255 255 255 / 0.7);
-    --ui-glass-blur: 0.75rem;
-    --ui-line-hairline: rgb(0 0 0 / 0.06);
-    --ui-line-standard: rgb(0 0 0 / 0.1);
-    --ui-line-strong: rgb(0 0 0 / 0.18);
-    --ui-fill-faint: rgb(0 0 0 / 0.04);
-    --ui-fill-hover: rgb(0 0 0 / 0.08);
-    --ui-fill-trough: rgb(0 0 0 / 0.06);
-    --ui-text-strong: rgb(15 18 28 / 0.92);
-    --ui-text-body: rgb(15 18 28 / 0.78);
-    --ui-text-muted: rgb(15 18 28 / 0.55);
-    --ui-text-faint: rgb(15 18 28 / 0.36);
-    --ui-accent: #3a5cff;
-    --ui-accent-soft: rgb(58 92 255 / 0.12);
-    --ui-accent-line: rgb(58 92 255 / 0.45);
-    --ui-focus-line: rgb(58 92 255 / 0.65);
-    --ui-success: rgb(20 145 90);
+    --ui-app-bg: #f8f7f5;
+    --ui-surface-chrome: rgba(246, 244, 240, 0.75);
+    --ui-surface-panel: rgba(252, 250, 248, 0.62);
+    --ui-surface-card: rgba(255, 255, 255, 0.6);
+    --ui-glass-bg: rgba(252, 250, 248, 0.62);
+    --ui-glass-blur: 24px;
+    --ui-line-hairline: rgba(0, 0, 0, 0.06);
+    --ui-line-standard: rgba(0, 0, 0, 0.12);
+    --ui-line-strong: rgba(0, 0, 0, 0.22);
+    --ui-fill-faint: rgba(0, 0, 0, 0.04);
+    --ui-fill-hover: rgba(0, 0, 0, 0.08);
+    --ui-fill-trough: rgba(0, 0, 0, 0.06);
+    --ui-text-strong: #1a1c20;
+    --ui-text-body: #3d4048;
+    --ui-text-muted: #6e7380;
+    --ui-text-faint: #9ea3b0;
+    --ui-accent: #5c7094;
+    --ui-accent-soft: rgba(92, 112, 148, 0.14);
+    --ui-accent-line: rgba(92, 112, 148, 0.45);
+    --ui-focus-line: rgba(92, 112, 148, 0.65);
+    --ui-success: rgb(20, 145, 90);
 
     --ui-on-accent: rgb(255 255 255);
-    --ui-inverse-surface: rgb(20 22 28);
-    --ui-inverse-surface-hover: rgb(40 42 50);
-    --ui-inverse-fg: rgb(255 255 255);
-    --ui-danger-fg: rgb(190 18 60);
-    --ui-danger-bg: rgb(225 29 72 / 0.1);
-    --ui-danger-bg-hover: rgb(225 29 72 / 0.16);
-    --ui-danger-line: rgb(225 29 72 / 0.3);
-  }
-
-  /* 浅紫玻璃：cyber-glass 的光面版——极浅紫粉底、深紫文字、淡紫蓝渐变 + 玻璃模糊 + 弱噪点。
-     表面带 alpha，工具窗 body 由 linear-gradient 兜底不漏底色。 */
-  html[data-theme='lilac-glass'] {
-    color-scheme: light;
-
-    --ui-app-bg: linear-gradient(160deg, #f6f1fb, #f3eaf6 55%, #efe6f4);
-    --ui-surface-chrome: rgb(252 250 255 / 0.78);
-    --ui-surface-panel: rgb(255 252 255 / 0.7);
-    --ui-surface-card: rgb(255 252 255 / 0.78);
-    --ui-glass-bg: rgb(255 250 255 / 0.6);
-    --ui-glass-blur: 1.25rem;
-    --ui-line-hairline: rgb(120 90 170 / 0.14);
-    --ui-line-standard: rgb(120 90 170 / 0.2);
-    --ui-line-strong: rgb(120 90 170 / 0.32);
-    --ui-fill-faint: rgb(120 90 170 / 0.06);
-    --ui-fill-hover: rgb(120 90 170 / 0.14);
-    --ui-fill-trough: rgb(120 90 170 / 0.12);
-    --ui-text-strong: rgb(40 30 70 / 0.95);
-    --ui-text-body: rgb(40 30 70 / 0.78);
-    --ui-text-muted: rgb(60 45 95 / 0.55);
-    --ui-text-faint: rgb(60 45 95 / 0.38);
-    --ui-accent: #8b5cf6;
-    --ui-accent-soft: rgb(139 92 246 / 0.16);
-    --ui-accent-line: rgb(139 92 246 / 0.5);
-    --ui-focus-line: rgb(139 92 246 / 0.7);
-    --ui-success: rgb(28 145 110);
-
-    --ui-on-accent: rgb(255 255 255);
-    --ui-inverse-surface: rgb(40 30 70);
-    --ui-inverse-surface-hover: rgb(60 50 92);
-    --ui-inverse-fg: rgb(255 250 255);
-    --ui-danger-fg: rgb(162 28 100);
-    --ui-danger-bg: rgb(192 38 110 / 0.12);
-    --ui-danger-bg-hover: rgb(192 38 110 / 0.18);
-    --ui-danger-line: rgb(192 38 110 / 0.32);
-
-    --ui-grad-a: rgb(167 139 250 / 0.18);
-    --ui-grad-b: rgb(244 167 220 / 0.14);
-    --ui-glow: rgb(167 139 250 / 0.22);
-    --ui-glow-line: rgb(167 139 250 / 0.32);
-    --ui-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
-  }
-
-  /* 全息 HUD：青色细线勾勒模块、扫描线、扫掠光带与呼吸发光，近不透明深青黑底。 */
-  html[data-theme='holo'] {
-    --ui-app-bg: #060d12;
-    --ui-surface-chrome: #060d12;
-    --ui-surface-panel: #081218;
-    --ui-surface-card: #0b1a21;
-    --ui-glass-bg: rgb(6 13 18 / 0.78);
-    --ui-glass-blur: 0.75rem;
-    --ui-line-hairline: rgb(77 232 255 / 0.16);
-    --ui-line-standard: rgb(77 232 255 / 0.24);
-    --ui-line-strong: rgb(77 232 255 / 0.4);
-    --ui-fill-faint: rgb(77 232 255 / 0.06);
-    --ui-fill-hover: rgb(77 232 255 / 0.14);
-    --ui-fill-trough: rgb(0 0 0 / 0.35);
-    --ui-text-strong: rgb(224 252 255 / 0.95);
-    --ui-text-body: rgb(226 240 255 / 0.8);
-    --ui-text-muted: rgb(220 236 248 / 0.52);
-    --ui-text-faint: rgb(220 236 248 / 0.38);
-    --ui-accent: #4de8ff;
-    --ui-accent-soft: rgb(77 232 255 / 0.14);
-    --ui-accent-line: rgb(77 232 255 / 0.45);
-    --ui-focus-line: rgb(77 232 255 / 0.7);
-    --ui-scan: rgb(77 232 255 / 0.05);
-    --ui-scan-sweep: rgb(77 232 255 / 0.1);
-    --ui-glow: rgb(77 232 255 / 0.2);
+    --ui-inverse-surface: rgb(26, 28, 32);
+    --ui-inverse-surface-hover: rgb(45, 48, 55);
+    --ui-inverse-fg: rgb(255, 255, 255);
+    --ui-danger-fg: rgb(190, 18, 60);
+    --ui-danger-bg: rgb(225, 29, 72 / 0.1);
+    --ui-danger-bg-hover: rgb(225, 29, 72 / 0.16);
+    --ui-danger-line: rgb(225, 29, 72 / 0.3);
   }
 
   * {
@@ -303,129 +214,55 @@
     color: inherit;
   }
 
-  /* 浅色主题选区：默认黄底在白底上几乎不可见，换成低透明度的强调色。 */
-  html[data-theme='classic-light'] *::selection {
-    background: rgb(58 92 255 / 0.22);
-  }
-
-  html[data-theme='lilac-glass'] *::selection {
-    background: rgb(139 92 246 / 0.26);
+  /* 浅色主题选区 */
+  html[data-theme='day'] *::selection {
+    background: rgb(92 112 148 / 0.22);
   }
 }
 
-/* ── 主题特效层 ──────────────────────────────────────────────────────────────
-   挂在表面工具类上、由 [data-theme] 门控：特异性 (0,2,1) 压过单类工具类，
-   换主题零组件改动。特效一律用元素自身的 background-image 分层实现——
-   不注入伪元素、不改 position，static 表面（聊天窗体列、向导卡等）与
-   fixed/absolute 表面同样安全。代价是主题规则会整体替换这些元素上的
-   shadow-* 工具类（各主题的 box-shadow 已含等价的悬浮投影）。 */
+/* ── 液态玻璃表面层 ───────────────────────────────────────────────────────────
+   全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃）。
+   夜色与日色采用纯净的毛玻璃、0.6px 细描边与大圆角，移除 HUD 角标与赛博噪点。 */
 
-html[data-theme='cyber-glass'] .bg-surface-panel,
-html[data-theme='cyber-glass'] .bg-surface-chrome {
-  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(1.2);
-  backdrop-filter: blur(var(--ui-glass-blur)) saturate(1.2);
-  background-image: var(--ui-noise), linear-gradient(135deg, var(--ui-grad-a), var(--ui-grad-b) 60%, transparent);
-  background-repeat: repeat, no-repeat;
+.bg-surface-panel,
+.bg-surface-chrome,
+.bg-glass {
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur));
+  backdrop-filter: blur(var(--ui-glass-blur));
+}
+
+html[data-theme='night'] .bg-surface-panel,
+html[data-theme='night'] .bg-surface-chrome {
   box-shadow:
-    0 0 0 1px var(--ui-glow-line),
-    0 0.5rem 2rem -0.75rem var(--ui-glow);
+    0 0 0 0.6px var(--ui-line-standard),
+    0 12px 32px -8px rgba(0, 0, 0, 0.45);
 }
 
-html[data-theme='cyber-glass'] .bg-surface-card {
-  background-image: var(--ui-noise);
-}
-
-html[data-theme='lilac-glass'] .bg-surface-panel,
-html[data-theme='lilac-glass'] .bg-surface-chrome {
-  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(1.15);
-  backdrop-filter: blur(var(--ui-glass-blur)) saturate(1.15);
-  background-image: var(--ui-noise), linear-gradient(135deg, var(--ui-grad-a), var(--ui-grad-b) 60%, transparent);
-  background-repeat: repeat, no-repeat;
+html[data-theme='day'] .bg-surface-panel,
+html[data-theme='day'] .bg-surface-chrome {
   box-shadow:
-    0 0 0 1px var(--ui-glow-line),
-    0 0.5rem 2rem -0.75rem var(--ui-glow);
+    0 0 0 0.6px var(--ui-line-standard),
+    0 12px 32px -8px rgba(0, 0, 0, 0.08);
 }
 
-html[data-theme='lilac-glass'] .bg-surface-card {
-  background-image: var(--ui-noise);
+/* 集成显卡/低功耗降级：当关闭 blur 或系统不支持时，提高不透明度并关闭 backdrop-filter */
+html.no-blur .bg-surface-panel,
+html.no-blur .bg-surface-chrome,
+html.no-blur .bg-glass {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
-/* holo：卡片 = 静态扫描线 + 四角括弧描边（九层背景拼贴，全部 no-repeat 除扫描线层）。 */
-html[data-theme='holo'] .bg-surface-panel {
-  background-image: linear-gradient(to bottom, var(--ui-scan-sweep), transparent 15%);
-  background-size: 100% 200%;
-  background-repeat: no-repeat;
-  box-shadow: 0 0 0 1px var(--ui-accent-line);
-  animation:
-    holo-sweep 6.5s linear infinite,
-    holo-breathe 4.2s ease-in-out infinite;
+html[data-theme='night'].no-blur .bg-surface-panel,
+html[data-theme='night'].no-blur .bg-surface-chrome,
+html[data-theme='night'].no-blur .bg-glass {
+  background-color: rgba(20, 20, 24, 0.94) !important;
 }
 
-html[data-theme='holo'] .bg-surface-card {
-  background-image:
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    linear-gradient(var(--ui-accent-line), var(--ui-accent-line)),
-    repeating-linear-gradient(to bottom, var(--ui-scan) 0 1px, transparent 1px 3px);
-  background-position:
-    left top,
-    left top,
-    right top,
-    right top,
-    left bottom,
-    left bottom,
-    right bottom,
-    right bottom,
-    0 0;
-  background-size:
-    10px 2px,
-    2px 10px,
-    10px 2px,
-    2px 10px,
-    10px 2px,
-    2px 10px,
-    10px 2px,
-    2px 10px,
-    auto;
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
-}
-
-/* 扫掠层是 200% 高的背景图，position 从 -100% 到 100% 让光带自下而上穿过容器。 */
-@keyframes holo-sweep {
-  from {
-    background-position: 0 -100%;
-  }
-
-  to {
-    background-position: 0 100%;
-  }
-}
-
-/* 呼吸发光：外圈光环强度随周期起伏；基础 1px 细线环保持不变。 */
-@keyframes holo-breathe {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px var(--ui-accent-line),
-      0 0 0.5rem -0.25rem var(--ui-glow);
-  }
-
-  50% {
-    box-shadow:
-      0 0 0 1px var(--ui-accent-line),
-      0 0 1.25rem -0.125rem var(--ui-glow);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html[data-theme='holo'] .bg-surface-panel {
-    animation: none;
-  }
+html[data-theme='day'].no-blur .bg-surface-panel,
+html[data-theme='day'].no-blur .bg-surface-chrome,
+html[data-theme='day'].no-blur .bg-glass {
+  background-color: rgba(252, 250, 248, 0.96) !important;
 }
 
 /* 为每个交互控件在原语层加上 pointer 光标（按钮、select、菜单项、
@@ -701,9 +538,8 @@ canvas {
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
 }
 
-/* 浅色主题：slider 拖动条默认 track 是白透明 + 白色 thumb，在白底上消失。
-   覆写成深色低透明 track + 深色 thumb，保留强调色填充的视觉信号。 */
-html[data-theme='classic-light'] .sa-slider::-webkit-slider-runnable-track {
+/* 浅色主题（日色）：slider 拖动条 track 与 thumb 设为深色，保留对比度与强调色填充。 */
+html[data-theme='day'] .sa-slider::-webkit-slider-runnable-track {
   background: linear-gradient(
     to right,
     var(--ui-accent) 0,
@@ -712,33 +548,14 @@ html[data-theme='classic-light'] .sa-slider::-webkit-slider-runnable-track {
     rgb(0 0 0 / 0.12) 100%
   );
 }
-html[data-theme='classic-light'] .sa-slider::-webkit-slider-thumb {
-  background: rgb(15 18 28);
+html[data-theme='day'] .sa-slider::-webkit-slider-thumb {
+  background: rgb(26 28 32);
 }
-html[data-theme='classic-light'] .sa-slider::-moz-range-track {
+html[data-theme='day'] .sa-slider::-moz-range-track {
   background: rgb(0 0 0 / 0.12);
 }
-html[data-theme='classic-light'] .sa-slider::-moz-range-thumb {
-  background: rgb(15 18 28);
-}
-
-html[data-theme='lilac-glass'] .sa-slider::-webkit-slider-runnable-track {
-  background: linear-gradient(
-    to right,
-    var(--ui-accent) 0,
-    var(--ui-accent) var(--sa-slider-fill, 0%),
-    rgb(120 90 170 / 0.22) var(--sa-slider-fill, 0%),
-    rgb(120 90 170 / 0.22) 100%
-  );
-}
-html[data-theme='lilac-glass'] .sa-slider::-webkit-slider-thumb {
-  background: rgb(40 30 70);
-}
-html[data-theme='lilac-glass'] .sa-slider::-moz-range-track {
-  background: rgb(120 90 170 / 0.22);
-}
-html[data-theme='lilac-glass'] .sa-slider::-moz-range-thumb {
-  background: rgb(40 30 70);
+html[data-theme='day'] .sa-slider::-moz-range-thumb {
+  background: rgb(26 28 32);
 }
 
 /* ── 现代科技感与全息控制台增强动效 ─────────────────────────────────────── */
@@ -827,3 +644,44 @@ html[data-theme='lilac-glass'] .sa-slider::-moz-range-thumb {
     animation: none;
   }
 }
+
+.foot-glow {
+  background: radial-gradient(ellipse 65% 35% at 50% 65%, var(--foot-glow-color) 0%, transparent 75%);
+  bottom: 0;
+  filter: blur(10px);
+  height: 42px;
+  left: 50%;
+  opacity: 0.9;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  transition:
+    background 400ms ease,
+    opacity 400ms ease;
+  width: 76%;
+  z-index: 0;
+  --foot-glow-color: var(--sprite-state-idle);
+}
+.foot-glow[data-state='listening'] { --foot-glow-color: var(--sprite-state-listening); }
+.foot-glow[data-state='thinking'] { --foot-glow-color: var(--sprite-state-thinking); }
+.foot-glow[data-state='speaking'] { --foot-glow-color: var(--sprite-state-speaking); }
+.foot-glow[data-state='working'] { --foot-glow-color: var(--sprite-state-working); }
+.foot-glow[data-state='emotional'] { --foot-glow-color: var(--sprite-state-emotional); }
+.foot-glow[data-state='interacting'] { --foot-glow-color: var(--sprite-state-interacting); }
+.foot-glow[data-state='disconnected'] { --foot-glow-color: var(--sprite-state-disconnected); }
+.foot-glow[data-pulse='completed'] { --foot-glow-color: var(--sprite-state-completed); }
+.foot-glow[data-pulse='failed'] { --foot-glow-color: var(--sprite-state-failed); }
+
+.sprite-state-dot {
+  background: var(--sprite-state-idle);
+  border-radius: 9999px;
+  height: 0.375rem;
+  width: 0.375rem;
+}
+.sprite-state-dot[data-state='listening'] { background: var(--sprite-state-listening); }
+.sprite-state-dot[data-state='thinking'] { background: var(--sprite-state-thinking); }
+.sprite-state-dot[data-state='speaking'] { background: var(--sprite-state-speaking); }
+.sprite-state-dot[data-state='working'] { background: var(--sprite-state-working); }
+.sprite-state-dot[data-state='emotional'] { background: var(--sprite-state-emotional); }
+.sprite-state-dot[data-state='interacting'] { background: var(--sprite-state-interacting); }
+.sprite-state-dot[data-state='disconnected'] { background: var(--sprite-state-disconnected); }

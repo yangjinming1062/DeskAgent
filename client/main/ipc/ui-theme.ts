@@ -1,4 +1,4 @@
-import { IPC, SPIRITAGENT_UI_THEMES, type SpiritAgentUiTheme } from '@ipc/contracts'
+import { getThemeBackgroundColor, IPC, SPIRITAGENT_UI_THEMES, type SpiritAgentUiTheme } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain } from 'electron'
 
 import * as store from '../shared/lib/runner-config-store'
@@ -22,6 +22,12 @@ export function registerUiThemeIpc({ getMainWindow, getToolWindow, ipcMain }: Ui
 
     if (typeof payload !== 'string' || !SPIRITAGENT_UI_THEMES.includes(payload)) {
       return
+    }
+
+    const targetColor = getThemeBackgroundColor(payload)
+
+    if (tool.getBackgroundColor() !== targetColor) {
+      tool.setBackgroundColor(targetColor)
     }
 
     void store.mutate(config => {

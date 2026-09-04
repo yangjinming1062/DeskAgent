@@ -1,6 +1,15 @@
 import { sleep } from '@runtime'
 
 import {
+  hydrateMesh2D,
+  hydratePuppet,
+  resetExpressionAvatars,
+  resetMesh2D,
+  resetPuppet,
+  setMesh2DStatus,
+  switchRenderMode
+} from '@/2d'
+import {
   $clipMap,
   $modelGenError,
   $modelGenProgress,
@@ -9,18 +18,7 @@ import {
   hydrateExpressions,
   setModelFailed,
   setModelInfo
-} from '@/companion/3d/model-store'
-import { $screenLocked } from '@/companion/activity'
-import { reportInteractionStat } from '@/companion/activity'
-import {
-  beginAutoVoiceTurn,
-  cancelAutoVoice,
-  endAutoVoiceTurn,
-  feedAutoVoiceDelta,
-  flushAutoVoiceSegments,
-  isAutoVoiceActive
-} from '@/companion/auto-voice-stream'
-import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
+} from '@/3d'
 import {
   $chatDraftFromUndo,
   $chatOpen,
@@ -42,8 +40,19 @@ import {
   setSessionContextUsage,
   setTurnHadBubbleBreak,
   showMediaHint,
-  submitPendingBatch
-} from '@/companion/chat-store'
+  submitPendingBatch,
+  switchSession
+} from '@/chat'
+import { $screenLocked, reportInteractionStat } from '@/companion/activity'
+import {
+  beginAutoVoiceTurn,
+  cancelAutoVoice,
+  endAutoVoiceTurn,
+  feedAutoVoiceDelta,
+  flushAutoVoiceSegments,
+  isAutoVoiceActive
+} from '@/companion/auto-voice-stream'
+import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   $effectiveTier,
   $spriteState,
@@ -52,11 +61,7 @@ import {
   setSpriteState,
   type SpriteEmotion
 } from '@/companion/companion-store'
-import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
-import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import { $responseMode } from '@/companion/prefs'
-import { hydratePuppet, resetPuppet } from '@/companion/puppet/puppet-store'
-import { switchSession } from '@/companion/session-list-store'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
@@ -71,6 +76,7 @@ import type { ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
 import { findWindowByKeyword, gazeTowardsPoint, performRitualWalk, type WindowGeom } from './ritual-walk'
+import { triggerFootGlowPulse } from './sprite/foot-glow'
 
 const PERCH_RETRY_MS = 300
 const PERCH_RETRY_COUNT = 5
@@ -309,6 +315,8 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       } else {
         setSpriteState('idle', { force: true })
       }
+
+      triggerFootGlowPulse('completed', 1200)
 
       applySpatialCue(locale, target)
 
@@ -681,6 +689,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'
       markAssistantTerminal({ error: message })
       setSpriteState('idle', { force: true })
+      triggerFootGlowPulse('failed', 2000)
 
       break
     }

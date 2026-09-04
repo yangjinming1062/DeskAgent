@@ -1,17 +1,10 @@
 import { useCallback, useState } from 'react'
 
-import { type PickedImage } from '@/companion/avatar-image'
-import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
-import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import {
-  $activeAvatarId,
-  $portraitUrl,
-  $regenFeedback,
-  applyPortrait,
-  pushPortraitEntry
-} from '@/companion/portrait-store'
+import { playOnboardingAudio, useGatewayRequest } from '@/onboarding'
 
-import { playOnboardingAudio } from './onboarding/onboarding-audio'
+import { type PickedImage } from './avatar-image'
+import { awaitAvatarRegeneration } from './avatar-regen-store'
+import { $activeAvatarId, $portraitUrl, $regenFeedback, applyPortrait, pushPortraitEntry } from './portrait-store'
 
 interface UseRegeneratePortraitOptions {
   /**

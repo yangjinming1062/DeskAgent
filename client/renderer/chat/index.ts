@@ -1,0 +1,35 @@
+export { ChatDock } from './chat-dock'
+export { useResolvedMediaSrc } from './chat-media-src'
+export {
+  $chatDraftFromUndo,
+  $chatMessageList,
+  $chatOpen,
+  $chatSessionId,
+  $chatTurnInFlight,
+  $proactiveBubble,
+  $turnHadBubbleBreak,
+  appendAssistantDelta,
+  beginAssistantMessage,
+  clearExternalAttachment,
+  clearPendingPrompts,
+  finalizeAssistantMessage,
+  hydrateChatMessages,
+  markAssistantTerminal,
+  pushAffectTraceMessage,
+  pushExternalAttachment,
+  pushMediaMessage,
+  pushPendingPrompt,
+  pushProactiveMessage,
+  pushStatusPill,
+  pushUserMessage,
+  schedulePendingFlush,
+  setAssistantTool,
+  setChatOpen,
+  setChatSession,
+  setProactiveBubble,
+  setSessionContextUsage,
+  setTurnHadBubbleBreak,
+  showMediaHint,
+  submitPendingBatch
+} from './chat-store'
+export { ensureChatSession, openMainSession, switchSession } from './session-list-store'

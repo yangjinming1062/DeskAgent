@@ -308,6 +308,7 @@ export const strings = {
 
   chat: {
     defaultSessionTitle: '日常对话',
+    inputPlaceholder: '跟它说，或把文件拖过来',
     openMainSessionFailed: '无法打开日常对话',
 
     presetPicker: {
