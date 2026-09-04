@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { memo, useState } from 'react'
 
+import { $portraitUrl } from '@/companion'
 import { ToolChipTimeline } from '@/conversation/tool-chip-timeline'
 import { ArrowRight, ChevronDown } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
@@ -80,6 +81,16 @@ function MessageBubbleInner({ message, variant }: MessageBubbleProps): React.JSX
   return <MessageBubbleWithBody body={body} message={message} variant={variant ?? 'living'} />
 }
 
+function formatBubbleTime(timestamp?: number): string {
+  if (!timestamp) {
+    return ''
+  }
+
+  const date = new Date(timestamp > 1e11 ? timestamp : timestamp * 1000)
+
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 function MessageBubbleWithBody({
   body,
   message,
@@ -95,6 +106,7 @@ function MessageBubbleWithBody({
   // 会话 id：生活空间跳转工作台时附带 sessionId，跳到对应会话。
   // 必须在所有早返回之前订阅，避免 hooks 顺序错位。
   const sessionId = useStore($chatSessionId)
+  const portraitUrl = useStore($portraitUrl)
 
   // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
   const [compressExpanded, setCompressExpanded] = useState(false)
@@ -197,7 +209,18 @@ function MessageBubbleWithBody({
   const showToolIndicator = !isUser && tools.length > 0
 
   return (
-    <div className={`group/message relative flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`group/message relative flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+      {!isUser && variant === 'workbench' && (
+        <div className="size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm mt-0.5">
+          {portraitUrl ? (
+            <img alt="Companion" className="size-full object-cover" src={portraitUrl} />
+          ) : (
+            <div className="flex size-full items-center justify-center bg-gradient-to-tr from-blue-600 to-indigo-500 text-[11px] font-bold text-white">
+              S
+            </div>
+          )}
+        </div>
+      )}
       <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {body.attachments?.length ? (
           <div className="flex flex-col gap-1">
@@ -211,13 +234,13 @@ function MessageBubbleWithBody({
         {!hideTextBubble && !toolOnly ? (
           <div
             className={cn(
-              'relative whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm backdrop-blur-md',
+              'relative whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md',
               isUser
                 ? variant === 'workbench'
-                  ? 'rounded-br-sm border border-line-standard bg-fill-hover text-strong'
+                  ? 'rounded-tr-sm border border-blue-400/35 bg-blue-950/60 text-white shadow-[0_4px_16px_rgba(20,35,70,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]'
                   : 'rounded-br-sm border border-accent-line/40 text-strong'
                 : variant === 'workbench'
-                  ? 'rounded-bl-sm border border-line-standard bg-surface-card/45 text-strong'
+                  ? 'rounded-tl-sm border border-white/10 bg-white/[0.05] text-white/95 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]'
                   : 'rounded-bl-sm border border-line-hairline bg-surface-card/20 text-strong'
             )}
             style={
@@ -238,6 +261,16 @@ function MessageBubbleWithBody({
             ) : (
               <span className="animate-pulse text-faint">…</span>
             )}
+            {variant === 'workbench' && message.timestamp ? (
+              <div
+                className={cn(
+                  'mt-1.5 flex items-center gap-1 text-[10px]',
+                  isUser ? 'justify-end text-blue-200/50' : 'justify-end text-white/35'
+                )}
+              >
+                <span>{formatBubbleTime(message.timestamp)}</span>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {body.media?.length ? (

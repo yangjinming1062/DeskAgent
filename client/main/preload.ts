@@ -112,6 +112,9 @@ contextBridge.exposeInMainWorld('spiritagent', {
   surface: {
     close: () => ipcRenderer.invoke(IPC.invoke.surfaceClose),
     getState: () => ipcRenderer.invoke(IPC.invoke.surfaceGetState),
+    isMaximized: () => ipcRenderer.invoke(IPC.invoke.surfaceIsMaximized),
+    maximize: () => ipcRenderer.invoke(IPC.invoke.surfaceMaximize),
+    minimize: () => ipcRenderer.invoke(IPC.invoke.surfaceMinimize),
     onChanged: (cb: (payload: DesktopSurfaceChangedEvent) => void) => subscribe(IPC.event.surfaceChanged, cb),
     open: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceOpen, payload)
   },

@@ -17,6 +17,7 @@ export interface ChatMessageListItem {
   subtype?: string
   /** 后端 Message.id——fork 按钮回传给后端的 source_message_id；仅 hydrate 的历史消息有值，活路径 push 出的消息为 undefined。 */
   backendMessageId?: number
+  timestamp?: number
 }
 
 export interface ChatMessageBody {
@@ -187,7 +188,8 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
       id,
       role: m.role === 'user' ? 'user' : 'assistant',
       subtype: m.subtype,
-      backendMessageId: typeof m.id === 'number' ? m.id : undefined
+      backendMessageId: typeof m.id === 'number' ? m.id : undefined,
+      timestamp: m.timestamp
     })
     bodies[id] = {
       text: textContent,
@@ -305,14 +307,20 @@ export function showMediaHint(text: string, sessionId?: string): void {
 export function pushProactiveMessage(text: string): void {
   const id = nextId()
   $chatMessageBodies.setKey(id, { text, streaming: false, toolName: null })
-  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_proactive' }])
+  $chatMessageList.set([
+    ...$chatMessageList.get(),
+    { id, role: 'assistant', subtype: 'status_proactive', timestamp: Date.now() }
+  ])
 }
 
 // 后台视频完成等异步送达的媒体行；与历史水合的 status_media 行同形状。
 export function pushMediaMessage(media: ChatMediaItem[]): string {
   const id = nextId()
   $chatMessageBodies.setKey(id, { text: '', media, streaming: false, toolName: null })
-  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_media' }])
+  $chatMessageList.set([
+    ...$chatMessageList.get(),
+    { id, role: 'assistant', subtype: 'status_media', timestamp: Date.now() }
+  ])
 
   return id
 }
@@ -324,7 +332,10 @@ export function pushMediaMessage(media: ChatMediaItem[]): string {
 export function pushAffectTraceMessage(): void {
   const id = nextId()
   $chatMessageBodies.setKey(id, { text: '', streaming: false, toolName: null })
-  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_affect' }])
+  $chatMessageList.set([
+    ...$chatMessageList.get(),
+    { id, role: 'assistant', subtype: 'status_affect', timestamp: Date.now() }
+  ])
 }
 
 export function pushUserMessage(text: string, attachments?: ChatAttachment[]): string {
@@ -335,7 +346,7 @@ export function pushUserMessage(text: string, attachments?: ChatAttachment[]): s
     streaming: false,
     toolName: null
   })
-  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'user' }])
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'user', timestamp: Date.now() }])
 
   return id
 }
@@ -353,7 +364,7 @@ export function pushStatusPill(subtype: string, text: string): string {
     streaming: false,
     toolName: null
   })
-  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype }])
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype, timestamp: Date.now() }])
 
   return id
 }
@@ -529,7 +540,7 @@ export function beginAssistantMessage(): void {
     const newId = nextId()
     $chatMessageBodies.setKey(lastItem.id, finalizedBody)
     $chatMessageBodies.setKey(newId, { text: '', streaming: true, toolName: null })
-    $chatMessageList.set([...list, { id: newId, role: 'assistant' }])
+    $chatMessageList.set([...list, { id: newId, role: 'assistant', timestamp: Date.now() }])
     $lastAssistantStreaming.set(true)
 
     return
@@ -537,7 +548,7 @@ export function beginAssistantMessage(): void {
 
   const id = nextId()
   $chatMessageBodies.setKey(id, { text: '', streaming: true, toolName: null })
-  $chatMessageList.set([...list, { id, role: 'assistant' }])
+  $chatMessageList.set([...list, { id, role: 'assistant', timestamp: Date.now() }])
   $lastAssistantStreaming.set(true)
 }
 
@@ -658,7 +669,7 @@ export function markAssistantTerminal({ error, cancelled }: { error?: string; ca
     streaming: false,
     toolName: null
   })
-  $chatMessageList.set([...list, { id, role: 'assistant' }])
+  $chatMessageList.set([...list, { id, role: 'assistant', timestamp: Date.now() }])
   $lastAssistantStreaming.set(false)
 }
 

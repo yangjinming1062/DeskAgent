@@ -7,6 +7,7 @@ import { useEffect } from 'react'
 import type React from 'react'
 
 import { ArrowRight, Home } from '@/shared/lib/icons'
+import { WindowControls } from '@/shared/panel'
 import { hydrateRoomBackdrop } from '@/shared/store/room-backdrop-store'
 import { requestOpenSurface } from '@/shared/store/surfaces'
 
@@ -24,7 +25,12 @@ export function LivingRoot(): React.JSX.Element {
     <div className={styles.shell} data-surface="living">
       <RoomBackdrop />
 
-      <header className={styles.titlebar}>
+      <header
+        className={styles.titlebar}
+        onDoubleClick={() => {
+          void window.spiritagent?.surface?.maximize?.()
+        }}
+      >
         <div className={styles.titleArea}>
           <Home className={styles.titleIcon} size={18} />
           <h1 className={styles.title}>生活空间</h1>
@@ -33,16 +39,19 @@ export function LivingRoot(): React.JSX.Element {
             <span>陪伴中</span>
           </div>
         </div>
-        <button
-          className={styles.workbenchButton}
-          onClick={() => {
-            void requestOpenSurface('workbench')
-          }}
-          type="button"
-        >
-          <span>前往工作台</span>
-          <ArrowRight size={13} />
-        </button>
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <button
+            className={styles.workbenchButton}
+            onClick={() => {
+              void requestOpenSurface('workbench')
+            }}
+            type="button"
+          >
+            <span>前往工作台</span>
+            <ArrowRight size={13} />
+          </button>
+          <WindowControls />
+        </div>
       </header>
 
       <div className={styles.body}>

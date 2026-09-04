@@ -637,15 +637,19 @@ async function createSurfaceWindow(id: SurfaceId, payload?: DesktopSurfaceOpenPa
   const icon = getAppIconPath() || undefined
 
   const win = new BrowserWindow({
-    backgroundColor: '#0e0f14',
-    frame: !IS_MAC,
+    backgroundColor: '#00000000',
+    backgroundMaterial: process.platform === 'win32' ? 'acrylic' : undefined,
+    frame: false,
     hasShadow: true,
     height: defaults.height,
     minHeight: defaults.minHeight,
     minWidth: defaults.minWidth,
+    resizable: true,
     show: false,
     skipTaskbar: false,
     title: id === 'living' ? 'SpiritAgent · 生活空间' : 'SpiritAgent · 工作台',
+    transparent: true,
+    vibrancy: IS_MAC ? 'under-window' : undefined,
     webPreferences: {
       backgroundThrottling: false,
       contextIsolation: true,

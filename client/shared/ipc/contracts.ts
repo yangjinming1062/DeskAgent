@@ -301,6 +301,9 @@ export interface IpcInvokeContract {
   'spiritagent:surface:open': (payload: DesktopSurfaceOpenPayload) => Promise<void> | void
   'spiritagent:surface:close': () => Promise<void> | void
   'spiritagent:surface:focus': () => Promise<void> | void
+  'spiritagent:surface:minimize': () => Promise<void> | void
+  'spiritagent:surface:maximize': () => Promise<void> | void
+  'spiritagent:surface:is-maximized': () => Promise<boolean> | boolean
   'spiritagent:surface:get-state': () => DesktopSurfaceChangedEvent | Promise<DesktopSurfaceChangedEvent>
 
   // 后端 API 代理
@@ -464,6 +467,9 @@ export const IPC = {
     shortcutsReset: 'spiritagent:shortcuts:reset',
     surfaceOpen: 'spiritagent:surface:open',
     surfaceClose: 'spiritagent:surface:close',
+    surfaceMinimize: 'spiritagent:surface:minimize',
+    surfaceMaximize: 'spiritagent:surface:maximize',
+    surfaceIsMaximized: 'spiritagent:surface:is-maximized',
     surfaceGetState: 'spiritagent:surface:get-state',
     skillsList: 'spiritagent:skills:list',
     skillSetEnabled: 'spiritagent:skill:set-enabled',

@@ -33,14 +33,13 @@ import {
 import {
   Archive,
   ArchiveOff,
+  ArrowRight,
   CalendarPlus,
-  ChevronDown,
   Clock,
   Cpu,
   Globe,
   type IconComponent,
   List,
-  MessageCircle,
   Messages,
   Pencil,
   Pin,
@@ -64,6 +63,30 @@ const WORKBENCH_PRESET_META: Record<string, { icon: IconComponent; label: string
   developer: { icon: Cpu, label: '开发工程师' },
   language_teacher: { icon: Globe, label: '语言老师' },
   product_manager: { icon: List, label: '产品经理' }
+}
+
+function formatSessionTime(timestamp?: number): string {
+  if (!timestamp) {
+    return '刚刚'
+  }
+
+  const date = new Date(timestamp > 1e11 ? timestamp : timestamp * 1000)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  if (isToday) {
+    return `今天 ${timeStr}`
+  }
+
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `昨天 ${timeStr}`
+  }
+
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${timeStr}`
 }
 
 export function SessionSidebar(): React.JSX.Element {
@@ -141,38 +164,41 @@ export function SessionSidebar(): React.JSX.Element {
 
   return (
     <aside className="flex h-full w-full min-h-0 flex-col overflow-hidden text-xs">
-      {/* 顶部操作：+ 新建对话 与 排序 */}
-      <div className="flex flex-col gap-2 p-3 pb-2">
+      {/* 顶部操作：Sessions 标题与 + 新建按钮 */}
+      <div className="flex items-center justify-between px-3.5 pt-3 pb-1">
+        <h3 className="text-sm font-semibold tracking-wide text-white/90">Sessions</h3>
         <button
-          className="flex h-8 w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-semibold text-strong shadow-sm backdrop-blur-md transition-all duration-150 hover:bg-white/18 hover:border-white/30 hover:shadow-md active:scale-[0.98]"
+          aria-label="新建对话"
+          className="flex size-6 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/80 transition hover:border-white/25 hover:bg-white/15 hover:text-white active:scale-95"
           onClick={handleCreate}
+          title="新建对话"
           type="button"
         >
           <Plus className="size-3.5" />
-          <span>新建对话</span>
         </button>
+      </div>
 
-        <div className="flex items-center justify-between gap-1.5 pt-0.5">
-          <div className="min-w-0 flex-1">
-            <SearchField ariaLabel="搜索会话" onChange={$sessionSearch.set} placeholder="搜索会话…" value={search} />
-          </div>
-          <div className="flex items-center gap-0.5 shrink-0">
-            {SORT_OPTIONS.map(({ icon: Icon, label, value }) => (
-              <button
-                aria-label={label}
-                className={cn(
-                  'rounded-lg p-1.5 transition-colors',
-                  value === sort ? 'bg-white/15 text-strong shadow-xs' : 'text-muted hover:bg-white/8 hover:text-strong'
-                )}
-                key={value}
-                onClick={() => setSessionSort(value)}
-                title={label}
-                type="button"
-              >
-                <Icon className="size-3.5" />
-              </button>
-            ))}
-          </div>
+      {/* 搜索与排序 */}
+      <div className="flex items-center justify-between gap-1.5 px-3 py-1.5">
+        <div className="min-w-0 flex-1">
+          <SearchField ariaLabel="搜索会话" onChange={$sessionSearch.set} placeholder="搜索会话…" value={search} />
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {SORT_OPTIONS.map(({ icon: Icon, label, value }) => (
+            <button
+              aria-label={label}
+              className={cn(
+                'rounded-lg p-1.5 transition-colors',
+                value === sort ? 'bg-white/15 text-strong shadow-xs' : 'text-muted hover:bg-white/8 hover:text-strong'
+              )}
+              key={value}
+              onClick={() => setSessionSort(value)}
+              title={label}
+              type="button"
+            >
+              <Icon className="size-3.5" />
+            </button>
+          ))}
         </div>
       </div>
 
@@ -306,21 +332,22 @@ export function SessionSidebar(): React.JSX.Element {
         )}
       </div>
 
-      {/* 底部归档折叠抽屉 */}
-      <div className="border-t border-line-hairline bg-surface-panel/30 p-2">
+      {/* 底部归档与展开切换 */}
+      <div className="border-t border-white/8 bg-surface-panel/20 p-2.5">
         <button
-          className="flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-[11px] text-muted transition hover:bg-white/8 hover:text-strong"
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 py-1.5 text-xs text-white/75 transition hover:border-white/20 hover:bg-white/10 hover:text-white active:scale-98"
           onClick={() => $archiveOpen.set(!archiveOpen)}
           type="button"
         >
-          <span className="flex items-center gap-1.5">
-            <Archive className="size-3" />
-            已归档会话{archivedSessions.length > 0 && ` (${archivedSessions.length})`}
+          <span>
+            {archiveOpen
+              ? '收起归档会话'
+              : `已归档会话${archivedSessions.length > 0 ? ` (${archivedSessions.length})` : ''}`}
           </span>
-          <ChevronDown className={cn('size-3 transition-transform duration-200', archiveOpen && 'rotate-180')} />
+          <ArrowRight className="size-3" />
         </button>
         {archiveOpen && (
-          <div className="mt-1 max-h-40 space-y-0.5 overflow-y-auto pr-0.5">
+          <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-0.5">
             {archivedLoading ? (
               <div className="py-2 text-center text-muted">加载中…</div>
             ) : archivedSessions.length === 0 ? (
@@ -398,13 +425,17 @@ function SessionRow({
   const presetName =
     customLabel ?? (session.system_preset_id ? presets.find(p => p.id === session.system_preset_id)?.name : undefined)
 
+  const title = customLabel ?? session.title ?? (isSpecial ? (presetName ?? '专业工位') : '新对话')
+  const timeStr = formatSessionTime(session.last_active || session.started_at)
+  const msgCount = session.message_count ?? 0
+
   return (
     <div
       className={cn(
-        'group flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 transition-all duration-150 select-none',
+        'group relative flex cursor-pointer flex-col gap-1 rounded-xl border p-2.5 transition-all duration-150 select-none',
         isActive
-          ? 'border-white/25 bg-white/15 text-strong font-semibold shadow-sm backdrop-blur-md'
-          : 'border-transparent text-muted hover:border-white/10 hover:bg-white/6 hover:text-strong'
+          ? 'border-blue-500/40 bg-blue-950/40 text-strong shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_4px_16px_rgba(0,0,0,0.3)] backdrop-blur-md'
+          : 'border-white/8 bg-white/[0.03] text-muted hover:border-white/15 hover:bg-white/[0.07] hover:text-strong'
       )}
       onClick={() => {
         if (!editing) {
@@ -412,46 +443,57 @@ function SessionRow({
         }
       }}
     >
-      {CustomIcon ? (
-        <CustomIcon className={cn('size-3.5 shrink-0', isActive ? 'text-accent' : 'opacity-75')} />
-      ) : isSpecial ? (
-        <span className="shrink-0" title={presetName ?? ''}>
-          <PresetIconBadge iconKey={session.system_preset_icon_key} />
-        </span>
-      ) : (
-        <MessageCircle className="size-3.5 shrink-0 text-faint" />
-      )}
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {isActive ? (
+            <span className="size-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.9)]" />
+          ) : CustomIcon ? (
+            <CustomIcon className="size-3.5 shrink-0 text-faint" />
+          ) : isSpecial ? (
+            <span className="shrink-0" title={presetName ?? ''}>
+              <PresetIconBadge iconKey={session.system_preset_icon_key} />
+            </span>
+          ) : (
+            <span className="size-1.5 shrink-0 rounded-full bg-white/20" />
+          )}
 
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <SessionTitleInput
-            initialTitle={session.title ?? ''}
-            onCancel={() => setEditing(false)}
-            onCommit={title => {
-              setEditing(false)
-              void renameSession(session.id, title)
-            }}
-          />
-        ) : (
-          <p className="truncate text-xs">
-            {customLabel ?? session.title ?? (isSpecial ? (presetName ?? '专业会话') : '新对话')}
-            {session.pinned && <Pin className="ml-1 inline size-2.5 text-accent opacity-75" />}
-          </p>
-        )}
-        {session.preview && !editing && <p className="truncate text-[10px] text-faint opacity-80">{session.preview}</p>}
+          {editing ? (
+            <SessionTitleInput
+              initialTitle={session.title ?? ''}
+              onCancel={() => setEditing(false)}
+              onCommit={title => {
+                setEditing(false)
+                void renameSession(session.id, title)
+              }}
+            />
+          ) : (
+            <p className={cn('truncate text-xs font-medium', isActive ? 'font-semibold text-white' : 'text-white/85')}>
+              {title}
+              {session.pinned && <Pin className="ml-1 inline size-2.5 text-accent opacity-75" />}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+          {canRename && !editing && (
+            <div className="opacity-0 transition-opacity group-hover:opacity-100">
+              <RowAction
+                icon={Pencil}
+                label={strings.chat.sessionRename.action}
+                onClick={e => stopThen(e, () => setEditing(true))}
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            {actions}
+          </div>
+          {badge && <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] text-muted">{badge}</span>}
+        </div>
       </div>
 
-      {badge && <span className="shrink-0 rounded-md bg-white/10 px-1 py-0.2 text-[9px] text-muted">{badge}</span>}
-
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-        {canRename && !editing && (
-          <RowAction
-            icon={Pencil}
-            label={strings.chat.sessionRename.action}
-            onClick={e => stopThen(e, () => setEditing(true))}
-          />
-        )}
-        {actions}
+      <div className="flex items-center justify-between pl-4 text-[10.5px] text-white/45">
+        <span>{timeStr}</span>
+        <span>{msgCount} 条消息</span>
       </div>
     </div>
   )

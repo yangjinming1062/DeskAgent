@@ -16,6 +16,7 @@ import {
   $lastAssistantStreaming,
   $pendingPromptBatch
 } from '@/chat/chat-store'
+import { $portraitUrl } from '@/companion'
 import { $gatewayState } from '@/shared/store/gateway'
 
 interface ConversationSurfaceProps {
@@ -56,6 +57,8 @@ export function ConversationSurface({
   const isTurnPendingOrInFlight = pendingPromptBatch.length > 0 || chatTurnInFlight
   const showTyping = isTurnPendingOrInFlight && !lastAssistantStreaming && gatewayState === 'open'
 
+  const portraitUrl = useStore($portraitUrl)
+
   return (
     <div className={className ?? 'flex-1 space-y-3 overflow-y-auto px-4 py-4'} data-surface={variant} ref={scrollRef}>
       {list.length === 0 && <p className="mt-8 text-center text-sm text-faint">{emptyHint}</p>}
@@ -63,10 +66,35 @@ export function ConversationSurface({
         <MessageBubble key={item.id} message={item} variant={variant} />
       ))}
       {showTyping && (
-        <div className="flex justify-start">
-          <span className="rounded-2xl rounded-bl-sm border border-line-hairline bg-surface-card px-3.5 py-2.5 text-faint">
-            …
-          </span>
+        <div className="flex items-start gap-2.5">
+          {variant === 'workbench' && (
+            <div className="mt-0.5 size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm">
+              {portraitUrl ? (
+                <img alt="Companion" className="size-full object-cover" src={portraitUrl} />
+              ) : (
+                <div className="flex size-full items-center justify-center bg-gradient-to-tr from-blue-600 to-indigo-500 text-[11px] font-bold text-white">
+                  S
+                </div>
+              )}
+            </div>
+          )}
+          <div
+            className={
+              variant === 'workbench'
+                ? 'flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-white/10 bg-white/[0.05] px-4 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md'
+                : 'rounded-2xl rounded-bl-sm border border-line-hairline bg-surface-card px-3.5 py-2.5 text-faint'
+            }
+          >
+            {variant === 'workbench' ? (
+              <>
+                <span className="size-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.3s]" />
+                <span className="size-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.15s]" />
+                <span className="size-1.5 animate-bounce rounded-full bg-blue-400" />
+              </>
+            ) : (
+              '…'
+            )}
+          </div>
         </div>
       )}
       <AutoFollowScroll scrollRef={scrollRef} />

@@ -15,10 +15,12 @@ import {
   clearExternalAttachment
 } from '@/chat/chat-store'
 import { useChatSubmit } from '@/chat/use-chat-submit'
+import { $persona } from '@/companion'
 import { useVoiceRecorder } from '@/companion/hooks/use-voice-recorder'
 import { ConversationInput } from '@/conversation/conversation-input'
 import { ConversationSurface } from '@/conversation/conversation-surface'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
+import { cn } from '@/shared/lib/utils'
 import { notify } from '@/shared/store/notifications'
 
 export interface ChatPanelProps {
@@ -114,8 +116,33 @@ export function ChatPanel({
     text
   }
 
+  const persona = useStore($persona)
+  const companionName = persona?.name || '伙伴'
+  const isOnline = gatewayState === 'open'
+  const isConnecting = gatewayState === 'connecting'
+  const statusText = isOnline ? '在线' : isConnecting ? '连接中' : '未连接'
+  const statusColor = isOnline ? 'text-emerald-400' : isConnecting ? 'text-amber-400' : 'text-white/40'
+
+  const statusDot = isOnline
+    ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+    : isConnecting
+      ? 'bg-amber-400'
+      : 'bg-white/30'
+
   return (
-    <div className={className}>
+    <div className={cn('flex flex-col h-full min-h-0', className)}>
+      {variant === 'workbench' && (
+        <div className="flex items-center justify-between border-b border-white/8 px-4 py-2.5 bg-surface-chrome/20 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.9)]" />
+            <span className="text-xs font-semibold text-white tracking-wide">{companionName}</span>
+            <span className={cn('flex items-center gap-1 text-[10.5px] font-medium', statusColor)}>
+              <span className={cn('size-1.5 rounded-full', statusDot)} />
+              <span>{statusText}</span>
+            </span>
+          </div>
+        </div>
+      )}
       <ConversationSurface className={surfaceClassName} scrollRef={scrollRef} variant={variant} />
       <div className={inputWrapperClassName}>
         <ConversationInput

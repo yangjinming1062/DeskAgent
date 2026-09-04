@@ -198,12 +198,14 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* 精灵窗口（sprite.html，data-role="sprite"）：BrowserWindow 覆盖整个屏幕且
-     `transparent: true`，但若保留默认 body 背景会铺满整块不透明层，把用户桌面遮住。
-     将 html/body/#root 全部设为透明，让系统桌面在伙伴形象之外透出；
-     SpriteStage 仍按需切换 pointer-events，使伙伴形象可点击，其余区域透传。 */
+  /* 精灵窗口、生活空间与工作台：BrowserWindow 为透明亚克力无边框窗体，
+     将 html/body/#root 设为透明，让系统桌面与亚克力模糊在内容底层自然透出。 */
   html[data-role='sprite'] body,
-  html[data-role='sprite'] #root {
+  html[data-role='sprite'] #root,
+  html[data-role='workbench'] body,
+  html[data-role='workbench'] #root,
+  html[data-role='living'] body,
+  html[data-role='living'] #root {
     background: transparent !important;
   }
 

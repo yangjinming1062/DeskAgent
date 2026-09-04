@@ -34,9 +34,12 @@ export function RunRail(): React.JSX.Element {
   return (
     <aside className={styles.runRail}>
       <header className={styles.runRailHeader}>
-        <div>
-          <h3 className={styles.runRailTitle}>运行轨迹</h3>
-          <span className={styles.runRailSubtitle}>{round ? `${round.steps.length} 步 · 本轮` : '空闲中'}</span>
+        <div className="flex items-center gap-2">
+          <span className={styles.blueDot} />
+          <div>
+            <h3 className={styles.runRailTitle}>运行轨迹</h3>
+            <span className={styles.runRailSubtitle}>{round ? `${round.steps.length} 步 · 本轮` : '空闲中'}</span>
+          </div>
         </div>
         <button
           aria-label="折叠运行轨迹"
@@ -118,6 +121,10 @@ function LatestOutput({ active, media, text }: LatestOutputProps): React.JSX.Ele
 
   if (showStreamingHint) {
     return <p className={styles.sectionEmpty}>正在准备输出…</p>
+  }
+
+  if (!textPreview && !media?.length) {
+    return <p className={styles.sectionEmpty}>暂无输出</p>
   }
 
   return (

@@ -18,6 +18,7 @@ import {
 import { ChatPanel } from '@/conversation/chat-panel'
 import { Home, SlidersHorizontal, Terminal } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { WindowControls } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 import { requestOpenSurface } from '@/shared/store/surfaces'
 
@@ -111,7 +112,12 @@ export function WorkbenchRoot(): React.JSX.Element {
 
   return (
     <div className={styles.shell} data-surface="workbench">
-      <header className={styles.titlebar}>
+      <header
+        className={styles.titlebar}
+        onDoubleClick={() => {
+          void window.spiritagent?.surface?.maximize?.()
+        }}
+      >
         <div className={styles.titleArea}>
           <Terminal className={styles.titleIcon} size={18} />
           <h1 className={styles.brandTitle}>SpiritAgent · 工作台</h1>
@@ -124,6 +130,7 @@ export function WorkbenchRoot(): React.JSX.Element {
           <button
             className={cn(styles.glassButton, settingsOpen && styles.glassButtonActive)}
             onClick={toggleSettings}
+            title={settingsOpen ? '收起工位环境' : '工位环境配置'}
             type="button"
           >
             <SlidersHorizontal size={13} />
@@ -134,11 +141,13 @@ export function WorkbenchRoot(): React.JSX.Element {
             onClick={() => {
               void requestOpenSurface('living')
             }}
+            title="切换到生活空间"
             type="button"
           >
             <Home size={13} />
-            <span>回生活空间</span>
+            <span>生活空间</span>
           </button>
+          <WindowControls />
         </div>
       </header>
 

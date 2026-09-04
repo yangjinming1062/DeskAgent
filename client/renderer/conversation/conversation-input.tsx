@@ -23,7 +23,7 @@ import { PendingAttachmentView } from '@/chat/chat-pending-attachment'
 import type { PendingAttachment } from '@/chat/chat-store'
 import { SlashCommandPopover } from '@/chat/slash-command-popover'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
-import { ArrowRight, FileText, FolderOpen, ImageIcon, Mic, Plus, SquareFilled, Video } from '@/shared/lib/icons'
+import { FileText, FolderOpen, ImageIcon, Mic, Plus, Send, SquareFilled, Video } from '@/shared/lib/icons'
 import { fuzzyFilterCommands, type ScoredSlashCommand, type SlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
 import { strings } from '@/shared/strings'
@@ -232,7 +232,7 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
     onFocus: () => setFocused(true),
     onKeyDown: handleKeyDown,
     onPaste,
-    placeholder: strings.chat.inputPlaceholder,
+    placeholder: variant === 'workbench' ? '输入指令、提问，或将文件拖入…' : strings.chat.inputPlaceholder,
     value: text
   }
 
@@ -275,7 +275,7 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
 
       <div
         className={cn(
-          'relative flex w-full items-center gap-1.5 border border-line-standard bg-fill-faint px-2 transition focus-within:border-accent/60 focus-within:bg-fill-hover shadow-xs',
+          'relative flex w-full items-center gap-1.5 border border-white/14 bg-white/[0.05] backdrop-blur-xl px-2.5 transition focus-within:border-blue-500/60 focus-within:bg-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.12)]',
           expanded ? 'rounded-2xl min-h-[3.6em] items-start py-1.5' : 'rounded-full h-10'
         )}
       >
@@ -295,8 +295,8 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
           <button
             aria-label="添加附件"
             className={cn(
-              'inline-flex size-7 items-center justify-center rounded-full text-muted transition hover:bg-fill-hover hover:text-strong disabled:pointer-events-none disabled:opacity-40',
-              attachMenuOpen && 'bg-fill-hover text-strong'
+              'inline-flex size-7 items-center justify-center rounded-full text-muted transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
+              attachMenuOpen && 'bg-white/15 text-white'
             )}
             disabled={isReadOnlySession}
             onClick={() => onAttachMenuToggle?.(!attachMenuOpen)}
@@ -346,13 +346,13 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
 
         {editorElement}
 
-        <div className={cn('flex items-center gap-1 shrink-0', expanded && 'self-end pb-0.5')}>
+        <div className={cn('flex items-center gap-1.5 shrink-0', expanded && 'self-end pb-0.5')}>
           <button
             className={cn(
               'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-40',
               recording
                 ? 'border border-rose-400/70 bg-rose-500/25 text-rose-200 animate-pulse'
-                : 'text-muted hover:bg-fill-hover hover:text-strong'
+                : 'text-muted hover:bg-white/10 hover:text-white'
             )}
             disabled={isReadOnlySession}
             onPointerCancel={onRecordingPointerCancel}
@@ -367,17 +367,17 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
           <button
             aria-label={isGenerating ? '停止生成' : '发送消息'}
             className={cn(
-              'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-30',
+              'inline-flex size-7 items-center justify-center rounded-xl transition disabled:pointer-events-none disabled:opacity-30',
               isGenerating
-                ? 'bg-rose-500/90 hover:bg-rose-600 text-on-accent shadow-xs'
-                : 'bg-accent hover:bg-accent/85 text-on-accent shadow-xs'
+                ? 'bg-rose-500/90 hover:bg-rose-600 text-white shadow-xs'
+                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)]'
             )}
             disabled={sendDisabled}
             onClick={() => void (isGenerating ? onStop() : onSend())}
             title={isGenerating ? '停止生成' : '发送消息 (Enter)'}
             type="button"
           >
-            {isGenerating ? <SquareFilled className="size-3" /> : <ArrowRight className="size-3.5" />}
+            {isGenerating ? <SquareFilled className="size-3" /> : <Send className="size-3.5 -rotate-12" />}
           </button>
         </div>
       </div>

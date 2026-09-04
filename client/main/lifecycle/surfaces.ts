@@ -17,7 +17,7 @@ import {
   normalizeSurfaceId,
   type SurfaceId
 } from '@ipc/contracts'
-import { BrowserWindow, type IpcMain, screen } from 'electron'
+import { BrowserWindow, type IpcMain, type IpcMainInvokeEvent, screen } from 'electron'
 
 import * as runnerConfigStore from '../shared/lib/runner-config-store'
 
@@ -25,6 +25,9 @@ export interface SurfacesManager {
   closeSurface: () => Promise<void>
   getState: () => DesktopSurfaceChangedEvent
   hydrateLastSurface: () => SurfaceId
+  isMaximizedSurface: () => boolean
+  maximizeSurface: () => void
+  minimizeSurface: () => void
   onWindowClosed: (id: SurfaceId, win: BrowserWindow) => void
   openSurface: (payload: DesktopSurfaceOpenPayload) => Promise<void>
   registerIpcHandlers: (deps: { ipcMain: IpcMain }) => void
@@ -241,6 +244,44 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     return id
   }
 
+  const minimizeSurface = (): void => {
+    if (!openSurfaceId) {
+      return
+    }
+
+    const win = windows.get(openSurfaceId)
+
+    if (win && !win.isDestroyed()) {
+      win.minimize()
+    }
+  }
+
+  const maximizeSurface = (): void => {
+    if (!openSurfaceId) {
+      return
+    }
+
+    const win = windows.get(openSurfaceId)
+
+    if (win && !win.isDestroyed()) {
+      if (win.isMaximized()) {
+        win.unmaximize()
+      } else {
+        win.maximize()
+      }
+    }
+  }
+
+  const isMaximizedSurface = (): boolean => {
+    if (!openSurfaceId) {
+      return false
+    }
+
+    const win = windows.get(openSurfaceId)
+
+    return Boolean(win && !win.isDestroyed() && win.isMaximized())
+  }
+
   const registerIpcHandlers = ({ ipcMain }: { ipcMain: IpcMain }): void => {
     ipcMain.handle(IPC.invoke.surfaceOpen, (_event, payload: unknown) => {
       const surface = (payload as { surface?: unknown } | null)?.surface
@@ -254,8 +295,42 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
       })
     })
 
-    ipcMain.handle(IPC.invoke.surfaceClose, () => closeSurface())
+    const resolveWindow = (event: IpcMainInvokeEvent): BrowserWindow | null => {
+      const fromSender = BrowserWindow.fromWebContents(event.sender)
 
+      if (fromSender && !fromSender.isDestroyed()) {
+        return fromSender
+      }
+
+      if (openSurfaceId) {
+        const current = windows.get(openSurfaceId)
+
+        if (current && !current.isDestroyed()) {
+          return current
+        }
+      }
+
+      return null
+    }
+
+    ipcMain.handle(IPC.invoke.surfaceClose, () => closeSurface())
+    ipcMain.handle(IPC.invoke.surfaceMinimize, event => {
+      resolveWindow(event)?.minimize()
+    })
+    ipcMain.handle(IPC.invoke.surfaceMaximize, event => {
+      const win = resolveWindow(event)
+
+      if (win) {
+        if (win.isMaximized()) {
+          win.unmaximize()
+        } else {
+          win.maximize()
+        }
+      }
+    })
+    ipcMain.handle(IPC.invoke.surfaceIsMaximized, event => {
+      return Boolean(resolveWindow(event)?.isMaximized())
+    })
     ipcMain.handle(IPC.invoke.surfaceGetState, () => snapshot())
   }
 
@@ -265,6 +340,9 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     closeSurface,
     getState,
     hydrateLastSurface,
+    isMaximizedSurface,
+    maximizeSurface,
+    minimizeSurface,
     onWindowClosed,
     openSurface,
     registerIpcHandlers
