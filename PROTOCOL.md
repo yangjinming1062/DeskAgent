@@ -68,6 +68,9 @@
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/avatar（含 /from-image、/upload）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘、直接上传头像）/ 历史形象切换激活 / 历史查询 | Backend 生成与上传 + Client 头像确认与历史画廊 + DESIGN §5.4 |
 | GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 2D 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控，不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
+| GET /api/companion/room 与 POST /generate、POST /activate、PATCH /policy、GET /{id} | 生活空间房间背景：水合房间状态（active / history[≤5] / policy / pending）/ 用户主动生成（202 异步，不占角色配额）/ 激活回滚历史房间（着装指纹不一致回 409）/ 政策切换（locked / llm_may_replace）/ 房间详情 | Backend companion_room / room_backdrop_service + Client room-backdrop / 生活空间设置 |
+| GET/POST /api/companion/moments 与 PATCH/DELETE /{id} | 生活空间时刻：游标分页查询（cursor/limit/kind）/ 用户与系统写入时刻 / 软隐藏或修改时刻 | Backend companion_journal / journal_service + Client moments-page |
+| GET /api/companion/diary 与 GET /{date}、POST、PATCH /{id} | 生活空间日记：区间拉取日记 / 指定自然日日记查询 / 用户手工补写或编辑日记（支持段落追加保护） | Backend companion_journal / journal_service + Client diary-page |
 | `command.dispatch` | Slash 命令分发：客户端在输入框敲 `/xxx` 时拦截，改走本 RPC 而非 `prompt.submit`。命令注册表权威源在 [backend/services/chat/slash_commands.py](backend/services/chat/slash_commands.py)；返回 `{command, result:{status, message, payload?, hydrate?}}`，同步广播 `command.result` 事件给同 session 订阅者（多窗口同步渲染）。详见 §6 |  |
 | `command.list` | 列出可用 Slash 命令元数据（`{name, aliases, description, requires_confirmation}`，**不含 handler**），供客户端 `/帮助` 与调试面板消费 |  |
 | `session.clear_messages` | 清空当前会话消息（保留会话行 + 写一条 `subtype='status_cleared'` 的 system marker）；强制要求 `confirmed=true`，否则 `-32001`。与 `/清理` Slash 命令共用底层实现 |  |
@@ -78,6 +81,12 @@
 - **形象锁定**：形象确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径与历史头像切换激活一并关闭（切换激活等于换掉已确认的视觉身份）。
 - **关系不外溢到分析与形象**：引导期录入的用户与伙伴关系（知己好友、赛博管家等）只渲染进对话系统提示词供交互参考；不进入性格标签分析与头像/立绘提示词生成——关系是用户与伙伴之间的，不是伙伴自身属性。
 - **下载失败可恢复（已付费结果绝不丢）**：下载失败态随 `model.failed` 事件下发可重试标记与模型标识；客户端必须据此提供"重试下载"入口，而非引导重新生成。持久化与恢复语义见 [docs/PIPELINE.md §3](docs/PIPELINE.md)。
+- **生活空间房间图联动与保护**：房间背景将角色绘制进场景中，身份基准由半身像锚定、当前穿着由服装参考锚定。换装成功后（`worn=true`）自动比较着装指纹，不一致时下发 `companion.room.invalidated` 并自动触发重建，防止画面穿帮。房间政策为 `locked` 时，拒绝角色自主换房，但放行换装联动与用户显式请求；历史房间保留最近 5 张供回滚，回滚时若服装指纹与当前穿着冲突则返回 409。
+- **时刻与日记分层不变量**：底层 `memories` 向量表仅用于混合语义检索与系统提示词注入，不对客户端暴露为可读列表；生活空间消费独立的 `moments`（时刻）与 `diary_entries`（第一人称日记）。夜间批处理静默提炼日记，若当天已被用户编辑过则采取尾部段落追加而非覆写；工作预设会话中严格禁止记录生活时刻。
+- **内置专属工具门控**：
+  - `room_backdrop_update`（args: intent, notes?）：角色自主换房。静止档禁止调用；locked 政策拒绝；每日角色自主换房成功 ≤ 1 次；常规档限 decorate/mood，rebuild 仅自主档或用户显式操作放行。
+  - `moment_create`（args: title, body, emotion?, kind?）：角色主动记录时刻。静止档禁止调用；每日角色主动配额 ≤ 3 次；工作预设会话中禁止调用。
+  - `diary_write`（args: body, mood?, date?）：角色主动写日记。静止档禁止调用；工作预设会话中禁止调用。
 
 ### 1.3 事件类型
 
@@ -128,6 +137,11 @@
 **emotion 枚举**（22 项，权威源 backend/services/chat/affect.py）：happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic / neutral / pout / angry / smug / scared / relieved。
 
 **locale 枚举**（3 项，权威源在后端白名单）：home / perch / roam。
+
+**客户端内部场所与表面状态**：
+- `target`：仪式性行走（[DESIGN.md §3.6](DESIGN.md)）目标旁，由本地工具调用触发，永不来自云端。
+- `workbench`：打开工作台窗口时，桌面精灵舞台进入工作台伴工栖息场所，目标为工作台窗口，精灵在窗口外侧 perch 伴工并在窗口拖拽时跟随。
+- **生活空间打开状态**：生活空间打开期间，桌面透明精灵舞台自动收起隐藏并暂停桌面自主走位（不触发空间移动调度，保持渲染管线热备）；关闭生活空间后恢复。
 
 **spatial target**（可选，仅 perch 时有意义）：窗口/进程名关键字。客户端经窗口枚举解析为窗口几何后计算 perch 点。注意：此处的 target 是空间 cue 的**窗口关键字**，与 Client 内部的场所 target（仪式行走目的地）是**两个不同概念**——后者由工具调用本地触发、不在本协议枚举内（见 [DESIGN.md §3.2](DESIGN.md)）。
 
@@ -193,6 +207,7 @@
 | 2D 部件 PNG / manifest.json | 5 分钟 |
 | 2D 分层 PSD（分层切分产物，puppet 链消费） | 5 分钟 |
 | 换装外观全身立绘（草稿期为 temp-media 免鉴权路径，确认后转正式签名） | 5 分钟 |
+| 生活空间房间背景图（room_backdrop，含角色的 16:9 生成背景图） | 5 分钟 |
 
 **契约要点**：资产端点支持双通道鉴权——已登录 Client 携带有效 Bearer JWT 时可直接访问归属资产；未携带令牌时按 URL HMAC 签名校验（每次签名 5 分钟 TTL，换设备/过期需重新签名）。服务端模型/资产端点支持 HTTP Range 断点续传 + ETag + 不可变缓存头；Client 按内容哈希（SHA-256）在本地磁盘缓存，命中即跳过网络，未命中/中断走断点续传。
 

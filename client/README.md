@@ -6,7 +6,8 @@
 
 **职责**：
 
-- 桌面精灵 2D / 3D 实时渲染（透明置顶窗口；2D 分层 PSD 木偶与骨骼链、3D Three.js 引擎）+ 陪伴式交互 UI（chat / onboarding / settings）
+- 桌面精灵 2D / 3D 实时渲染（透明置顶窗口；2D 分层 PSD 木偶与骨骼链、3D Three.js 引擎）+ 陪伴式交互 UI
+- 生活空间（Living Space）与工作台（Workbench）双入口互斥开窗管理与表面呈现，维护上次入口偏好（last_surface）
 - 登录鉴权与用户凭证加密落盘（safeStorage）
 - 本地 OS IPC 服务端（命名管道 / UDS）与 Runner 进程生命周期管理
 - 双向工具调用路由与反向 RPC 代理中转
@@ -25,10 +26,15 @@
 ## 2. 设计意图
 
 - **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是后端/Runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
+- **双入口互斥窗口与上次入口记忆**：产品日常交互收拢至生活空间与工作台两个入口，主进程全权负责窗口互斥裁决（同一时刻至多开启一个），双击精灵打开上次入口（`ui.last_surface`）。打开生活空间收起桌面精灵舞台并暂停走位（保持底层渲染管线热备）；打开工作台桌面精灵在窗外侧伴工栖息（perch）。
+- **对话表面抽象与状态连贯（ConversationSurface）**：从旧对话卡抽离通用的对话表面组件，供生活空间和工作台共用；底层会话数据维持单一来源（`chat-store`），两个窗口切换时不丢流、不中断。
+- **生活空间人在画中与无立绘微动感**：全屏铺设含角色房间背景图（`room-backdrop`），窗内严禁挂载 2D/3D 模型，杜绝双重立绘穿帮；由极慢 Ken Burns 微动、玻璃高光位移、左栏头像情绪切换与液态玻璃取色呼吸底营造生机。
+- **工作台三栏工位与窗旁活精灵伴工**：无房间图，采用工位主色与高对比度；三栏工位（会话列表、通用对话流、可折叠 Run Rail）与工位设置抽屉（收纳推理参数、Runner、Skills、Toolsets）。
+- **时刻与日记产品化展示**：轻量消费生活空间时刻时间线与第一人称日记，本地不跑记忆向量检索。
 - **2D / 3D 双渲染与产品兜底**：客户端负责加载形象资产、渲染动画并执行 [DESIGN.md §1.2](../DESIGN.md) 的视觉兜底策略（渲染级联：2D 分层木偶 → 3D → 程序化蛋，任一级装配失败自动落级）；3D 与 2D 产物及动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。资产（3D GLB、2D PSD）采用 OPFS 本地二进制缓存配合 `localStorage` 元数据同步持久化（`da.companion.*`），实现老用户冷启动第 0 帧直接渲染形象，后台静默异步 SWR 校验，登出时统一清除。
 - **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位，经配置同步管道单向推后端（后端闸门的唯一档位来源）；权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../DESIGN.md)。
 - **本地时区随连接上报**：每次网关连接即发即忘上报 IANA 时区——后端夜间批处理与互动统计按用户本地日聚合，缺行时夜间流水线整段跳过；契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
-- **透明置顶精灵窗口作为唯一常驻主窗口**：登录态由托盘管理，应用设置等按需工具窗口由精灵右键菜单唤起，不常驻——"对话发生在角色身边"。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
+- **透明置顶精灵窗口作为桌面唯一身体**：登录态由托盘管理，精灵窗口透明置顶。生活空间打开时收起精灵舞台，工作台打开时精灵移至窗外侧伴工栖息。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
 - **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../PROTOCOL.md)。
 
 ## 3. 架构地图
@@ -41,7 +47,7 @@ client/
 │   ├── ipc/               # IPC handler 命名空间（auth / media / connection / runner 等）
 │   ├── runner/            # Runner 进程编排（bridge + reverse-rpc + updater）
 │   ├── security/          # 路径白名单 + 凭证保护 + hardening
-│   ├── lifecycle/         # tray + 单实例锁 + 关闭拦截
+│   ├── lifecycle/         # tray + 单实例锁 + 关闭拦截 + surfaces.ts（双入口互斥与开窗管理）
 │   ├── backend/           # REST 客户端 + session 会话管理 + ws 探测
 │   └── shared/            # 主进程通用工具库与状态存储
 ├── shared/                # 跨进程共享契约定义（@ipc/contracts 别名）
@@ -51,12 +57,16 @@ client/
 │   ├── companion/         # 伙伴层（桌宠 Overlay、状态机、情绪、桌面空间行为与交互）
 │   ├── 2d/                # 2D 渲染模块（分层 PSD 木偶 PuppetStage、网格渲染）
 │   ├── 3d/                # 3D 渲染模块（Three.js 引擎、骨骼装配、clip 动作系统与物理倾角）
-│   ├── chat/              # 对话模块（贴身浮层、消息流、参数调优与上下文感知、会话抽屉）
+│   ├── conversation/      # 对话表面通用层（ConversationSurface、输入指挥台、工具芯片时间轴）
+│   ├── living/            # 生活空间模块（生活空间根组件、左栏导航、房间背景、时刻与日记页面及 store）
+│   ├── workbench/         # 工作台模块（工作台根组件、会话侧栏、Run Rail 运行轨迹、工位设置抽屉）
 │   ├── onboarding/        # 引导模块（破蛋阶段、问卷流、激活与网关启动流水线）
-│   ├── setting/           # 设置模块（三个平级独立面板：伙伴设置 3 tab / 换一身/形象 2 tab / 应用设置 8 tab）
+│   ├── setting/           # 设置模块（伙伴设置、形象设置与应用全局设置，按生活空间与工位抽屉重挂载）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点
-│   └── sprite-entry.tsx   # 精灵窗口入口（设置面板在此内挂载）
+│   ├── sprite-entry.tsx   # 精灵窗口入口
+│   ├── living-entry.tsx   # 生活空间窗口入口
+│   └── workbench-entry.tsx# 工作台窗口入口
 ├── scripts/               # 构建/测试钩子
 └── assets/                # icon 与 wasm 资源
 ```
@@ -68,19 +78,20 @@ client/
 | 起点 → 终点                                    | 许可 |
 | ---------------------------------------------- | ---- |
 | 任何模块 → `shared`                           | ✓    |
-| `companion` → `2d` / `3d` / `chat` / `onboarding` | ✓ |
+| `companion` → `2d` / `3d` / `conversation` / `living` / `workbench` / `onboarding` | ✓ |
 | `setting/settings` ↔ `companion`               | ✗（系统全局设置与桌宠状态机互不耦合） |
 | `shared` → 任何                                | ✗    |
 
-ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/setting`、`@/chat`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
+ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/living-entry.tsx`、`renderer/workbench-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/setting`、`@/conversation`、`@/living`、`@/workbench`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
 
 ## 4. 关键设计决策
 
 - **preload 必须保持 CJS（即便主进程已迁 ESM）**：沙盒 preload 由运行时虚拟机执行脚本，不按 ESM 解析——输出含 import 语句即抛语法错，渲染桥的全局对象变 `undefined`，根组件的兜底页把整棵子树（含激活码录入页）一起埋掉。打包分两条流水线：主进程入口走 ESM，preload 走 CJS、扩展名 `.cjs`。**不要**把 preload 重新合成 ESM——沙盒层限制绕不过模块解析。
 - **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零 JS 涂色、零组件重渲染；色值权威全在 CSS，TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名与预览色板。新增控件进 panel kit，不新增硬编码色值。
-- **主题切换入口在「设置」的「外观」tab，夜色与日色液态玻璃**：用户在此切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；样式库 `:root` 首帧直出夜色变量，加载不闪烁。
+- **主题切换入口在「生活空间」的「外观设置」，夜色与日色液态玻璃**：用户在此切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；样式库 `:root` 首帧直出夜色变量，加载不闪烁。
 - **液态玻璃表面与集成显卡降级**：以毛玻璃（24px 模糊）、0.6px 细描边、大圆角与低饱和强调色为视觉基座。低功耗与集成显卡环境下给根节点加 `.no-blur`，关闭高开销 backdrop-filter 并将表面不透明度提升至 0.94~0.96，避免集显掉帧。
-- **三个平级独立设置面板共享同一 `requestOpenDock` 收口**：伙伴设置（角色与记忆 / 音色 / 交互，3 tab）、换一身/形象（衣柜 / 形象，2 tab）、应用设置（推理与对话 / 语音输入 / 聊天通道 / 外观 / 快捷键 / 本机执行器 / 技能与工具 / 关于，8 tab）各自 `FloatingPanel` 居中 960×640 静态展示，三者通过 `DockKind` 互斥挂载（开一个关其余），由 interactive region 接管鼠标交互与桌面穿透。入口映射：右键「换一身/形象」→ 换一身/形象、右键「设置」→ 应用设置、ChatDock 顶栏「伙伴设置」→ 伙伴设置、音色失效通知 deep-link → 伙伴设置 → 音色。
+- **双入口互斥开窗与统一表面调度（`requestOpenSurface`）**：主进程集中裁决互斥开窗，生活空间与工作台严格二选一，同一时刻最多存在一个入口窗口；原设置面板按场景分别重新挂载至生活空间设置（生活向表单与房间管理）与工作台抽屉（工位环境、Runner、Skills、Toolsets）；旧 `requestOpenDock` 全面收敛为 `requestOpenSurface`。
+- **房间图取色与生活空间对比度保障**：从确认半身像提取主题强调色（`persona-skin`），房间图主色仅影响背景暗调遮罩（`--persona-room-overlay`）；生活空间右栏毛玻璃面板保证实底厚度，确保在亮色房间背景上文字对比度达标。
 - **精灵窗口透明需要双重保证**：窗口级透明标志**加**渲染层 body 透明（由内嵌脚本在 head 解析时同步设置角色属性）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
 - **交互范围仅限可见矩形（透明窗口交互陷阱）**：Electron 的鼠标穿透是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，所有弹层与精灵实体把自身矩形注册到统一的交互区域登记处，由顶层常驻的鼠标捕获机制统一做命中测试与穿透切换。任何弹层都不能自行一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
 - **弹层交互契约**：面板头部统一接同一拖拽钩子（位移本地持久化、命中区域自动跟随）、打开入口统一经互斥收口——同一时刻最多一个面板在屏，避免弹层堆叠。

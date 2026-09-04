@@ -4,12 +4,13 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型与 2D 分层形象生成在 web 进程内编排能力链（2D 走 see-through 双 provider 单链，无本地降级链）；链路与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+**职责**：伙伴角色定义与形象资产生成与下发（含生活空间房间图）、时刻与日记叙事沉淀、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型与 2D 分层形象生成在 web 进程内编排能力链（2D 走 see-through 双 provider 单链，无本地降级链）；链路与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
 
 **不**做:
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner;图像/视频/语音等资产仅在云端生成、客户端拉取后渲染。
 - **不持有终端 / 浏览器会话**——这些都在 Runner 进程内。
 - **不渲染桌面伙伴**——形象与动画完全是客户端责任([DESIGN.md §1](../DESIGN.md))。
+- **不管理桌面窗口与工位背景**——工作台与生活空间窗口的互斥、贴边定位、桌面透明精灵舞台依附及工位无背景完全由客户端自主裁决([DESIGN.md §6.1](../DESIGN.md))。
 
 架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
 
@@ -33,7 +34,7 @@ backend/
 ├── services/                 # 业务/编排层；跨包只走子包公共入口（companion.mesh2d / companion.seethrough 除外）
 │   ├── llm/ · conversation/ · ws/ · image_to_3d/ · disturbance.py · rate_limit.py · desktop_config.py · update/ · user_backup/
 │   ├── media/                # 聊天视频、生图执行链、视频任务（可依赖 llm、conversation）
-│   ├── companion/            # 角色定义、形象资产、affect、记忆命名空间（含 mesh2d / seethrough）
+│   ├── companion/            # 角色定义、形象资产、affect、记忆命名空间（含 mesh2d / seethrough / 房间背景与时刻日记）
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
 │   ├── chat/ · scheduler/    # 对话编排；Cron / 夜间批处理（chat → scheduler 单向允许）
 │   └── gateway/ · channels/  # JSON-RPC 适配器；外部 IM 通道桥
