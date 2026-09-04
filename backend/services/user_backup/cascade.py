@@ -13,7 +13,6 @@ async def clear_user_scoped_rows(db: AsyncSession, user_id: int) -> None:
         Companion2DModel,
         Companion3DModel,
         CompanionExpression,
-        CompanionExpressionAvatar,
         CompanionOutfit,
         Persona,
     )
@@ -21,10 +20,9 @@ async def clear_user_scoped_rows(db: AsyncSession, user_id: int) -> None:
     from modules.scheduler import CronJob
     from modules.settings import UserSetting
 
-    # 顺序：先删依赖表（2D 引用 avatar / outfit，expression_avatar 引用 avatar），避免 FK 错误。
+    # 顺序：先删依赖表（2D 引用 avatar / outfit），避免 FK 错误。
     # SQLAlchemy FK 都指向 users.id 不互相指，所以顺序非强约束；leaf-first 便于排查。
     await db.execute(delete(Companion2DModel).where(Companion2DModel.user_id == user_id))
-    await db.execute(delete(CompanionExpressionAvatar).where(CompanionExpressionAvatar.user_id == user_id))
     await db.execute(delete(Companion3DModel).where(Companion3DModel.user_id == user_id))
     await db.execute(delete(CompanionExpression).where(CompanionExpression.user_id == user_id))
     await db.execute(delete(CompanionOutfit).where(CompanionOutfit.user_id == user_id))

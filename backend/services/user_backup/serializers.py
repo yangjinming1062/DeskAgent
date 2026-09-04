@@ -12,7 +12,7 @@ from .file_packing import UrlRewriter
 logger = get_logger(__name__)
 
 # 导出表清单：与 manifest.tables 一致；insert 端需保证 avatar_assets / companion_outfits
-# 先于 companion_2d_models 与 companion_expression_avatars（依赖它们的 FK）。
+# 先于 companion_2d_models（依赖它们的 FK）。
 TABLES: list[str] = [
     "user_model_configs",
     "personas",
@@ -21,7 +21,6 @@ TABLES: list[str] = [
     "companion_2d_models",
     "companion_3d_models",
     "companion_expressions",
-    "companion_expression_avatars",
     "user_settings",
     "cron_jobs",
     "memories",
@@ -34,7 +33,6 @@ _AVATAR_URL_COLUMNS = ("asset_url", "seed_front_2d_url", "seed_front_3d_url", "s
 _OUTFIT_URL_COLUMNS = ("fullbody_url",)
 _2D_URL_COLUMNS = ("manifest_path",)
 _3D_URL_COLUMNS = ("asset_url",)
-_EXPRESSION_AVATAR_URL_COLUMNS = ("asset_url",)
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -115,8 +113,6 @@ def _build_instance(
     fk_spec: tuple[tuple[str, str], ...] = ()
     if table == "companion_2d_models":
         fk_spec = (("avatar_id", "avatar_assets"), ("outfit_id", "companion_outfits"))
-    elif table == "companion_expression_avatars":
-        fk_spec = (("avatar_id", "avatar_assets"),)
     for fk_col, ref_table in fk_spec:
         if fk_col not in payload:
             continue
@@ -137,7 +133,6 @@ def _url_columns_for_table(table: str) -> tuple[str, ...]:
         "companion_outfits": _OUTFIT_URL_COLUMNS,
         "companion_2d_models": _2D_URL_COLUMNS,
         "companion_3d_models": _3D_URL_COLUMNS,
-        "companion_expression_avatars": _EXPRESSION_AVATAR_URL_COLUMNS,
     }.get(table, ())
 
 
@@ -240,11 +235,6 @@ def _model_for_table(table: str) -> tuple[type, list[str], Any]:
 
         cols = ["id", "name", "label", "valence", "description", "icon", "tags_json"]
         model = CompanionExpression
-    elif table == "companion_expression_avatars":
-        from modules.companion import CompanionExpressionAvatar
-
-        cols = ["id", "name", "avatar_id", "prompt", "asset_url", "content_hash"]
-        model = CompanionExpressionAvatar
     elif table == "user_settings":
         from modules.settings import UserSetting
 

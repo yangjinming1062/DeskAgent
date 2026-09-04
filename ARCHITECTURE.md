@@ -40,7 +40,7 @@ SpiritAgent 是一个**根据用户描述定制的、具有专属形象的陪伴
     │                        Backend (web)                        │
     │                   (云端大脑 / FastAPI)                        │
     │  - 伙伴人格：角色定义持久化、长期/短期记忆管理                │
-    │  - 专属形象资产生成编排（半身像 + 2D 分层形象 + 3D 模型 + 表情头像）│
+    │  - 专属形象资产生成编排（半身像 + 2D 分层形象 + 3D 模型）         │
     │  - LLM 编排与系统提示词装配（角色定义注入每次对话）           │
     │  - 云端工具执行（Web 搜索、语音、生图、主动消息）            │
     │  - 事件发布 / Cron 调度中转（Outbox，主动陪伴的基石）        │
@@ -184,7 +184,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度,作�
 
 ### 6.2 形象资产（跨模块契约）
 
-伙伴的视觉表达由半身像、表情头像、2D 形象资产（see-through 双 provider 拆分的分层 PSD）以及 3D 模型构成，均归属用户并在用户维度持久化。产品用途与降级体验见 [DESIGN.md §1](DESIGN.md)；资产签名与传输契约见 [PROTOCOL.md §1.5](PROTOCOL.md)；2D 拆分链与 3D 输入、供应商能力链、产物与动画映射见 [docs/PIPELINE.md](docs/PIPELINE.md)。
+伙伴的视觉表达由半身像、2D 形象资产（see-through 双 provider 拆分的分层 PSD）以及 3D 模型构成，均归属用户并在用户维度持久化。产品用途与降级体验见 [DESIGN.md §1](DESIGN.md)；资产签名与传输契约见 [PROTOCOL.md §1.5](PROTOCOL.md)；2D 拆分链与 3D 输入、供应商能力链、产物与动画映射见 [docs/PIPELINE.md](docs/PIPELINE.md)。
 
 客户端 2D 渲染级联为 **puppet（PSD 链）→ 3D → 程序化蛋**：puppet 装配失败自动落级、桌面永不空白（DESIGN §1.2 不变量）；后端拆分失败（双 provider 皆败）只置失败态，客户端经同一级联兜底。
 
@@ -195,7 +195,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度,作�
 伙伴"说什么"由 LLM 产出，"怎么动、什么情绪"由 Client 渲染。**完整 emotion / locale 枚举、解析路径**见 [PROTOCOL.md §1.4](PROTOCOL.md)。
 
 核心契约：
-- **情绪 cue（affect）**：后端在对话响应/主动消息中携带情绪语义字段，客户端据此驱动动画状态机与表情头像。emotion 枚举由 Backend 白名单与客户端情绪映射**双端对齐**，未覆盖的情绪一律按中性处理。
+- **情绪 cue（affect）**：后端在对话响应/主动消息中携带情绪语义字段，客户端据此驱动动画状态机。emotion 枚举由 Backend 白名单与客户端情绪映射**双端对齐**，未覆盖的情绪一律按中性处理。
 - **空间 cue（spatial）**：后端可附带场所语义；客户端负责把它解析为具体位置与移动方式。枚举、目标语义与协议外内部场所见 [PROTOCOL.md §1.4](PROTOCOL.md) 与 [DESIGN.md §3.2](DESIGN.md)。
 - **语义与渲染解耦**：后端只产出语义，不指定渲染方式或坐标；渲染策略由客户端按产品设计与模型能力决定。这使模型加载与语义层互不阻塞。
 - **affect 继承角色定义的抗注入保证**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受保留键与不可信包裹机制保护，affect 因此继承同一保证，无需额外的情绪过滤层。
@@ -261,6 +261,6 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度,作�
 
 - **Backend（云端大脑）**：角色定义与形象资产的数据模型、生图 prompt 装配、记忆管理、LLM 编排——[backend/README.md](backend/README.md)
 - **Runner（本地手脚）**：执行器与工具库、终端环境后端、浏览器多后端——[runner/README.md](runner/README.md)
-- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎、2D 木偶动画（伪 3D 转头 / 眨眼 / 口型 / 次级物理）、表情头像、onboarding/孵化流程、自更新——[client/README.md](client/README.md)
+- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎、2D 木偶动画（伪 3D 转头 / 眨眼 / 口型 / 次级物理）、onboarding/孵化流程、自更新——[client/README.md](client/README.md)
 - **Installer（安装器）**：引导协议、Python 运行时分发、首装进入"蛋"阶段——[installer/README.md](installer/README.md)
 - **Scripts（发布与集成）**：构建链与导入规范检查——[scripts/README.md](scripts/README.md)

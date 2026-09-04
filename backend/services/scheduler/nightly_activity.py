@@ -35,7 +35,6 @@ from services.companion import (
     KIND_TO_PREFIX,
     RECALL_TAGS,
     backfill_memory_embeddings,
-    kick_background_generation,
     list_memories,
     read_today_summary,
     resolve_user_timezone,
@@ -471,10 +470,6 @@ async def _stage_5_creation(
                 )
                 new_expr_count += 1
             await db.commit()
-
-        # 预热形象生成，让图片在早晨"展示新创作"消息让伙伴用到之前就到位。
-        for expr in pending_expressions:
-            kick_background_generation(user_id, expr["name"])
 
     # 2. 若生成了资产，安排早晨通知的 cron job
     if new_expr_count > 0:

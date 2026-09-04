@@ -19,7 +19,7 @@ class UrlRewriter:
 
 
 async def collect_files_for_export(user_id: int, db: AsyncSession) -> list[Path]:
-    from modules.companion import AvatarAsset, CompanionExpressionAvatar
+    from modules.companion import AvatarAsset
 
     data_dir = Path(SETTINGS.data_dir)
     out: list[Path] = sorted((data_dir / "companion-assets" / str(user_id)).glob("*"))
@@ -27,11 +27,9 @@ async def collect_files_for_export(user_id: int, db: AsyncSession) -> list[Path]
         out.extend(sorted((data_dir / "companion-models" / str(user_id)).glob("*")))
     flat_dir = data_dir / "companion-avatars"
     avatar_rows = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id))).scalars().all()
-    expr_rows = (await db.execute(select(CompanionExpressionAvatar).where(CompanionExpressionAvatar.user_id == user_id))).scalars().all()
     referenced: set[str] = set()
     for asset in avatar_rows:
         referenced.update(_basename(getattr(asset, c) or "") for c in ("asset_url", "seed_front_2d_url", "seed_front_3d_url", "seed_back_url"))
-    referenced.update(_basename(ea.asset_url or "") for ea in expr_rows)
     out.extend(flat_dir / name for name in sorted(referenced) if (flat_dir / name).exists())
     return [p for p in out if p.is_file()]
 

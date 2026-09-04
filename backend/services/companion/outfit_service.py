@@ -412,7 +412,7 @@ def _unlink_companion_asset(user_id: int, storage_path: str | None) -> None:
 async def delete_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> None:
     """删除非穿着、非切分中的外观（含初始形象）；2d 行与产物文件 best-effort 清理。
     初始形象的立绘文件即头像行的正面种子，归头像所有——外观删除不得带走它，
-    否则后续表情头像与换装生成都会因身份参考丢失而失败。"""
+    否则后续换装生成都会因身份参考丢失而失败。"""
     async with get_avatar_job_lock(user_id):
         outfit = await _get_outfit(db, user_id, outfit_id)
         if outfit is None:

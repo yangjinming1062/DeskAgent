@@ -1,9 +1,3 @@
-export {
-  $expressionAvatar,
-  clearExpressionAvatar,
-  requestExpressionAvatar,
-  resetExpressionAvatars
-} from './expression-avatar/expression-avatar-store'
 export { Seed3dWizard } from './fullbody/seed3d-wizard'
 export {
   $mesh2dHitmap,

@@ -8,7 +8,7 @@ _ALLOWED_VALENCE = {"positive", "negative", "neutral"}
 
 
 def validate_and_sanitize_expression(expr_data: dict[str, Any]) -> dict[str, Any] | None:
-    """校验并清洗自定义情绪注册项；description 必填，因为它同时充当该情绪头像的生成子句。"""
+    """校验并清洗自定义情绪注册项；description 必填，用于描述该情绪神态与特征。"""
     if not isinstance(expr_data, dict):
         return None
 

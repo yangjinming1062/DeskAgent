@@ -196,7 +196,6 @@ class Settings(BaseSettings):
     media_video_rate_limit_per_minute: int = Field(default=10)
     companion_avatar_generate_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
-    companion_expression_avatar_generate_rate_limit_per_minute: int
     companion_outfit_generate_rate_limit_per_hour: int
     rate_limit_storage_url: str = ""
 

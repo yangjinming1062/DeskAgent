@@ -128,21 +128,6 @@ class ModelGenerateRequest(BaseModel):
     force: bool = False
 
 
-class ExpressionAvatarRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=64)
-    force_new: bool = False
-
-
-class ExpressionAvatarResponse(BaseModel):
-    id: int
-    url: str
-    tag: str
-    content_hash: str | None = None
-    generated: bool
-
-
 class Companion2DModelResponse(BaseModel):
     id: int
     status: str = "generating"

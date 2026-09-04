@@ -1,14 +1,6 @@
 import { sleep } from '@runtime'
 
-import {
-  hydrateMesh2D,
-  hydratePuppet,
-  resetExpressionAvatars,
-  resetMesh2D,
-  resetPuppet,
-  setMesh2DStatus,
-  switchRenderMode
-} from '@/2d'
+import { hydrateMesh2D, hydratePuppet, resetMesh2D, resetPuppet, setMesh2DStatus, switchRenderMode } from '@/2d'
 import {
   $clipMap,
   $modelGenError,
@@ -667,9 +659,6 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       if (!authed()) {
         break
       }
-
-      // 头像身份已变化——表情头像的锚点已过期（按 avatar_id 过滤行），清空本地缓存。
-      resetExpressionAvatars()
 
       // DESIGN §1.2 不变量：头像重生不使 2D/3D 模型失效——模型只随物种变更或用户
       // 显式请求重生。这里只做幂等的本地状态刷新（hydrate 重新拉取既有资产行）。

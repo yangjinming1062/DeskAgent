@@ -9,7 +9,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
@@ -48,7 +47,7 @@ class Companion3DModel(ModelBase, TimestampMixin):
 
 
 class CompanionExpression(ModelBase, TimestampMixin):
-    """自定义情绪注册表：LLM 创建的情绪 token，可用作 [affect:NAME]；情绪头像图（内置或自定义）存在 CompanionExpressionAvatar 里按 name 索引，本表只登记 token 与 clip 匹配 / 展示元数据。"""
+    """自定义情绪注册表：LLM 创建的情绪 token，可用作 [affect:NAME]；本表登记 token 与 clip 匹配 / 展示元数据。"""
 
     __tablename__ = "companion_expressions"
 
@@ -101,21 +100,6 @@ class Companion2DModel(ModelBase, TimestampMixin):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
-class CompanionExpressionAvatar(ModelBase, TimestampMixin):
-    """聊天窗口情绪头像图缓存，按情绪 token + 头像身份复合键。Lookup 为 (user_id, name, avatar_id) 完全匹配；头像重生成后旧行作废，按需 lazy 重建，丢失可容忍（多生成一次而已）。"""
-
-    __tablename__ = "companion_expression_avatars"
-    __table_args__ = (UniqueConstraint("user_id", "name", "avatar_id", name="uq_companion_expression_avatars_key"),)
-
-    # 不另起 user_id 索引：unique (user_id, name, avatar_id) 自带的索引已覆盖 user_id-prefix 查询。
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    name: Mapped[str] = mapped_column(String(64))
-    avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    prompt: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
-    asset_url: Mapped[str] = mapped_column(String(2048))
-    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
 
 
 class Persona(ModelBase, TimestampMixin):

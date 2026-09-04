@@ -60,7 +60,7 @@ ARCHIVE_MAX_BYTES = 500 * 1024 * 1024
 # 1 MB 分块上传，匹配 update.py 的 CHUNK_SIZE 数量级。
 ARCHIVE_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
-# 插入顺序：avatar / outfit 先于依赖它们的 2D / expression_avatars。
+# 插入顺序：avatar / outfit 先于依赖它们的 2D 模型。
 INSERT_ORDER = (
     "user_model_configs",
     "personas",
@@ -69,7 +69,6 @@ INSERT_ORDER = (
     "companion_3d_models",
     "companion_2d_models",
     "companion_expressions",
-    "companion_expression_avatars",
     "user_settings",
     "cron_jobs",
     "memories",

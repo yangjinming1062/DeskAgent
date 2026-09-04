@@ -62,7 +62,6 @@
 | GET/POST /api/companion/2d | 查询 / 触发 2D 形象生成流水线（see-through 双 provider 拆分，产物恒为分层 PSD）；产物契约见 [docs/PIPELINE.md §6](docs/PIPELINE.md) | Backend 生成管线 + Client puppet 渲染链 |
 | POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
-| POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image、/upload）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘、直接上传头像）/ 历史形象切换激活 / 历史查询 | Backend 生成与上传 + Client 头像确认与历史画廊 + DESIGN §5.4 |
 | GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 2D 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控，不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
 | `command.dispatch` | Slash 命令分发：客户端在输入框敲 `/xxx` 时拦截，改走本 RPC 而非 `prompt.submit`。命令注册表权威源在 [backend/services/chat/slash_commands.py](backend/services/chat/slash_commands.py)；返回 `{command, result:{status, message, payload?, hydrate?}}`，同步广播 `command.result` 事件给同 session 订阅者（多窗口同步渲染）。详见 §6 |  |
@@ -173,7 +172,7 @@
 
 命中区域与手势影响：（1）前端手势/物理反馈——摸头享受、怒气、眩晕与发区抖动的触发阈值与粒子反馈见 [DESIGN.md §6.3](DESIGN.md)；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。两条渲染路径都做可见像素级命中——3D 走 silhouette hit（离屏 alpha 回读）；2D 走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx)（当前帧部件网格精确点测，区域 = 最上层命中部件的映射，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步）。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 [actions.py](backend/services/companion/mesh2d/actions.py)（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx) + 本文档**三处。
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步）。情绪枚举 22 项（含 neutral）。action 扩展须同步更新 **后端 [actions.py](backend/services/companion/mesh2d/actions.py)（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx) + 本文档**三处。
 
 ### 1.5 资产 URL 签名与传输缓存
 
@@ -183,10 +182,7 @@
 | 3D 模型 GLB | 5 分钟 |
 | 2D 部件 PNG / manifest.json | 5 分钟 |
 | 2D 分层 PSD（分层切分产物，puppet 链消费） | 5 分钟 |
-| 表情头像 PNG | 5 分钟 |
 | 换装外观全身立绘（草稿期为 temp-media 免鉴权路径，确认后转正式签名） | 5 分钟 |
-
-**表情头像缓存键**为 (用户, 情绪 token, 头像)——头像重生后旧行成为陈旧身份、按未命中重新生成；行/文件丢失同样视为未命中（缓存允许丢失，丢失后重生成）。match-or-generate 语义：命中缓存行即返签名 URL，未命中才生成；按 token 精确匹配（无 LLM 语义匹配调用）。
 
 **契约要点**：资产端点支持双通道鉴权——已登录 Client 携带有效 Bearer JWT 时可直接访问归属资产；未携带令牌时按 URL HMAC 签名校验（每次签名 5 分钟 TTL，换设备/过期需重新签名）。服务端模型/资产端点支持 HTTP Range 断点续传 + ETag + 不可变缓存头；Client 按内容哈希（SHA-256）在本地磁盘缓存，命中即跳过网络，未命中/中断走断点续传。
 

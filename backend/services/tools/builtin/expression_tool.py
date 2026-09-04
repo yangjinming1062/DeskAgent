@@ -4,7 +4,7 @@ from components import SESSION_LOCAL
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 
-from services.companion import emit_companion_assets_updated, kick_background_generation, validate_and_sanitize_expression
+from services.companion import emit_companion_assets_updated, validate_and_sanitize_expression
 from services.tools import REGISTRY
 
 
@@ -17,7 +17,7 @@ async def create_expression_tool(
     icon: str | None = None,
     **kwargs,
 ) -> str:
-    """注册新的自定义表情，并在后台生成其聊天头像图。"""
+    """注册新的自定义表情。"""
     user_id = kwargs.get("user_id")
     if not isinstance(user_id, int):
         return json.dumps({"success": False, "error": "missing user_id"}, ensure_ascii=False)
@@ -26,7 +26,7 @@ async def create_expression_tool(
         {"name": name, "label": label or "", "description": description, "valence": valence or "neutral", "tags": tags or [], "icon": icon or ""},
     )
     if sanitized is None:
-        return json.dumps({"success": False, "error": "invalid expression spec (name and a facial description are required)"}, ensure_ascii=False)
+        return json.dumps({"success": False, "error": "invalid expression spec (name and description are required)"}, ensure_ascii=False)
 
     async with SESSION_LOCAL() as db:
         existing = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id, CompanionExpression.name == sanitized["name"]))).scalar_one_or_none()
@@ -46,9 +46,8 @@ async def create_expression_tool(
         await db.commit()
 
     await emit_companion_assets_updated(user_id)
-    kick_background_generation(user_id, sanitized["name"])
     return json.dumps(
-        {"success": True, "name": sanitized["name"], "label": sanitized["label"], "note": "表情头像正在后台生成；首次使用 [affect:NAME] 时若未就绪会自动生成"},
+        {"success": True, "name": sanitized["name"], "label": sanitized["label"]},
         ensure_ascii=False,
     )
 
@@ -57,15 +56,15 @@ CREATE_EXPRESSION_SCHEMA = {
     "name": "create_expression",
     "description": (
         "Create a new custom emotion for the companion when none of the available emotions fits. "
-        "After creation, the new token becomes usable as [affect:NAME] — it swaps the companion's expression "
-        "avatar image in the chat window and picks a matching body-language animation. Only call this when the situation genuinely calls for a novel emotion."
+        "After creation, the new token becomes usable as [affect:NAME] — it picks a matching body-language animation. "
+        "Only call this when the situation genuinely calls for a novel emotion."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Snake_case token, e.g. tender_worry. Lowercase letters/digits/underscore only."},
             "label": {"type": "string", "description": "Short Chinese display label shown beside the emotion chip."},
-            "description": {"type": "string", "description": "What the face looks like in this emotion; drives the generated expression avatar image."},
+            "description": {"type": "string", "description": "What this emotion feels and looks like."},
             "icon": {"type": "string", "description": "Optional single emoji shown beside the label."},
             "valence": {"type": "string", "enum": ["positive", "negative", "neutral"], "description": "Emotional valence."},
             "tags": {"type": "array", "items": {"type": "string"}, "description": "Personality tags used to match animation clips."},

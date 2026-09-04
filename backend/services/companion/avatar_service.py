@@ -447,8 +447,8 @@ async def get_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | Non
 
 async def select_avatar(db: AsyncSession, user_id: int, avatar_id: int) -> AvatarAsset:
     """将指定头像设为激活态，并取消该用户其余头像的激活。"""
-    # DESIGN §5.4 形象锁定：锁定后切换激活头像等于换掉已确认的视觉身份（表情头像按
-    # avatar_id 复合键缓存、2D/3D 模型仍指向原形象行），与重生路径同罪，协议直连也要拒绝
+    # DESIGN §5.4 形象锁定：锁定后切换激活头像等于换掉已确认的视觉身份（
+    # 2D/3D 模型仍指向原形象行），与重生路径同罪，协议直连也要拒绝
     persona = await get_or_create_persona(db, user_id)
     await raise_if_image_sealed(db, user_id, persona)
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()

@@ -49,7 +49,7 @@ client/
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
 │   ├── shared/            # 跨窗口共享层（主题、通知、通用面板、基础工具）
 │   ├── companion/         # 伙伴层（桌宠 Overlay、状态机、情绪、桌面空间行为与交互）
-│   ├── 2d/                # 2D 渲染模块（分层 PSD 木偶 PuppetStage、网格渲染、表情头像）
+│   ├── 2d/                # 2D 渲染模块（分层 PSD 木偶 PuppetStage、网格渲染）
 │   ├── 3d/                # 3D 渲染模块（Three.js 引擎、骨骼装配、clip 动作系统与物理倾角）
 │   ├── chat/              # 对话模块（贴身浮层、消息流、参数调优与上下文感知、会话抽屉）
 │   ├── onboarding/        # 引导模块（破蛋阶段、问卷流、激活与网关启动流水线）

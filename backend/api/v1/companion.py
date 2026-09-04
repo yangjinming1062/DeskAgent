@@ -19,8 +19,6 @@ from modules.companion import (
     Companion3DModelResponse,
     CompanionExpression,
     CompanionOperationResponse,
-    ExpressionAvatarRequest,
-    ExpressionAvatarResponse,
     ExpressionsListResponse,
     Fullbody2dFrontGenerateRequest,
     Fullbody3dSeedGenerateRequest,
@@ -41,9 +39,6 @@ from services.companion import (
     AvatarGenerationError,
     AvatarNotFoundError,
     AvatarSourceUnreadableError,
-    ExpressionAvatarGenerationError,
-    ExpressionCooldownError,
-    ExpressionSeedMissingError,
     FrontSeedMissingError,
     FullbodyGenerationError,
     ImageSealedError,
@@ -51,14 +46,12 @@ from services.companion import (
     ModelGenerationError,
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
-    NeutralEmotionError,
     OutfitDraftExpiredError,
     OutfitError,
     OutfitNotFoundError,
     OutfitStateError,
     PersonaValidationError,
     SeedPromptMissingError,
-    UnknownEmotionError,
     activate_outfit,
     avatar_response,
     confirm_fullbody_front,
@@ -88,13 +81,11 @@ from services.companion import (
     regenerate_outfit_draft,
     resolve_companion_asset_path,
     resolve_companion_model_path,
-    resolve_expression_avatar,
     resolve_uploaded_avatar_path,
     schedule_personality_tag_refresh,
     select_avatar,
     serve_ranged_file,
     set_render_mode,
-    signed_expression_avatar_url,
     update_persona,
     upload_avatar,
     verify_signed_asset_request,
@@ -621,35 +612,6 @@ async def delete_outfit_route(
     except OutfitError as exc:
         raise _outfit_http_error(exc)
     return CompanionOperationResponse(ok=True)
-
-
-@router.post("/expression-avatar", response_model=ExpressionAvatarResponse)
-@limiter.limit(f"{SETTINGS.companion_expression_avatar_generate_rate_limit_per_minute}/minute")
-async def post_expression_avatar(
-    request: Request,  # required by @limiter.limit
-    body: ExpressionAvatarRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> ExpressionAvatarResponse:
-    user, _ = auth
-    try:
-        row, generated = await resolve_expression_avatar(user_id=user.id, name=body.name, force_new=body.force_new)
-    except NeutralEmotionError:
-        raise HTTPException(status_code=400, detail={"error": "neutral 情绪直接使用形象头像，无需生成", "reason": "neutral_uses_portrait"})
-    except UnknownEmotionError as exc:
-        raise HTTPException(status_code=400, detail={"error": str(exc), "reason": "unknown_token"})
-    except ExpressionSeedMissingError as exc:
-        logger.warning("post_expression_avatar missing seed", extra={"user_id": user.id, "error": str(exc)})
-        raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "no_active_avatar"})
-    except ExpressionCooldownError as exc:
-        raise HTTPException(status_code=503, detail={"error": str(exc), "reason": "generation_cooldown"})
-    except ExpressionAvatarGenerationError as exc:
-        logger.warning("post_expression_avatar generation failed", extra={"user_id": user.id, "error": str(exc)})
-        raise HTTPException(status_code=502, detail={"error": str(exc)})
-    url = signed_expression_avatar_url(row)
-    if url is None:
-        logger.warning("post_expression_avatar invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
-        raise HTTPException(status_code=502, detail={"error": "表情头像生成失败，请稍后重试"})
-    return ExpressionAvatarResponse(id=row.id, url=url, tag=row.name, content_hash=row.content_hash, generated=generated)
 
 
 public_router = get_router()

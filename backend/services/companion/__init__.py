@@ -46,16 +46,6 @@ from .avatar_service import (
     upload_avatar,
 )
 from .emotions import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
-from .expression_avatar_service import (
-    ExpressionAvatarGenerationError,
-    ExpressionCooldownError,
-    ExpressionSeedMissingError,
-    NeutralEmotionError,
-    UnknownEmotionError,
-    kick_background_generation,
-    resolve_expression_avatar,
-    signed_expression_avatar_url,
-)
 from .expression_validator import validate_and_sanitize_expression
 from .http_range import serve_ranged_file
 from .interact import REGION_NAMES_ZH, InteractResult, interact
@@ -181,9 +171,6 @@ __all__ = [
     "AvatarGenerationError",
     "AvatarNotFoundError",
     "AvatarSourceUnreadableError",
-    "ExpressionAvatarGenerationError",
-    "ExpressionCooldownError",
-    "ExpressionSeedMissingError",
     "FrontSeedMissingError",
     "FullbodyGenerationError",
     "ImageSealedError",
@@ -255,7 +242,6 @@ __all__ = [
     "get_onboarding_state",
     "get_or_create_persona",
     "interact",
-    "kick_background_generation",
     "list_avatar_history",
     "list_memories",
     "list_outfits",
@@ -289,7 +275,6 @@ __all__ = [
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_custom_expressions",
-    "resolve_expression_avatar",
     "resolve_self_reference_data_uri",
     "resolve_uploaded_avatar_path",
     "resolve_user_timezone",
@@ -303,7 +288,6 @@ __all__ = [
     "serve_ranged_file",
     "set_render_mode",
     "should_act",
-    "signed_expression_avatar_url",
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",
