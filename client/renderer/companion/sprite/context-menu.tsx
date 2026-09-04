@@ -1,13 +1,14 @@
+import type { SurfaceId } from '@ipc/contracts'
 import { useStore } from '@nanostores/react'
-import { IconPower, IconVolume, IconVolumeOff } from '@tabler/icons-react'
+import { IconPower, IconRotateClockwise, IconVolume, IconVolumeOff } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import type { DockKind } from '@/companion/companion-store'
 import { resetToHomePosition, setDefaultScale, setLocale } from '@/companion/spatial'
-import { Home, type IconComponent, KeyRound, MessageSquareText, Shirt, SlidersHorizontal } from '@/shared/lib/icons'
+import { Home, type IconComponent, KeyRound, Monitor } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
+import { requestCloseSurface } from '@/shared/store/surfaces'
 
-import { $effectiveTier, closeChat, setDisturbanceTier } from '../companion-store'
+import { $effectiveTier, setDisturbanceTier } from '../companion-store'
 import { isRegionHit, useInteractiveRegion } from '../interactive-regions'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
@@ -15,17 +16,19 @@ import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 interface ContextMenuProps {
   onOpenActivation?: () => void
   onOpenChat: () => void
-  onOpenDock: (kind: DockKind, view?: string) => void
+  onOpenSurface?: (surface: SurfaceId, view?: string) => void
 }
 
 const MENU_ITEM_CLASS =
-  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-medium text-body transition-colors hover:bg-fill-hover focus:bg-fill-hover focus:outline-none'
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-left text-xs font-medium text-body transition-all duration-150 hover:bg-fill-hover hover:text-strong focus:bg-fill-hover focus:outline-none'
 
 function MenuItem({
+  accent,
   icon: Icon,
   label,
   onClick
 }: {
+  accent?: boolean
   icon: IconComponent
   label: string
   onClick: () => void
@@ -39,20 +42,18 @@ function MenuItem({
       }}
       type="button"
     >
-      <Icon className="size-4 shrink-0 text-muted" />
+      <Icon className={`size-4 shrink-0 ${accent ? 'text-accent' : 'text-muted'}`} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   )
 }
 
 function MenuDivider(): React.JSX.Element {
-  return <div className="-mx-1.5 my-1 h-px bg-line-hairline" />
+  return <div className="-mx-1.5 my-1 h-px bg-line-hairline opacity-60" />
 }
 
-// 精灵右键菜单（瞬时浮层·轻玻璃档）：始终挂载、visibility 切换（避免 mount/unmount DOM），
-// 状态走 $contextMenuPos 原子，宿主 CompanionRoot 不参与。页面切换由面板内
-// 侧栏承担，菜单只负责开入口——与应用设置菜单形态一致。
-export function SpriteContextMenu({ onOpenActivation, onOpenChat, onOpenDock }: ContextMenuProps): React.JSX.Element {
+// 精灵右键快捷菜单（超高质感液态玻璃）：收敛为生活空间与工作台两大入口
+export function SpriteContextMenu({ onOpenActivation, onOpenSurface }: ContextMenuProps): React.JSX.Element {
   const auth = useStore($auth)
   const pos = useStore($contextMenuPos)
   const effectiveTier = useStore($effectiveTier)
@@ -62,15 +63,31 @@ export function SpriteContextMenu({ onOpenActivation, onOpenChat, onOpenDock }: 
 
   const backdropRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (quietTimerRef.current) {
+        clearTimeout(quietTimerRef.current)
+      }
+    }
+  }, [])
 
   const toggleQuiet = () => {
+    if (quietTimerRef.current) {
+      clearTimeout(quietTimerRef.current)
+      quietTimerRef.current = null
+    }
+
     if (isStill) {
       setDisturbanceTier('normal')
     } else {
       setDisturbanceTier('still')
-      // 50 分钟后自动恢复（spec §8）
-      setTimeout(
+      // 50 分钟后自动恢复
+      quietTimerRef.current = setTimeout(
         () => {
+          quietTimerRef.current = null
+
           if ($effectiveTier.get() === 'still') {
             setDisturbanceTier('normal')
           }
@@ -81,7 +98,7 @@ export function SpriteContextMenu({ onOpenActivation, onOpenChat, onOpenDock }: 
   }
 
   const handleRest = () => {
-    closeChat()
+    void requestCloseSurface()
     resetToHomePosition()
     setDefaultScale(1)
     setLocale('home', { locomotion: 'fly' })
@@ -154,37 +171,37 @@ export function SpriteContextMenu({ onOpenActivation, onOpenChat, onOpenDock }: 
       }}
     >
       <div
-        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-line-standard bg-surface-panel/95 p-1.5 text-xs text-strong shadow-2xl backdrop-blur-glass select-none transition-[opacity,transform] duration-150 ease-out"
+        className="fixed z-50 min-w-44 origin-top-left overflow-hidden rounded-2xl border border-line-standard bg-surface-panel/90 p-1.5 text-xs text-strong shadow-2xl backdrop-blur-2xl select-none transition-all duration-150 ease-out"
         onPointerDown={e => {
           e.stopPropagation()
         }}
         ref={menuRef}
         style={{
+          boxShadow: 'inset 0 1px 1px 0 rgba(255, 255, 255, 0.2), 0 20px 48px -12px rgba(0, 0, 0, 0.5)',
           left,
-          top,
           opacity: visible ? 1 : 0,
           pointerEvents: visible ? 'auto' : 'none',
+          top,
           transform: visible ? 'scale(1)' : 'scale(0.96)'
         }}
       >
         {authed ? (
           <>
-            <MenuItem icon={MessageSquareText} label="对话" onClick={onOpenChat} />
+            <MenuItem accent icon={Home} label="生活空间" onClick={() => onOpenSurface?.('living')} />
+            <MenuItem accent icon={Monitor} label="工作台" onClick={() => onOpenSurface?.('workbench')} />
+            <MenuDivider />
             <MenuItem
               icon={isStill ? IconVolume : IconVolumeOff}
               label={isStill ? '可以吵我了' : '安静一会儿'}
               onClick={toggleQuiet}
             />
-            <MenuItem icon={Home} label="去休息" onClick={handleRest} />
+            <MenuItem icon={IconRotateClockwise} label="一键归位" onClick={handleRest} />
             <MenuDivider />
-            <MenuItem icon={Shirt} label="换一身 / 形象" onClick={() => onOpenDock('outfit', 'wardrobe')} />
-            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenDock('app-settings')} />
-            <MenuItem icon={IconPower} label="退出" onClick={handleQuit} />
+            <MenuItem icon={IconPower} label="退出客户端" onClick={handleQuit} />
           </>
         ) : (
           <>
             <MenuItem icon={KeyRound} label="激活 / 登录" onClick={() => onOpenActivation?.()} />
-            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenDock('app-settings')} />
             <MenuDivider />
             <MenuItem icon={IconPower} label="退出" onClick={handleQuit} />
           </>

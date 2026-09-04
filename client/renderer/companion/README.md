@@ -87,7 +87,7 @@
 - **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑。音色试听句走同一条路径。
 - **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态不因悬停解除，仅点击/拖拽主动解除。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
-- **右键**：托盘菜单入口（隐藏/显示、一键归位、生活空间、工作台、反激活、退出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
+- **右键**：托盘菜单与精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——仅保留「生活空间」、「工作台」、免打扰开关、「一键归位」与「退出客户端」顶层入口，设置项全面收归生活空间。状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
 
 **每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按用户本地日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
@@ -116,7 +116,7 @@
 - **设备指令豁免会话闸门**：`handleCompanionEvent` 用 session_id 闸门挡住非当前会话的回合事件（防 cron/IM 的文本串进可见聊天窗），但 `tool.call` **信封不带 session_id**、天然绕过该闸门——它是用户级设备指令而非会话事件，按 `call_id` 与 `tool.result` 配对（契约 [PROTOCOL.md §1.3](../../../PROTOCOL.md)）。这道豁免是必需的：IM 遥控、cron 自主与子 agent 回合的会话用户都不可能正在查看，挡下来就等于本机工具全部失效。**闸门对 `message.*` / `tool.start` / `tool.complete` 的拦截必须原样保留**，别顺手把它们一起放行。
 - **设备指令按 call_id 去重**：`tool.call` 同样进服务端重放缓冲，断连重连会重发。本机副作用不可撤销，重复执行一次「删文件」无法挽回，因此重复 `call_id` 直接丢弃——后端只会丢弃迟到的结果，拦不住已发生的副作用。去重表上限对齐服务端重放缓冲容量。
 - **遥控回合的精灵工作态由 tool.call 分支自持**：`tool.start`（进 WORKING）与终局 `message.complete`（复位）都带 session_id、都被闸门挡下，因此这类回合期间没有任何帧能驱动或复位精灵。该分支自行进 WORKING 并在工具返回后复位。判据是**载荷里的 session_id 与当前查看会话比对**，不是枚举回合类型——枚举漏一种（子 agent 回合就是 `kind='standard'` 却跑在无头 emitter 上）表现为「机器在动、精灵发呆」，且不会有任何报错。三个约束不可省：并发工具用引用计数（一个先返回不能把仍在跑的复位掉）；进入与复位都必须传 `force`（IDLE 低于 WORKING、WORKING 低于 EMOTIONAL，否则被状态机静默拒绝——不加 force 会卡在工作姿态或压根进不去）；仅在状态仍是 WORKING 或仪式行走留下的 interacting 时才复位（期间桌面自己的回合接管了就不插手）。
-- **新建对话预设选择器无默认**：侧边栏「新建」按钮打开选择器（`<WizardModal>` 单步），用户必须从 5 套内置预设中点选 1，确认按钮在选中前一直 disabled——杜绝误落到 companion 预设。选定后 presetId 写入 `session.create` 的 `system_preset_id`；侧边栏 `SessionRow` 据后端下发的 `system_preset_icon_key` 渲染小徽标（NULL 降级为 companion 图标）。预设元数据由 `system.list_presets` 一次拉取、进程内缓存（预设体变更需后端重启）；body 永远不下发到客户端。协议见 [PROTOCOL.md §1.8 新建对话预设选择](../../../PROTOCOL.md)。
+- **新建对话与工作台预设选择**：工作台侧边栏「+ 新建对话」按钮打开预设选择模态框，从 4 套内置职能预设（开发工程师、产品经理、文案秘书、语言老师）中点选并创建工作会话，严格过滤「陪伴」预设（生活空间专属）；选定后 presetId 写入 `session.create` 的 `system_preset_id`；侧边栏据后端下发的 `system_preset_icon_key` 渲染职能图标与徽标。预设元数据由 `system.list_presets` 一次拉取、进程内缓存。协议见 [PROTOCOL.md §1.8 新建对话预设选择](../../../PROTOCOL.md)。
 - **用户侧聊天附件**：入口四条——粘贴（图片位图存盘、视频文件取真实路径）、拖拽到面板/精灵、附件按钮选择器、精灵投喂共用拖拽管线。图片以 data URL 直发多模态；视频附加即经主进程 IPC 上传后端换取会话级 URL，上传完成前发送按钮禁用，失败态可重试可移除。附件只属于上传时的会话，切换会话即丢弃。上传限额、双模式消费与清理降级契约见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)。
 
 ## 10. 空间行为（位置 × 移动 × 缩放）

@@ -1,0 +1,76 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+}
+
+.card {
+  align-items: stretch;
+  background: rgba(14, 15, 20, 0.55);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.card:hover {
+  background: rgba(14, 15, 20, 0.7);
+}
+
+.cardHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.kindBadge {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.date {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.body {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.bodyClamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bodyExpanded {
+  white-space: pre-wrap;
+}
+
+.empty {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  margin: 0;
+  padding: 32px 20px;
+  text-align: center;
+}

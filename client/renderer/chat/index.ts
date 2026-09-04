@@ -1,4 +1,3 @@
-export { ChatDock } from './chat-dock'
 export { useResolvedMediaSrc } from './chat-media-src'
 export {
   $chatDraftFromUndo,
@@ -10,7 +9,6 @@ export {
   $chatStreamingTick,
   $chatTurnInFlight,
   $lastAssistantStreaming,
-  $pendingExternalAttachment,
   $pendingPromptBatch,
   $proactiveBubble,
   $turnHadBubbleBreak,
@@ -41,12 +39,9 @@ export {
 export {
   $currentSessionKind,
   $currentSessionTitle,
-  $sessionListOpen,
   ensureChatSession,
   openMainSession,
-  setSessionListOpen,
   switchSession
 } from './session-list-store'
 export { SlashCommandPopover } from './slash-command-popover'
 export { useChatSubmit } from './use-chat-submit'
-export { useSlashPopoverKeyboard } from './use-slash-popover-keyboard'

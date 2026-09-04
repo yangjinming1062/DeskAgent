@@ -7,9 +7,11 @@ import {
   type DesktopAuthSnapshot,
   type DesktopPrefsHydrated,
   type DesktopShortcutsConfig,
+  type DesktopSurfaceOpenPayload,
   IPC,
   normalizeUiTheme,
-  type SpiritAgentConnection
+  type SpiritAgentConnection,
+  type SurfaceId
 } from '@ipc/contracts'
 import { sleep } from '@runtime'
 import {
@@ -55,6 +57,7 @@ import { createBootProgressMachine } from './lifecycle/boot-progress'
 import { createDesktopLogger } from './lifecycle/desktop-log'
 import { createMenu } from './lifecycle/menu'
 import { detectRemoteDisplay } from './lifecycle/platform'
+import { createSurfacesManager, type SurfacesManager } from './lifecycle/surfaces'
 import {
   destroyTray,
   installCloseInterceptor,
@@ -86,7 +89,14 @@ import { readStoredBackendUrl } from './shared/config'
 import { createConfigSync } from './shared/lib/config-sync'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
-import { atomicWriteFile, directoryExists, errorMessage, fileExists, sendToMain } from './shared/utils'
+import {
+  atomicWriteFile,
+  broadcastToAllWindows,
+  directoryExists,
+  errorMessage,
+  fileExists,
+  sendToMain
+} from './shared/utils'
 
 const USER_DATA_OVERRIDE = process.env.SPIRITAGENT_DESKTOP_USER_DATA_DIR
 
@@ -160,12 +170,10 @@ const configSync = createConfigSync({
 
     syncShortcutsFromConfig()
 
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      sendToMain(mainWindow, IPC.event.prefsHydrated, payload)
+    broadcastToAllWindows(IPC.event.prefsHydrated, payload)
 
-      if (theme) {
-        sendToMain(mainWindow, IPC.event.uiThemeChanged, { theme })
-      }
+    if (theme) {
+      broadcastToAllWindows(IPC.event.uiThemeChanged, { theme })
     }
   }
 })
@@ -242,6 +250,7 @@ function registerMediaProtocol(): void {
 }
 
 let mainWindow: BrowserWindow | null = null
+let surfaces: null | SurfacesManager = null
 let spriteBoundsListenerInstalled = false
 
 const zoomPersistence = createZoomPersistence({ app, rememberLog })
@@ -366,6 +375,14 @@ function resolveWebDist(): string {
 function htmlFileNameForRole(role?: string): string {
   if (role === 'sprite') {
     return 'sprite.html'
+  }
+
+  if (role === 'living') {
+    return 'living.html'
+  }
+
+  if (role === 'workbench') {
+    return 'workbench.html'
   }
 
   if (role === 'clip' || role === 'anim' || role === 'animation') {
@@ -608,6 +625,81 @@ function createSpriteWindow(): void {
   })
 }
 
+// 入口面互斥窗口工厂：living 是生活空间，workbench 是工作台。
+// 形态按 SpiritAgent-客户端开发计划 §2.5 / §4 默认尺寸落定；具体内容（房间图、Run Rail 等）按阶段接入。
+const SURFACE_DEFAULTS: Record<SurfaceId, { height: number; minHeight: number; minWidth: number; width: number }> = {
+  living: { height: 720, minHeight: 560, minWidth: 880, width: 1080 },
+  workbench: { height: 800, minHeight: 640, minWidth: 1024, width: 1280 }
+}
+
+async function createSurfaceWindow(id: SurfaceId, payload?: DesktopSurfaceOpenPayload): Promise<BrowserWindow> {
+  const defaults = SURFACE_DEFAULTS[id]
+  const icon = getAppIconPath() || undefined
+
+  const win = new BrowserWindow({
+    backgroundColor: '#0e0f14',
+    frame: !IS_MAC,
+    hasShadow: true,
+    height: defaults.height,
+    minHeight: defaults.minHeight,
+    minWidth: defaults.minWidth,
+    show: false,
+    skipTaskbar: false,
+    title: id === 'living' ? 'SpiritAgent · 生活空间' : 'SpiritAgent · 工作台',
+    webPreferences: {
+      backgroundThrottling: false,
+      contextIsolation: true,
+      devTools: !app.isPackaged,
+      nodeIntegration: false,
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
+      sandbox: true
+    },
+    width: defaults.width
+  })
+
+  if (IS_MAC && icon) {
+    app.dock?.setIcon(icon)
+  }
+
+  windowHandlers.installStandardWindowHandlers(win)
+
+  win.on('close', () => {
+    surfaces?.onWindowClosed(id, win)
+    rebuildTrayMenu()
+  })
+
+  win.on('show', () => rebuildTrayMenu())
+  win.on('hide', () => rebuildTrayMenu())
+
+  await win.loadURL(surfaceLoadUrl(id, payload))
+  win.show()
+  win.focus()
+
+  return win
+}
+
+function surfaceLoadUrl(id: SurfaceId, payload?: DesktopSurfaceOpenPayload): string {
+  const url = new URL(rendererUrlFor(id))
+
+  if (payload?.view) {
+    url.hash = `#/${payload.view}`
+  }
+
+  if (payload?.sessionId) {
+    url.searchParams.set('sessionId', payload.sessionId)
+  }
+
+  return url.toString()
+}
+
+async function navigateSurfaceWindow(
+  win: BrowserWindow,
+  id: SurfaceId,
+  payload: DesktopSurfaceOpenPayload
+): Promise<void> {
+  await win.loadURL(surfaceLoadUrl(id, payload))
+}
+
 function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   rebuildTrayMenu()
 
@@ -628,9 +720,7 @@ function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   // 用户身份变化触发配置水合（登录/换号；登出只停摆待写）。
   configSync.handleAuthUserChanged(authenticated ? (snapshot?.user?.id ?? null) : null)
 
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    sendToMain(mainWindow, IPC.event.authChanged, payload)
-  }
+  broadcastToAllWindows(IPC.event.authChanged, payload)
 }
 
 registerSystemIpc({
@@ -642,6 +732,14 @@ registerUiThemeIpc({
   ipcMain
 })
 registerPrefsIpc({ ipcMain })
+
+surfaces = createSurfacesManager({
+  createWindow: createSurfaceWindow,
+  navigateWindow: navigateSurfaceWindow,
+  rememberLog: (chunk: string) => rememberLog(chunk)
+})
+surfaces.registerIpcHandlers({ ipcMain })
+surfaces.hydrateLastSurface()
 registerShortcutsIpc({
   getMainWindow: () => mainWindow,
   hideMainWindow: () => {
@@ -657,7 +755,8 @@ registerShortcutsIpc({
   },
   ipcMain,
   rememberLog: chunk => rememberLog(chunk),
-  showMainWindow: () => showMainWindow()
+  showMainWindow: () => showMainWindow(),
+  surfaces: surfaces ?? undefined
 })
 registerClipboardIpc({
   electron: { clipboard },
@@ -849,6 +948,7 @@ void app.whenReady().then(async () => {
     Menu,
     nativeImage,
     rememberLog,
+    surfaces: surfaces ?? undefined,
     Tray
   })
 

@@ -1,4 +1,4 @@
-import { IPC, type IpcEventChannel, type IpcEventContract } from '@ipc/contracts'
+import { IPC, type IpcEventChannel, type IpcEventContract, type SurfaceId } from '@ipc/contracts'
 import {
   type App,
   type BrowserWindow,
@@ -11,6 +11,8 @@ import {
 
 import type { BackendSessionLike } from '../runner/reverse-rpc'
 import { errorMessage, sendToMain } from '../shared/utils'
+
+import type { SurfacesManager } from './surfaces'
 
 interface TrayDeps {
   Menu: typeof Menu
@@ -26,6 +28,7 @@ interface TrayDeps {
   getAppIconPath: () => null | string
   nativeImage: typeof nativeImage
   rememberLog: (chunk: string) => void
+  surfaces?: SurfacesManager
 }
 
 let trayInstance: null | Tray = null
@@ -92,15 +95,22 @@ export function buildTrayMenu(): Menu | null {
   if (authed) {
     // DESIGN §6.1：对话模式触发源之一是托盘——聊天面板是渲染层 React state，
     // 拉起窗口外还要通知渲染器开面板（与 trayActivate 同一模式）。
+    // 客户端重构后这里换成两个入口：生活空间 / 工作台。
     template.push(
       { type: 'separator' },
       {
-        label: '打开对话',
+        label: '生活空间',
         click: () => {
-          showMainWindow()
-          sendToMainWindow(IPC.event.trayOpenChat)
+          void openSurfaceFromTray('living')
         }
       },
+      {
+        label: '工作台',
+        click: () => {
+          void openSurfaceFromTray('workbench')
+        }
+      },
+      { type: 'separator' },
       { click: () => sendToMainWindow(IPC.event.trayLogout), label: '反激活' }
     )
   }
@@ -236,6 +246,19 @@ function toggleMainWindow(): void {
   }
 }
 
+async function openSurfaceFromTray(id: SurfaceId): Promise<void> {
+  if (!trayDeps?.surfaces) {
+    return
+  }
+
+  try {
+    await trayDeps.surfaces.openSurface({ surface: id })
+  } catch (err) {
+    const message = errorMessage(err)
+    trayDeps.rememberLog(`[tray] openSurface(${id}) failed: ${message}`)
+  }
+}
+
 function quitAppFully(): void {
   trayDeps?.app.quit()
 }
@@ -282,7 +305,8 @@ export function installTray(deps: TrayDeps): null | Tray {
   })
 
   trayInstance.on('double-click', () => {
-    showMainWindow()
+    const last = trayDeps?.surfaces?.hydrateLastSurface() ?? 'living'
+    void openSurfaceFromTray(last)
   })
 
   return trayInstance

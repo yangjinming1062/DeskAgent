@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { IpcEventChannel, IpcEventContract } from '@ipc/contracts'
-import type { BrowserWindow, WebContents } from 'electron'
+import { BrowserWindow, type WebContents } from 'electron'
 
 export function fileExists(filePath: string): boolean {
   try {
@@ -40,6 +40,13 @@ export function sendToMain<C extends IpcEventChannel>(
   }
 
   webContents.send(channel, ...payload)
+}
+
+// 广播给所有打开的 BrowserWindow（包含精灵窗、生活空间、工作台）
+export function broadcastToAllWindows<C extends IpcEventChannel>(channel: C, ...payload: IpcEventContract[C]): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    sendToMain(win, channel, ...payload)
+  }
 }
 
 // IPC handler 上下文里拿到的 `event.sender` 直接是 WebContents；

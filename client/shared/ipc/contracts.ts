@@ -104,6 +104,25 @@ export function normalizeUiTheme(raw: unknown): SpiritAgentUiTheme {
   return 'night'
 }
 
+// 入口面：互斥的两个 BrowserWindow。"closed" 仅渲染层用作占位，不进主进程 IPC 边界。
+export type SurfaceId = 'living' | 'workbench'
+export const SPIRITAGENT_SURFACES = ['living', 'workbench'] as const satisfies readonly SurfaceId[]
+
+export function normalizeSurfaceId(raw: unknown): SurfaceId {
+  return raw === 'workbench' ? 'workbench' : 'living'
+}
+
+export interface DesktopSurfaceOpenPayload {
+  sessionId?: string
+  surface: SurfaceId
+  view?: string
+}
+
+export interface DesktopSurfaceChangedEvent {
+  lastSurface: SurfaceId
+  open: null | SurfaceId
+}
+
 export function getThemeBackgroundColor(theme?: SpiritAgentUiTheme): string {
   return theme === 'day' ? '#f8f7f5' : '#0e0f14'
 }
@@ -120,11 +139,15 @@ export interface SpiritAgentPrefsSet {
 
 // 云端配置水合广播：主进程把 GET /api/config 水合进本地镜像后，携带镜像中的偏好节通知双窗口刷新缓存。
 export interface DesktopShortcutsConfig {
+  openLiving: string
+  openWorkbench: string
   toggleChat: string
   toggleVisibility: string
 }
 
 export const DEFAULT_SHORTCUTS: Readonly<DesktopShortcutsConfig> = {
+  openLiving: 'Alt+Shift+L',
+  openWorkbench: 'Alt+Shift+W',
   toggleChat: 'Alt+Shift+C',
   toggleVisibility: 'Alt+Shift+H'
 } as const
@@ -264,6 +287,12 @@ export interface IpcInvokeContract {
   // 窗口与界面
   'spiritagent:window:set-companion-size': (payload: { expanded: boolean }) => Promise<void> | void
 
+  // 入口面（互斥 living / workbench）
+  'spiritagent:surface:open': (payload: DesktopSurfaceOpenPayload) => Promise<void> | void
+  'spiritagent:surface:close': () => Promise<void> | void
+  'spiritagent:surface:focus': () => Promise<void> | void
+  'spiritagent:surface:get-state': () => DesktopSurfaceChangedEvent | Promise<DesktopSurfaceChangedEvent>
+
   // 后端 API 代理
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
   'spiritagent:api:asset': (request: { url: string }) => Promise<string> | string
@@ -369,6 +398,7 @@ export interface IpcEventContract {
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
   'spiritagent:shortcut:toggle-chat': []
   'spiritagent:shortcuts:changed': [payload: DesktopShortcutsState]
+  'spiritagent:surface:changed': [payload: DesktopSurfaceChangedEvent]
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
   'spiritagent:tray:open-chat': []
@@ -422,6 +452,10 @@ export const IPC = {
     shortcutsGet: 'spiritagent:shortcuts:get',
     shortcutsSet: 'spiritagent:shortcuts:set',
     shortcutsReset: 'spiritagent:shortcuts:reset',
+    surfaceOpen: 'spiritagent:surface:open',
+    surfaceClose: 'spiritagent:surface:close',
+    surfaceFocus: 'spiritagent:surface:focus',
+    surfaceGetState: 'spiritagent:surface:get-state',
     skillsList: 'spiritagent:skills:list',
     skillSetEnabled: 'spiritagent:skill:set-enabled',
     toolsetsList: 'spiritagent:toolsets:list',
@@ -446,6 +480,7 @@ export const IPC = {
     runnerStatus: 'spiritagent:runner:status',
     shortcutToggleChat: 'spiritagent:shortcut:toggle-chat',
     shortcutsChanged: 'spiritagent:shortcuts:changed',
+    surfaceChanged: 'spiritagent:surface:changed',
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
     trayOpenChat: 'spiritagent:tray:open-chat',

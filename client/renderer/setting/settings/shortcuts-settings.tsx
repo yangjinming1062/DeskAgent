@@ -9,8 +9,10 @@ import { strings } from '@/shared/strings'
 const INITIAL_STATE: DesktopShortcutsState = {
   config: { ...DEFAULT_SHORTCUTS },
   status: {
-    toggleChat: { registered: true },
-    toggleVisibility: { registered: true }
+    openLiving: { registered: false },
+    openWorkbench: { registered: false },
+    toggleChat: { registered: false },
+    toggleVisibility: { registered: false }
   }
 }
 
@@ -75,6 +77,8 @@ export function ShortcutsSettings(): React.JSX.Element {
 
   const isAllDefault =
     state.config.toggleVisibility === DEFAULT_SHORTCUTS.toggleVisibility &&
+    state.config.openLiving === DEFAULT_SHORTCUTS.openLiving &&
+    state.config.openWorkbench === DEFAULT_SHORTCUTS.openWorkbench &&
     state.config.toggleChat === DEFAULT_SHORTCUTS.toggleChat
 
   return (
@@ -89,6 +93,26 @@ export function ShortcutsSettings(): React.JSX.Element {
               onChange={val => void handleChange('toggleVisibility', val)}
               registered={state.status.toggleVisibility?.registered}
               value={state.config.toggleVisibility}
+            />
+          </SettingRow>
+          <SettingRow description={t.openLivingDesc} label={t.openLiving}>
+            <ShortcutRecorder
+              defaultValue={DEFAULT_SHORTCUTS.openLiving}
+              disabled={loading}
+              error={state.status.openLiving?.error}
+              onChange={val => void handleChange('openLiving', val)}
+              registered={state.status.openLiving?.registered}
+              value={state.config.openLiving}
+            />
+          </SettingRow>
+          <SettingRow description={t.openWorkbenchDesc} label={t.openWorkbench}>
+            <ShortcutRecorder
+              defaultValue={DEFAULT_SHORTCUTS.openWorkbench}
+              disabled={loading}
+              error={state.status.openWorkbench?.error}
+              onChange={val => void handleChange('openWorkbench', val)}
+              registered={state.status.openWorkbench?.registered}
+              value={state.config.openWorkbench}
             />
           </SettingRow>
           <SettingRow description={t.toggleChatDesc} label={t.toggleChat}>

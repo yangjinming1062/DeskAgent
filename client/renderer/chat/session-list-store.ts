@@ -1,4 +1,4 @@
-﻿import { atom, computed } from 'nanostores'
+import { atom, computed } from 'nanostores'
 
 import {
   $chatDraftFromUndo,
@@ -28,6 +28,14 @@ export type SessionSort = 'created' | 'messages' | 'recent'
 const SESSION_SORTS: readonly SessionSort[] = ['recent', 'created', 'messages']
 const SESSION_SORT_KEY = 'da.companion.sessionSort'
 export const TITLE_MAX_CHARS = 80
+
+export function isCompanionSession(session: null | SessionInfo | undefined): boolean {
+  if (!session) {
+    return false
+  }
+
+  return session.system_preset_id === 'companion' || session.kind === 'companion'
+}
 
 export const $sessions = atom<SessionInfo[]>([])
 export const $sessionsLoading = atom(false)

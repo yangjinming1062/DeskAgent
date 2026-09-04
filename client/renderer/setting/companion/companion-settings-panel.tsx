@@ -11,7 +11,7 @@ import { InteractionPage } from './pages/interaction-page'
 import { PersonaMemoryPage } from './pages/persona-memory-page'
 import { VoicePage } from './pages/voice-page'
 
-// 伙伴设置独立入口面板：ChatDock 顶栏与音色失效通知直达此处。
+// 伙伴设置独立入口面板：顶栏与音色失效通知直达此处。
 export function CompanionSettingsPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
   const view = useStore($companionSettingsView)
 

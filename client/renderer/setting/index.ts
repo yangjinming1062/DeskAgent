@@ -8,3 +8,6 @@ export {
 } from './companion/companion-settings-view'
 export { OutfitPanel } from './outfit/outfit-panel'
 export { $outfitView, type OutfitView, setOutfitView } from './outfit/outfit-view'
+export { AppearancePage } from './outfit/pages/appearance-page'
+export { WardrobePage } from './outfit/pages/wardrobe-page'
+export { ChannelsSettings } from './settings/channels-settings'

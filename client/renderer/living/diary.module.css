@@ -1,0 +1,168 @@
+.shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  gap: 16px;
+}
+
+.calendar {
+  background: rgba(14, 15, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 14px;
+  width: 280px;
+}
+
+.calendarHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.monthButton {
+  background: rgba(255, 255, 255, 0.06);
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  padding: 2px 8px;
+}
+
+.monthLabel {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.weekHeader {
+  display: grid;
+  font-size: 10px;
+  gap: 4px;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 6px;
+}
+
+.weekDay {
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+}
+
+.grid {
+  display: grid;
+  font-size: 11px;
+  gap: 4px;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.dayCell {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  height: 32px;
+  justify-content: center;
+  padding: 4px;
+  transition: background 0.12s ease;
+}
+
+.dayCell:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dayCellSelected {
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 600;
+}
+
+.dayCellHasEntry {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.dot {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  height: 4px;
+  margin-top: 2px;
+  width: 4px;
+}
+
+.entry {
+  background: rgba(14, 15, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px;
+}
+
+.entryHeader {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.entryDate {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.mood {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
+
+.loading,
+.empty {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+
+.body {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.editor {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  flex: 1;
+  font-size: 12px;
+  min-height: 80px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.saveButton {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.95);
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 6px 14px;
+}
+
+.saveButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}

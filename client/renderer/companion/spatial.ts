@@ -1,7 +1,6 @@
 import { clamp } from '@runtime'
 import { atom } from 'nanostores'
 
-import { $chatOpen } from '@/chat'
 import { $focusContext, $lastIdleSeconds } from '@/companion/activity'
 import {
   $clipOverride,
@@ -13,6 +12,7 @@ import {
 } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 export function getBaseSpriteHeight(): number {
   // 默认高度为显示器高度的 1/3，限制在 [260, 960] 区间内
@@ -47,7 +47,7 @@ const EMOTION_SCALE_BOOST: Record<string, number> = {
 const MIN_SCALE = 0.3
 const MAX_SCALE = 3
 
-type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
+type SpatialLocale = 'home' | 'perch' | 'roam' | 'target' | 'workbench'
 
 // Locomotion 枚举（mesh2d 与 spatial 共用）：
 // - 'still' / 'walk' / 'fly' / 'drag' 是原有 4 项；
@@ -73,18 +73,7 @@ export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
 export const $edgeDockSide = atom<EdgeDockSide>('none')
 export const $isEdgeDocked = atom<boolean>(false)
 
-export interface ChatDockAnchor {
-  side: 'left' | 'right'
-  relX: number
-  relY: number
-  width: number
-  height: number
-}
-
-export const $chatDockAnchor = atom<ChatDockAnchor | null>(null)
-
 // 窗口视口尺寸——单一真实源，由 initSpatial 已有的 resize 监听器更新。
-// 弹层（chat-dock、proactive 气泡）订阅这里而不是各自挂监听器。
 interface ViewportSize {
   width: number
   height: number
@@ -141,21 +130,6 @@ function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: numb
   const c = contentBox()
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const anchor = $chatDockAnchor.get()
-
-  if (anchor && $chatOpen.get()) {
-    const margin = 8
-    const minX = Math.max(margin - c.left, margin - anchor.relX)
-    const maxX = Math.max(minX, Math.min(vw - margin - c.right, vw - margin - (anchor.relX + anchor.width)))
-    const minY = Math.max(margin - c.top, margin - anchor.relY)
-    const maxY = Math.max(minY, Math.min(vh - margin - c.bottom, vh - margin - (anchor.relY + anchor.height)))
-
-    return {
-      x: clamp(pos.x, minX, maxX),
-      y: clamp(pos.y, minY, maxY)
-    }
-  }
-
   const maxY = vh - c.bottom
 
   return {
@@ -237,97 +211,12 @@ export function computeOverlayAnchorBesideSprite(opts: {
   return { left, top }
 }
 
-export function establishChatDockAnchor(size: { width: number; height: number }, gap = 14): ChatDockAnchor {
-  const pos = $spatialPos.get()
-  const c = contentBox($defaultScale.get())
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-
-  const charLeft = pos.x + c.left
-  const charRight = pos.x + c.right
-  const charTop = pos.y + c.top
-  const charHeight = Math.max(100, c.bottom - c.top)
-  const charCenterX = (charLeft + charRight) / 2
-
-  const fitsLeft = charLeft - gap - size.width >= 8
-  const fitsRight = charRight + gap + size.width <= vw - 8
-  const preferLeft = charCenterX > vw / 2
-
-  const side: 'left' | 'right' = preferLeft
-    ? fitsLeft
-      ? 'left'
-      : fitsRight
-        ? 'right'
-        : 'left'
-    : fitsRight
-      ? 'right'
-      : fitsLeft
-        ? 'left'
-        : 'right'
-
-  const relX = side === 'left' ? c.left - gap - size.width : c.right + gap
-  const shoulderTop = charTop + charHeight * 0.22
-  const clampedTop = clamp(shoulderTop, 8, Math.max(8, vh - size.height - 8))
-  const relY = clampedTop - pos.y
-
-  const anchor: ChatDockAnchor = {
-    height: size.height,
-    relX,
-    relY,
-    side,
-    width: size.width
-  }
-
-  $chatDockAnchor.set(anchor)
-
-  const clamped = clampPosToViewport(pos)
-
-  if (clamped.x !== pos.x || clamped.y !== pos.y) {
-    $spatialPos.set(clamped)
-  }
-
-  return anchor
-}
-
-export function updateChatDockSize(size: { width: number; height: number }, gap = 14): void {
-  const existing = $chatDockAnchor.get()
-
-  if (!existing) {
-    establishChatDockAnchor(size, gap)
-
-    return
-  }
-
-  const c = contentBox($defaultScale.get())
-  const relX = existing.side === 'left' ? c.left - gap - size.width : c.right + gap
-
-  const updated: ChatDockAnchor = {
-    ...existing,
-    height: size.height,
-    relX,
-    width: size.width
-  }
-
-  $chatDockAnchor.set(updated)
-
-  const pos = $spatialPos.get()
-  const clamped = clampPosToViewport(pos)
-
-  if (clamped.x !== pos.x || clamped.y !== pos.y) {
-    $spatialPos.set(clamped)
-  }
-}
-
-export function clearChatDockAnchor(): void {
-  $chatDockAnchor.set(null)
-}
-
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 }
 
 function tick(now: number): void {
-  if (!moveStart || !moveTarget || $chatOpen.get()) {
+  if (!moveStart || !moveTarget || $surfaceOpen.get() === 'living') {
     rafId = null
     moveStart = null
     moveTarget = null
@@ -521,8 +410,16 @@ export function setLocale(
 }
 
 export function updateSpatialDecision(): void {
-  // 贴边趴姿锁定、拖拽中均冻结空间决策
-  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $isEdgeDocked.get()) {
+  // 贴边趴姿锁定、生活空间在屏、拖拽中均冻结空间决策
+  if ($spatialLocomotion.get() === 'drag' || $surfaceOpen.get() === 'living' || $isEdgeDocked.get()) {
+    return
+  }
+
+  if ($surfaceOpen.get() === 'living') {
+    stopRoam()
+    cancelMovement()
+    $spatialLocomotion.set('still')
+
     return
   }
 
@@ -597,7 +494,7 @@ function generateRoamWaypoint(): { x: number; y: number } {
 }
 
 export function startRoam(): void {
-  if (roaming || $isEdgeDocked.get() || $chatOpen.get()) {
+  if (roaming || $isEdgeDocked.get() || $surfaceOpen.get() === 'living') {
     return
   }
 
@@ -724,8 +621,8 @@ export function endDragAt(pos: { x: number; y: number }): void {
   const c = contentBox()
   const dockMargin = 40
 
-  // 1. 优先判定屏幕左右边缘吸附（仅在对话未打开时吸附，对话打开时保持组合体完整在屏）
-  if (!$chatOpen.get()) {
+  // 1. 优先判定屏幕左右边缘吸附（仅在生活空间未打开时吸附）
+  if ($surfaceOpen.get() !== 'living') {
     const leftDist = pos.x + c.left
     const rightDist = vw - (pos.x + c.right)
 
@@ -876,8 +773,8 @@ export function initSpatial(): () => void {
       clearDockState()
     })
 
-  const unlistenChat = $chatOpen.listen(open => {
-    if (open) {
+  const unlistenSurface = $surfaceOpen.listen(open => {
+    if (open === 'living') {
       if ($isEdgeDocked.get()) {
         undockFromEdge()
       }
@@ -886,7 +783,7 @@ export function initSpatial(): () => void {
       cancelMovement()
       $spatialLocomotion.set('still')
     } else {
-      clearChatDockAnchor()
+      updateSpatialDecision()
     }
   })
 
@@ -967,7 +864,7 @@ export function initSpatial(): () => void {
 
   return () => {
     settleSavedRectWait()
-    unlistenChat()
+    unlistenSurface()
     unlistenState()
     unlistenEmotion()
     unlistenTier()

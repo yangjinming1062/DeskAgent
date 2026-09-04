@@ -4,7 +4,7 @@ import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } fro
 import { $mesh2dHitmap } from '@/2d'
 import { $sprite3DHitTest } from '@/3d'
 import { $chatOpen, clearExternalAttachment, pushExternalAttachment } from '@/chat'
-import { $clipOverride, $spriteAction, requestOpenDock, setSpriteState } from '@/companion/companion-store'
+import { $clipOverride, $spriteAction, requestOpenSurface, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 
@@ -233,9 +233,9 @@ export function SpriteStage({
     setSpriteState('interacting', { durationMs: 2000 })
     clearExternalAttachment()
     pushExternalAttachment(paths)
-    // 投喂文件时自动打开聊天面板，让用户看到附件被加入；
-    // 走根组件订阅 $openDockRequest 走 dock 互斥（不能直接 setChatOpen）。
-    requestOpenDock('chat')
+    // 投喂文件时自动打开生活空间聊天的文件投递；
+    // 走主进程 surface 互斥（不能直接 setChatOpen，避免与 workbench 冲突）。
+    void requestOpenSurface('living')
   }
 
   const gestureTrackerRef = useRef<Mesh2DGestureTracker | null>(null)
@@ -436,7 +436,7 @@ export function SpriteStage({
   const leanOrigin = edgeDockSide === 'left' ? '0% 100%' : edgeDockSide === 'right' ? '100% 100%' : '50% 50%'
 
   return (
-    <div className="fixed inset-0" style={{ pointerEvents: 'none' }}>
+    <div className="fixed inset-0" data-sprite-stage style={{ pointerEvents: 'none' }}>
       <div
         className={`absolute transition-opacity duration-200 ${hidden ? 'pointer-events-none opacity-0 invisible' : 'opacity-100'}`}
         onContextMenu={e => {

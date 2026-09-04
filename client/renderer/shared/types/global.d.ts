@@ -20,6 +20,8 @@ import type {
   DesktopShortcutsConfig,
   DesktopShortcutsSetPayload,
   DesktopShortcutsState,
+  DesktopSurfaceChangedEvent,
+  DesktopSurfaceOpenPayload,
   DesktopUiThemeBroadcast,
   DesktopUpdateEvent,
   IpcEventContract,
@@ -93,6 +95,13 @@ declare global {
         reset: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:reset']>
         set: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:set']>
       }
+      surface: {
+        open: AsyncIpc<IpcInvokeContract['spiritagent:surface:open']>
+        close: AsyncIpc<IpcInvokeContract['spiritagent:surface:close']>
+        focus: AsyncIpc<IpcInvokeContract['spiritagent:surface:focus']>
+        getState: AsyncIpc<IpcInvokeContract['spiritagent:surface:get-state']>
+        onChanged: EventSubscription<'spiritagent:surface:changed'>
+      }
       runnerConfig: {
         read: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:read']>
         write: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:write']>
@@ -156,6 +165,8 @@ export type {
   type DesktopShortcutsConfig,
   type DesktopShortcutsSetPayload,
   type DesktopShortcutsState,
+  type DesktopSurfaceChangedEvent,
+  type DesktopSurfaceOpenPayload,
   type DesktopUiThemeBroadcast,
   type DesktopUpdateEvent,
   type IpcEventContract,

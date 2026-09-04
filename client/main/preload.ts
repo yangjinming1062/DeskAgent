@@ -7,6 +7,8 @@ import {
   type DesktopRunnerStatusEvent,
   type DesktopShortcutsSetPayload,
   type DesktopShortcutsState,
+  type DesktopSurfaceChangedEvent,
+  type DesktopSurfaceOpenPayload,
   type DesktopUiThemeBroadcast,
   type DesktopUpdateEvent,
   IPC,
@@ -106,6 +108,13 @@ contextBridge.exposeInMainWorld('spiritagent', {
     onToggleChat: (cb: () => void) => subscribe(IPC.event.shortcutToggleChat, cb),
     reset: () => ipcRenderer.invoke(IPC.invoke.shortcutsReset),
     set: (payload: DesktopShortcutsSetPayload) => ipcRenderer.invoke(IPC.invoke.shortcutsSet, payload)
+  },
+  surface: {
+    close: () => ipcRenderer.invoke(IPC.invoke.surfaceClose),
+    focus: () => ipcRenderer.invoke(IPC.invoke.surfaceFocus),
+    getState: () => ipcRenderer.invoke(IPC.invoke.surfaceGetState),
+    onChanged: (cb: (payload: DesktopSurfaceChangedEvent) => void) => subscribe(IPC.event.surfaceChanged, cb),
+    open: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceOpen, payload)
   },
   skills: {
     list: () => ipcRenderer.invoke(IPC.invoke.skillsList),

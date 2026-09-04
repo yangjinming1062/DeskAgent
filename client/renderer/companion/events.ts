@@ -13,7 +13,6 @@ import {
 } from '@/3d'
 import {
   $chatDraftFromUndo,
-  $chatOpen,
   $chatSessionId,
   $chatTurnInFlight,
   $turnHadBubbleBreak,
@@ -28,7 +27,6 @@ import {
   pushProactiveMessage,
   pushStatusPill,
   setAssistantTool,
-  setChatOpen,
   setSessionContextUsage,
   setTurnHadBubbleBreak,
   showMediaHint,
@@ -58,11 +56,14 @@ import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/co
 import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
+import { onJournalEvent } from '@/living'
 import { type GatewayEvent, type SlashCommandResultPayload } from '@/shared/lib/gateway-protocol'
 import { log } from '@/shared/lib/log'
 import { $auth } from '@/shared/store/auth'
 import { $gateway } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
+import { onBackdropEvent } from '@/shared/store/room-backdrop-store'
+import { $surfaceOpen, requestOpenSurface } from '@/shared/store/surfaces'
 import type { ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
@@ -145,8 +146,8 @@ function applySpatialCue(locale?: string, target?: string): void {
     return
   }
 
-  // 不要在聊天面板打开时把精灵拽走。
-  if ($chatOpen.get() && (locale === 'home' || locale === 'roam')) {
+  // 生活空间打开时精灵收起，不要强行触发移动。
+  if ($surfaceOpen.get() === 'living' && (locale === 'home' || locale === 'roam')) {
     return
   }
 
@@ -167,7 +168,7 @@ function applySpatialCue(locale?: string, target?: string): void {
       // 与仪式行走同规则：飞行与栖息途中视线锁定目标窗口，数秒后交还指针跟随
       lockGazeToPoint(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
       setLocale('perch', { position: perch.pos, scaleLimit: perch.scale, locomotion: 'fly' })
-    } else if (locale === 'home' && !$chatOpen.get()) {
+    } else if (locale === 'home' && $surfaceOpen.get() !== 'living') {
       setLocale('home', { locomotion: 'fly' })
     } else if (locale === 'roam') {
       startRoam()
@@ -285,8 +286,8 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       // 这种情况下保留 last.text。媒体与正文正交，始终挂到最后一格。
       finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text, payload?.media)
 
-      // 媒体已送达但聊天窗收起：气泡只做轻量提示，点击打开聊天窗查看（富媒体统一在对话窗展示）。
-      if (payload?.media?.length && !$chatOpen.get() && !screenLocked) {
+      // 媒体已送达但生活空间收起：气泡只做轻量提示，点击打开生活空间查看（富媒体统一在对话窗展示）。
+      if (payload?.media?.length && $surfaceOpen.get() === null && !screenLocked) {
         showMediaHint(
           payload.media.some(m => m.type === 'video')
             ? '🎬 我生成了一段视频，点这里查看'
@@ -701,9 +702,8 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       if (text && !textSuppressed) {
         void speakProactive(text, { affect: affectEmotion })
 
-        if ($chatOpen.get()) {
-          pushProactiveMessage(text)
-        }
+        // 无论生活空间当前是否在屏，均推入对话消息历史以供回溯查阅
+        pushProactiveMessage(text)
       }
 
       break
@@ -725,16 +725,16 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       if (sessionId && sessionId === $chatSessionId.get()) {
         pushMediaMessage(media)
       } else if (!$screenLocked.get()) {
-        // 正在看别的会话时用通知承载跳转；聊天窗收起时用精灵气泡提示。
-        if ($chatOpen.get() && sessionId) {
+        // 正在看别的会话时用通知承载跳转；生活空间收起时用精灵气泡提示。
+        if ($surfaceOpen.get() !== null && sessionId) {
           notify({
             kind: 'success',
             message: '视频生成好了',
             action: {
               label: '查看',
               onClick: () => {
-                setChatOpen(true)
                 void switchSession(sessionId)
+                void requestOpenSurface('living', { sessionId, view: 'chat' })
               }
             }
           })
@@ -800,7 +800,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
     case 'command.result': {
       // 服务端在 command.dispatch RPC response 之外另行广播此事件（PROTOCOL §1.3）；
       // 触发它的窗口已通过 RPC 路径自己渲染过 pill，本路径只服务其他窗口的同步渲染。
-      // RPC 路径的 pushStatusPill 已在 chat-dock 的 executeSlashCommand 中幂等执行。
+      // RPC 路径的 pushStatusPill 已在 slash command 执行中幂等执行。
       const payload = event.payload as SlashCommandResultPayload | undefined
 
       const r = payload?.result
@@ -849,7 +849,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
         hydrateChatMessages(p.messages as SessionMessage[])
       }
 
-      // 跟随窗口从事件 payload 取 anchor 推到草稿总线——chat-dock 用 session_id 过滤应用。
+      // 跟随窗口从事件 payload 取 anchor 推到草稿总线——对话组件用 session_id 过滤应用。
       if (p?.session_id && p.anchor) {
         $chatDraftFromUndo.set({
           session_id: p.session_id,
@@ -858,6 +858,24 @@ export function handleCompanionEvent(event: GatewayEvent): void {
           media_json: p.anchor.media_json ?? null
         })
       }
+
+      break
+    }
+
+    case 'companion.room.ready':
+
+    case 'companion.room.failed':
+
+    case 'companion.room.invalidated':
+    case 'companion.room.progress': {
+      onBackdropEvent(event)
+
+      break
+    }
+
+    case 'companion.moment.created':
+    case 'companion.diary.upserted': {
+      onJournalEvent(event)
 
       break
     }

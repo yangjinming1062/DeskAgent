@@ -42,9 +42,7 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 export const $chatMessageList = atom<ChatMessageListItem[]>([])
 export const $chatMessageBodies = map<Record<string, ChatMessageBody>>({})
-// 尾部助手消息是否处于流式中。ChatDock 借此感知生成状态，无需全量订阅 bodies。
 export const $lastAssistantStreaming = atom<boolean>(false)
-// 流式增量递增计数器，供 ChatScrollAutoFollow 独立订阅触发滚动，不重渲染 ChatDock 容器。
 export const $chatStreamingTick = atom<number>(0)
 export const $chatSessionId = atom<string | null>(storedString(CHAT_SESSION_ID_KEY))
 export const $chatOpen = atom(false)
@@ -145,7 +143,7 @@ interface ProactiveBubbleState {
 export const $proactiveBubble = atom<ProactiveBubbleState | null>(null)
 
 // 外部投喂（DESIGN §6.3「文件投喂」）——SpriteStage 拖拽文件到精灵本体时，
-// 把文件路径推到此处。ChatDock 订阅并把首个图像文件塞入附件占位。
+// 把文件路径推到此处。对话组件订阅并把首个图像文件塞入附件占位。
 interface PendingExternalAttachment {
   paths: string[]
   nonce: number

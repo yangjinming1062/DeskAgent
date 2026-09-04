@@ -5,7 +5,7 @@ export type CompanionSettingsView = 'persona' | 'voice' | 'interaction'
 
 export const $companionSettingsView = atom<CompanionSettingsView>('persona')
 
-/** 供 ChatDock 顶栏 / 通知 deep-link 等外部入口直达指定 tab。 */
+/** 供通知 deep-link 等外部入口直达指定 tab。 */
 export function setCompanionSettingsView(view: CompanionSettingsView): void {
   $companionSettingsView.set(view)
 }

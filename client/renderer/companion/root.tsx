@@ -1,24 +1,19 @@
 import { useStore } from '@nanostores/react'
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { $mesh2dHitmap, $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
 import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/3d'
-import { $chatOpen, ChatDock } from '@/chat'
 import { startActivityMonitor } from '@/companion/activity'
 import {
   $companionLifecycle,
-  $openDockRequest,
-  closeChat,
-  type DockKind,
-  openChat,
   reportUserActivity,
-  setCompanionLifecycle,
-  toggleChat
+  requestOpenSurface,
+  setCompanionLifecycle
 } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
-import { initSpatial, resetToHomePosition, updateSpatialDecision } from '@/companion/spatial'
+import { initSpatial, resetToHomePosition } from '@/companion/spatial'
 import {
   ActivationOverlay,
   BootFailureOverlay,
@@ -27,33 +22,17 @@ import {
   useGatewayBoot,
   useMainProcessListener
 } from '@/onboarding'
-import {
-  AppSettingsPanel,
-  type AppSettingsView,
-  CompanionSettingsPanel,
-  type CompanionSettingsView,
-  OutfitPanel,
-  type OutfitView,
-  setAppSettingsView,
-  setCompanionSettingsView,
-  setOutfitView
-} from '@/setting'
 import { NotificationStack, useGatewayRequest } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
+import { $lastSurface, $surfaceOpen } from '@/shared/store/surfaces'
 import { strings } from '@/shared/strings'
 
 import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
-import {
-  handlePetInteraction,
-  handlePokeInteraction,
-  isPokeActive,
-  normalizeRegion,
-  playAffectionateAction
-} from './interaction'
+import { handlePetInteraction, handlePokeInteraction, isPokeActive, normalizeRegion } from './interaction'
 import { MediaViewerOverlay } from './media-viewer-overlay'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
@@ -91,6 +70,7 @@ export function CompanionRoot(): React.JSX.Element {
   useInteractiveRegion('notification-stack', notificationStackRef)
   const auth = useStore($auth)
   const gatewayState = useStore($gatewayState)
+  const surfaceOpen = useStore($surfaceOpen)
   const lifecycle = useStore($companionLifecycle)
   const renderMode = useStore($renderMode)
   const puppetReady = useStore($puppetReady)
@@ -98,56 +78,8 @@ export function CompanionRoot(): React.JSX.Element {
   const glbLoadFailed = useStore($glbLoadFailed)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [activationOpen, setActivationOpen] = useState(false)
-  const [panel, setPanel] = useState<Exclude<DockKind, 'chat'> | null>(null)
   const hasHydratedRef = useRef(false)
   const { requestGateway } = useGatewayRequest()
-
-  const chatOpen = useStore($chatOpen)
-
-  // 精灵窗口的表面与 dock 互斥——打开一个就关掉其他。
-  const openDock = useCallback((kind: DockKind, view?: string): void => {
-    if (kind === 'chat') {
-      setPanel(null)
-      $chatOpen.set(true)
-
-      return
-    }
-
-    closeChat()
-    setPanel(kind)
-
-    if (!view) {
-      return
-    }
-
-    if (kind === 'companion-settings') {
-      setCompanionSettingsView(view as CompanionSettingsView)
-    } else if (kind === 'outfit') {
-      setOutfitView(view as OutfitView)
-    } else if (kind === 'app-settings') {
-      setAppSettingsView(view as AppSettingsView)
-    }
-  }, [])
-
-  const handleCloseChat = useCallback((): void => {
-    closeChat()
-    updateSpatialDecision()
-  }, [])
-
-  useEffect(() => {
-    const unsubscribe = $openDockRequest.listen(req => {
-      if (!req) {
-        return
-      }
-
-      openDock(req.kind, req.view)
-      $openDockRequest.set(null)
-    })
-
-    return () => {
-      unsubscribe()
-    }
-  }, [openDock])
 
   const validityCheckedRef = useRef(false)
 
@@ -176,31 +108,18 @@ export function CompanionRoot(): React.JSX.Element {
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
   useMainProcessListener('onTrayActivate', () => setActivationOpen(true), [])
 
-  // 托盘「打开对话」（spec §15.1「旧 kind 'chat' 映射为 'whisper'」）：
-  useMainProcessListener(
-    'onTrayOpenChat',
-    () => {
-      if (auth.kind === 'authenticated') {
-        openChat()
-      }
-    },
-    [auth.kind]
-  )
-
-  // 全局快捷键「打开/关闭对话」：已打开时收起；未打开时已登录开对话、未登录开激活。
+  // 全局快捷键「打开/关闭对话」：已登录时打开生活空间，未登录时显示激活浮层。
   useEffect(() => {
     const off = window.spiritagent.shortcuts?.onToggleChat?.(() => {
-      if (chatOpen) {
-        closeChat()
-      } else if (auth.kind === 'authenticated') {
-        openChat()
+      if (auth.kind === 'authenticated') {
+        void requestOpenSurface('living')
       } else {
         setActivationOpen(true)
       }
     })
 
     return () => off?.()
-  }, [auth.kind, chatOpen])
+  }, [auth.kind])
 
   // 托盘「一键归位」：将精灵落位与状态重置回默认 Home 位置
   useMainProcessListener(
@@ -380,11 +299,13 @@ export function CompanionRoot(): React.JSX.Element {
         message: strings.notifications.voice.invalidMessage(result.name),
         action: {
           label: strings.notifications.voice.invalidAction,
-          onClick: () => openDock('companion-settings', 'voice')
+          onClick: () => {
+            void requestOpenSurface('workbench', { view: 'companion-settings' })
+          }
         }
       })
     })
-  }, [lifecycle, gatewayState, requestGateway, openDock])
+  }, [lifecycle, gatewayState, requestGateway])
 
   const onTap = (nx?: number, ny?: number): void => {
     if (authed) {
@@ -418,8 +339,8 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      // 单击 body 切换对话窗口
-      toggleChat()
+      // 单击 body 切到生活空间（会话在生活空间里发生）
+      void requestOpenSurface('living')
 
       return
     }
@@ -428,21 +349,21 @@ export function CompanionRoot(): React.JSX.Element {
     setActivationOpen(true)
   }
 
-  // 双击播放亲昵动作序列，不开窗（spec §4.3）
+  // 双击精灵：开上次入口（plan §0）；未登录时打开激活浮层；onboarding 期间进引导。
   const onDoubleTap = (): void => {
-    if (authed) {
-      if (lifecycle === 'onboarding') {
-        setOnboardingOpen(true)
-
-        return
-      }
-
-      playAffectionateAction()
+    if (!authed) {
+      setActivationOpen(true)
 
       return
     }
 
-    setActivationOpen(true)
+    if (lifecycle === 'onboarding') {
+      setOnboardingOpen(true)
+
+      return
+    }
+
+    void requestOpenSurface($lastSurface.get())
   }
 
   // onboarding 完成触发 3D 模型生成（base_texture 供应商是即时的——
@@ -457,7 +378,7 @@ export function CompanionRoot(): React.JSX.Element {
       {activationOpen && !authed && <ActivationOverlay onClose={() => setActivationOpen(false)} />}
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
-        hidden={showOnboarding}
+        hidden={showOnboarding || surfaceOpen === 'living'}
         onContextMenu={e => {
           $contextMenuPos.set({ x: e.clientX, y: e.clientY })
         }}
@@ -472,13 +393,13 @@ export function CompanionRoot(): React.JSX.Element {
       </SpriteStage>
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}
-        onOpenChat={() => openChat()}
-        onOpenDock={openDock}
+        onOpenChat={() => {
+          void requestOpenSurface('living')
+        }}
+        onOpenSurface={surface => {
+          void requestOpenSurface(surface)
+        }}
       />
-      {authed && chatOpen && <ChatDock onClose={handleCloseChat} />}
-      {authed && panel === 'companion-settings' && <CompanionSettingsPanel onClose={() => setPanel(null)} />}
-      {authed && panel === 'outfit' && <OutfitPanel onClose={() => setPanel(null)} />}
-      {authed && panel === 'app-settings' && <AppSettingsPanel onClose={() => setPanel(null)} />}
       <ProactiveBubble />
       {authed && <MediaViewerOverlay />}
       <NotificationStack regionRef={notificationStackRef} />

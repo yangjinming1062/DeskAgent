@@ -1,5 +1,6 @@
-﻿import { $chatOpen, setProactiveBubble } from '@/chat'
+import { setProactiveBubble } from '@/chat'
 import { $effectiveTier, setSpriteState } from '@/companion/companion-store'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 import { speak } from '../tts'
 
@@ -16,7 +17,7 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
     return
   }
 
-  if (!$chatOpen.get()) {
+  if ($surfaceOpen.get() !== 'living') {
     setProactiveBubble({ text: text.trim() })
   }
 

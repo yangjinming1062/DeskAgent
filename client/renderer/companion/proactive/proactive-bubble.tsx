@@ -1,14 +1,15 @@
 import { useStore } from '@nanostores/react'
 import { useRef } from 'react'
 
-import { $chatOpen, $chatSessionId, $proactiveBubble, setChatOpen, switchSession } from '@/chat'
+import { $chatSessionId, $proactiveBubble, setProactiveBubble, switchSession } from '@/chat'
+import { $surfaceOpen, requestOpenSurface } from '@/shared/store/surfaces'
 
 import { useInteractiveRegion } from '../interactive-regions'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '../spatial'
 
-// 伙伴主动消息的临时气泡：聊天面板关闭时显示在伙伴身边（DESIGN §6.2）。
-// 聊天面板打开时，消息已经在对话流里出现，这里不再重复显示。
-// 富媒体不进气泡——媒体送达提示也只以文本出现，点击打开聊天窗（必要时切到目标会话）。
+// 伙伴主动消息的临时气泡：生活空间未打开时显示在伙伴身边（DESIGN §6.2）。
+// 生活空间打开时，消息已经在对话流里出现，这里不再重复显示。
+// 富媒体不进气泡——媒体送达提示也只以文本出现，点击打开生活空间陪伴对话。
 //
 // 锚定在精灵身边，跟随拖拽 / 行走 / 飞行 / 聊天场所重新定位；
 // 外层在「无消息」时短路掉，保证 spatial 订阅只在气泡显示期间才跑。
@@ -18,9 +19,9 @@ const BUBBLE_VERTICAL_RATIO = 0.1
 
 export function ProactiveBubble(): React.JSX.Element | null {
   const state = useStore($proactiveBubble)
-  const chatOpen = useStore($chatOpen)
+  const surfaceOpen = useStore($surfaceOpen)
 
-  if (!state || chatOpen) {
+  if (!state || surfaceOpen === 'living') {
     return null
   }
 
@@ -46,11 +47,12 @@ function ProactiveBubbleView({ text, sessionId }: { text: string; sessionId?: st
   })
 
   const handleClick = (): void => {
-    setChatOpen(true)
-
     if (sessionId && sessionId !== $chatSessionId.get()) {
       void switchSession(sessionId)
     }
+
+    void requestOpenSurface('living', { sessionId, view: 'chat' })
+    setProactiveBubble(null)
   }
 
   return (

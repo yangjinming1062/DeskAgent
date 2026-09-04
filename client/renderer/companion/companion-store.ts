@@ -1,48 +1,13 @@
+import type { SurfaceId } from '@ipc/contracts'
 import { atom, computed } from 'nanostores'
 
-import { $chatOpen } from '@/chat'
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
+import { requestOpenSurface as requestOpenSurfaceIpc } from '@/shared/store/surfaces'
 
-// 精灵窗口的悬浮层集合：对话坞 + 三个平级独立设置面板（伙伴设置 / 换一身/形象 / 应用设置）。
-export type DockKind = 'chat' | 'companion-settings' | 'outfit' | 'app-settings'
-
-interface DockOpenRequest {
-  kind: DockKind
-  view?: string
-}
-
-export const $openDockRequest = atom<DockOpenRequest | null>(null)
-
-export function requestOpenDock(kind: DockKind, view?: string): void {
-  $openDockRequest.set({ kind, view })
-}
-
-export function openChat(): void {
-  requestOpenDock('chat')
-}
-
-export function closeChat(): void {
-  $chatOpen.set(false)
-}
-
-export function toggleChat(): void {
-  if ($chatOpen.get()) {
-    closeChat()
-  } else {
-    openChat()
-  }
-}
-
-export const SPRITE_STATE_USER_VISIBLE_LABELS: Record<SpriteStateName, string> = {
-  idle: '',
-  emotional: '',
-  listening: '在听',
-  thinking: '想想',
-  speaking: '',
-  working: '去帮忙',
-  interacting: '去帮忙',
-  disconnected: '走神了'
+// requestOpenSurface 直接走主进程 surface 互斥。
+export function requestOpenSurface(surface: SurfaceId, options?: { sessionId?: string; view?: string }): void {
+  void requestOpenSurfaceIpc(surface, options)
 }
 
 // 渲染层按 unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
@@ -315,6 +280,4 @@ registerStorageClearHandler(() => {
   $previousState.set('idle')
   $clipOverride.set(null)
   $effectiveTierOverride.set(null)
-  $openDockRequest.set(null)
-  $chatOpen.set(false)
 })

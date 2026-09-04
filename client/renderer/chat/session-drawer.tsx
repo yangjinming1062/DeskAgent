@@ -56,7 +56,7 @@ const SORT_OPTIONS: { icon: IconComponent; label: string; value: SessionSort }[]
 ]
 
 // 聊天窗内左侧会话抽屉：搜索 / 排序 / 置顶 / 归档 / 切换 / 新建 / 删除历史对话（原居中弹层的抽屉化形态）。
-// 选中或新建后由 ChatDock 关闭抽屉；置顶/归档/排序即时生效不关抽屉。
+// 选中或新建后由 onClose 关闭抽屉；置顶/归档/排序即时生效不关抽屉。
 export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.Element {
   const sessions = useStore($sessions)
   const loading = useStore($sessionsLoading)
