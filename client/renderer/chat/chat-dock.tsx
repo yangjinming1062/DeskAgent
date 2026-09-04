@@ -27,17 +27,19 @@ import {
   switchSession
 } from '@/chat/session-list-store'
 import {
+  $chatDockAnchor,
   $portraitUrl,
   $spatialPos,
   $spriteEmotion,
   $spriteState,
-  $viewport,
-  computeCompanionChatAnchor,
+  clearChatDockAnchor,
+  establishChatDockAnchor,
   requestOpenDock,
   RESIZE_HANDLES,
   setSpriteState,
+  updateChatDockSize,
+  useAssemblyDrag,
   useInteractiveRegion,
-  usePanelDrag,
   usePanelResize,
   useVoiceRecorder
 } from '@/companion'
@@ -120,7 +122,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const customExpressions = useStore($expressions)
   const sessionListOpen = useStore($sessionListOpen)
   const currentSessionTitle = useStore($currentSessionTitle)
-  const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [paramsPanelOpen, setParamsPanelOpen] = useState(false)
@@ -188,13 +189,35 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   useInteractiveRegion('chat-dock', panelRef)
 
   const { size, getResizeHandleProps } = usePanelResize({
+    applyTransform: false,
     defaultSize: { height: DOCK_DEFAULT_HEIGHT, width: DOCK_DEFAULT_WIDTH },
     getPanel: () => panelRef.current,
     maxSize: { height: DOCK_MAX_HEIGHT, width: DOCK_MAX_WIDTH },
     minSize: { height: DOCK_MIN_HEIGHT, width: DOCK_MIN_WIDTH },
-    offsetStorageKey: 'da.companion.liquidChatOffset',
     sizeStorageKey: 'da.companion.liquidChatSize'
   })
+
+  const { bind: dragBind } = useAssemblyDrag()
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem('da.companion.liquidChatOffset')
+    } catch {
+      /* ignore */
+    }
+
+    if (panelRef.current) {
+      panelRef.current.style.transform = ''
+    }
+
+    return () => {
+      clearChatDockAnchor()
+    }
+  }, [])
+
+  useEffect(() => {
+    updateChatDockSize(size)
+  }, [size])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -496,22 +519,12 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const currentW = size.width
   const currentH = size.height
   const pos = useStore($spatialPos)
+  const anchor = useStore($chatDockAnchor)
 
-  const { left: baseLeft, top: baseTop } = computeCompanionChatAnchor({
-    cardH: currentH,
-    cardW: currentW,
-    gap: 14,
-    pos,
-    vh: viewport.height,
-    vw: viewport.width
-  })
-
-  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.liquidChatOffset', () => panelRef.current)
-
-  const clampedDx = Math.min(100, Math.max(-100, storedOffset?.dx ?? 0))
-  const clampedDy = Math.min(80, Math.max(-80, storedOffset?.dy ?? 0))
-  const finalLeft = Math.min(Math.max(8, baseLeft + clampedDx), Math.max(8, viewport.width - currentW - 8))
-  const finalTop = Math.min(Math.max(8, baseTop + clampedDy), Math.max(8, viewport.height - currentH - 8))
+  // 保证初次渲染时即可按当前精灵位置与初始尺寸确定固定相对偏移，避免首帧跳跃
+  const activeAnchor = anchor ?? establishChatDockAnchor(size)
+  const finalLeft = pos.x + activeAnchor.relX
+  const finalTop = pos.y + activeAnchor.relY
 
   const currentMood = useMemo(() => {
     if (spriteEmotion) {

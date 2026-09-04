@@ -31,6 +31,7 @@ export {
   type SpriteStateName
 } from './companion-store'
 export { DISTURBANCE_TIERS } from './disturbance-tiers'
+export { useAssemblyDrag } from './hooks/use-assembly-drag'
 export { usePanelDrag } from './hooks/use-panel-drag'
 export { usePanelResize } from './hooks/use-panel-resize'
 export { useVoiceRecorder } from './hooks/use-voice-recorder'
@@ -91,6 +92,7 @@ export {
 } from './prefs'
 export { $renderMode, type RenderMode, setRenderMode } from './render-mode'
 export {
+  $chatDockAnchor,
   $defaultScale,
   $dragVelocity,
   $edgeDockSide,
@@ -99,11 +101,16 @@ export {
   $spatialPos,
   $spriteContentRect,
   $viewport,
+  type ChatDockAnchor,
+  clampPosToViewport,
+  clearChatDockAnchor,
   computeCompanionChatAnchor,
+  establishChatDockAnchor,
   getBaseSpriteHeight,
   getBaseSpriteWidth,
   type Locomotion,
-  setDefaultScale
+  setDefaultScale,
+  updateChatDockSize
 } from './spatial'
 export { $contextMenuOpen, openContextMenu } from './sprite/context-menu-store'
 export { speakChatMessage, speakScripted, stopSpeaking } from './tts'

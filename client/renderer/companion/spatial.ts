@@ -73,6 +73,16 @@ export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
 export const $edgeDockSide = atom<EdgeDockSide>('none')
 export const $isEdgeDocked = atom<boolean>(false)
 
+export interface ChatDockAnchor {
+  side: 'left' | 'right'
+  relX: number
+  relY: number
+  width: number
+  height: number
+}
+
+export const $chatDockAnchor = atom<ChatDockAnchor | null>(null)
+
 // 窗口视口尺寸——单一真实源，由 initSpatial 已有的 resize 监听器更新。
 // 弹层（chat-dock、proactive 气泡）订阅这里而不是各自挂监听器。
 interface ViewportSize {
@@ -127,10 +137,25 @@ function contentBox(scale = $spatialScale.get()): { left: number; top: number; r
   }
 }
 
-function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
+export function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
   const c = contentBox()
   const vw = window.innerWidth
   const vh = window.innerHeight
+  const anchor = $chatDockAnchor.get()
+
+  if (anchor && $chatOpen.get()) {
+    const margin = 8
+    const minX = Math.max(margin - c.left, margin - anchor.relX)
+    const maxX = Math.max(minX, Math.min(vw - margin - c.right, vw - margin - (anchor.relX + anchor.width)))
+    const minY = Math.max(margin - c.top, margin - anchor.relY)
+    const maxY = Math.max(minY, Math.min(vh - margin - c.bottom, vh - margin - (anchor.relY + anchor.height)))
+
+    return {
+      x: clamp(pos.x, minX, maxX),
+      y: clamp(pos.y, minY, maxY)
+    }
+  }
+
   const maxY = vh - c.bottom
 
   return {
@@ -254,6 +279,91 @@ export function computeCompanionChatAnchor(opts: {
   const top = clamp(shoulderTop, 8, Math.max(8, vh - cardH - 8))
 
   return { left, top, side }
+}
+
+export function establishChatDockAnchor(size: { width: number; height: number }, gap = 14): ChatDockAnchor {
+  const pos = $spatialPos.get()
+  const c = contentBox($defaultScale.get())
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  const charLeft = pos.x + c.left
+  const charRight = pos.x + c.right
+  const charTop = pos.y + c.top
+  const charHeight = Math.max(100, c.bottom - c.top)
+  const charCenterX = (charLeft + charRight) / 2
+
+  const fitsLeft = charLeft - gap - size.width >= 8
+  const fitsRight = charRight + gap + size.width <= vw - 8
+  const preferLeft = charCenterX > vw / 2
+
+  const side: 'left' | 'right' = preferLeft
+    ? fitsLeft
+      ? 'left'
+      : fitsRight
+        ? 'right'
+        : 'left'
+    : fitsRight
+      ? 'right'
+      : fitsLeft
+        ? 'left'
+        : 'right'
+
+  const relX = side === 'left' ? c.left - gap - size.width : c.right + gap
+  const shoulderTop = charTop + charHeight * 0.22
+  const clampedTop = clamp(shoulderTop, 8, Math.max(8, vh - size.height - 8))
+  const relY = clampedTop - pos.y
+
+  const anchor: ChatDockAnchor = {
+    height: size.height,
+    relX,
+    relY,
+    side,
+    width: size.width
+  }
+
+  $chatDockAnchor.set(anchor)
+
+  const clamped = clampPosToViewport(pos)
+
+  if (clamped.x !== pos.x || clamped.y !== pos.y) {
+    $spatialPos.set(clamped)
+  }
+
+  return anchor
+}
+
+export function updateChatDockSize(size: { width: number; height: number }, gap = 14): void {
+  const existing = $chatDockAnchor.get()
+
+  if (!existing) {
+    establishChatDockAnchor(size, gap)
+
+    return
+  }
+
+  const c = contentBox($defaultScale.get())
+  const relX = existing.side === 'left' ? c.left - gap - size.width : c.right + gap
+
+  const updated: ChatDockAnchor = {
+    ...existing,
+    height: size.height,
+    relX,
+    width: size.width
+  }
+
+  $chatDockAnchor.set(updated)
+
+  const pos = $spatialPos.get()
+  const clamped = clampPosToViewport(pos)
+
+  if (clamped.x !== pos.x || clamped.y !== pos.y) {
+    $spatialPos.set(clamped)
+  }
+}
+
+export function clearChatDockAnchor(): void {
+  $chatDockAnchor.set(null)
 }
 
 function easeInOut(t: number): number {
@@ -658,20 +768,22 @@ export function endDragAt(pos: { x: number; y: number }): void {
   const c = contentBox()
   const dockMargin = 40
 
-  // 1. 优先判定屏幕左右边缘吸附（角色可见边缘距屏边缘 <= 40px）
-  const leftDist = pos.x + c.left
-  const rightDist = vw - (pos.x + c.right)
+  // 1. 优先判定屏幕左右边缘吸附（仅在对话未打开时吸附，对话打开时保持组合体完整在屏）
+  if (!$chatOpen.get()) {
+    const leftDist = pos.x + c.left
+    const rightDist = vw - (pos.x + c.right)
 
-  if (leftDist <= dockMargin) {
-    dockToEdge('left')
+    if (leftDist <= dockMargin) {
+      dockToEdge('left')
 
-    return
-  }
+      return
+    }
 
-  if (rightDist <= dockMargin) {
-    dockToEdge('right')
+    if (rightDist <= dockMargin) {
+      dockToEdge('right')
 
-    return
+      return
+    }
   }
 
   // 2. 松手定居：把坐标收紧到 viewport 内，全身完整入屏（DESIGN §3.7）
@@ -810,9 +922,15 @@ export function initSpatial(): () => void {
 
   const unlistenChat = $chatOpen.listen(open => {
     if (open) {
+      if ($isEdgeDocked.get()) {
+        undockFromEdge()
+      }
+
       stopRoam()
       cancelMovement()
       $spatialLocomotion.set('still')
+    } else {
+      clearChatDockAnchor()
     }
   })
 

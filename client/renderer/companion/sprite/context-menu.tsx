@@ -1,13 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import {
-  EyeOff,
-  type IconComponent,
-  KeyRound,
-  MessageSquareText,
-  SlidersHorizontal
-} from '@/shared/lib/icons'
+import { EyeOff, type IconComponent, KeyRound, MessageSquareText, SlidersHorizontal } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
 import { isRegionHit, useInteractiveRegion } from '../interactive-regions'

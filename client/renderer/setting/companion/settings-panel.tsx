@@ -37,9 +37,8 @@ import { WardrobePage } from './pages/wardrobe-page'
 import { $settingsView, type SettingsView } from './settings-view'
 
 // 合并后的「设置」面板：八个应用层（原工具窗）+ 五个伙伴层（原 companion panel）。
-// 物理形态仍是 sprite 内的 FloatingPanel——主进程在面板打开时把 sprite 窗口放大到
-// 容纳 960×640，关闭时缩回。衣柜页仅 2D 渲染模式可见（3D 模型不随服装变）；
-// 停留在衣柜时被切到 3D 则回落到「形象」页。
+// 物理形态是 sprite 透明工作区内的 FloatingPanel，居中展示并由 interactive region 接管点击穿透。
+// 衣柜页仅 2D 渲染模式可见（3D 模型不随服装变）；停留在衣柜时被切到 3D 则回落到「形象」页。
 export function CompanionSettings({ onClose }: { onClose: () => void }): React.JSX.Element {
   const view = useStore($settingsView)
   const renderMode = useStore($renderMode)

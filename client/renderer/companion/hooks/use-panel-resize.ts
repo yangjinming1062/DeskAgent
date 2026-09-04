@@ -10,11 +10,12 @@ interface PanelSize {
 
 interface UsePanelResizeOptions {
   sizeStorageKey: string
-  offsetStorageKey: string
+  offsetStorageKey?: string
   defaultSize: PanelSize
   minSize?: PanelSize
   maxSize?: PanelSize
   getPanel: () => HTMLElement | null
+  applyTransform?: boolean
 }
 
 export function usePanelResize({
@@ -23,7 +24,8 @@ export function usePanelResize({
   defaultSize,
   minSize = { width: 560, height: 400 },
   maxSize = { width: 1400, height: 900 },
-  getPanel
+  getPanel,
+  applyTransform = true
 }: UsePanelResizeOptions): {
   size: PanelSize
   getResizeHandleProps: (dir: ResizeDirection) => {
@@ -79,7 +81,7 @@ export function usePanelResize({
   } | null>(null)
 
   const getStoredOffset = (): { dx: number; dy: number } => {
-    if (typeof localStorage === 'undefined') {
+    if (!applyTransform || !offsetStorageKey || typeof localStorage === 'undefined') {
       return { dx: 0, dy: 0 }
     }
 
@@ -151,7 +153,10 @@ export function usePanelResize({
     if (panel) {
       panel.style.width = `${newWidth}px`
       panel.style.height = `${newHeight}px`
-      panel.style.transform = `translate3d(${newDx}px, ${newDy}px, 0)`
+
+      if (applyTransform) {
+        panel.style.transform = `translate3d(${newDx}px, ${newDy}px, 0)`
+      }
     }
 
     sizeRef.current = { width: newWidth, height: newHeight }
@@ -177,7 +182,7 @@ export function usePanelResize({
         // 左侧/顶部边缘的宽度/高度变化时同步更新偏移
         const panel = getPanel()
 
-        if (panel?.style.transform) {
+        if (applyTransform && offsetStorageKey && panel?.style.transform) {
           const match = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(panel.style.transform)
 
           if (match) {

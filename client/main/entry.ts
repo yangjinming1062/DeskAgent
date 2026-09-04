@@ -11,7 +11,7 @@ import {
   normalizeUiTheme,
   type SpiritAgentConnection
 } from '@ipc/contracts'
-import { clamp, sleep } from '@runtime'
+import { sleep } from '@runtime'
 import {
   app,
   BrowserWindow,
@@ -545,56 +545,10 @@ function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
   mainWindow.setBounds(screen.getDisplayMatching(base).workArea)
 }
 
-// 「设置」面板展开时把 sprite 窗口从紧凑态 (480×320) 放大到能装下 960×640 面板；
-// 关闭时回到紧凑态。以原 bounds 中心为锚点，避免精灵随面板一起「跳」。
-// 落点钳制在目标显示器 workArea 内——屏幕边缘的精灵放大时不会跑到屏幕外。
-let spriteCompactBounds: Electron.Rectangle | null = null
-const SPRITE_EXPANDED_SIZE: { width: number; height: number } = { width: 1000, height: 700 }
-
-function clampBoundsToDisplay(bounds: Electron.Rectangle): Electron.Rectangle {
-  const display = screen.getDisplayMatching(bounds)
-  const work = display.workArea
-  const width = Math.min(bounds.width, work.width)
-  const height = Math.min(bounds.height, work.height)
-  const x = clamp(bounds.x, work.x, Math.max(work.x, work.x + work.width - width))
-  const y = clamp(bounds.y, work.y, Math.max(work.y, work.y + work.height - height))
-
-  return { height, width, x, y }
-}
-
-function setCompanionWindowExpanded(expanded: boolean): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return
-  }
-
-  if (expanded) {
-    if (!spriteCompactBounds) {
-      spriteCompactBounds = mainWindow.getBounds()
-    }
-
-    const compact = spriteCompactBounds
-    const centerX = compact.x + compact.width / 2
-    const centerY = compact.y + compact.height / 2
-
-    const target = clampBoundsToDisplay({
-      height: SPRITE_EXPANDED_SIZE.height,
-      width: SPRITE_EXPANDED_SIZE.width,
-      x: Math.round(centerX - SPRITE_EXPANDED_SIZE.width / 2),
-      y: Math.round(centerY - SPRITE_EXPANDED_SIZE.height / 2)
-    })
-
-    mainWindow.setBounds(target)
-    // 面板打开期间关掉穿透——FloatingPanel 的 interactive region 接管命中。
-    mainWindow.setIgnoreMouseEvents(false)
-
-    return
-  }
-
-  if (spriteCompactBounds) {
-    mainWindow.setBounds(clampBoundsToDisplay(spriteCompactBounds))
-    spriteCompactBounds = null
-    mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
-  }
+// 设置面板挂在透明工作区窗口内，由 FloatingPanel 的 interactive region 接管交互；
+// 保持覆盖全屏 workArea，避免修改物理窗口尺寸引发视口变化与精灵落点漂移。
+function setCompanionWindowExpanded(_expanded: boolean): void {
+  /* no-op: 保留全屏透明工作区窗口 */
 }
 
 function createSpriteWindow(): void {

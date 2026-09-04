@@ -27,8 +27,7 @@ interface FloatingPanelProps {
   minSize?: PanelSize
   maxSize?: PanelSize
   children: ReactNode
-  /** 关掉拖拽与缩放——固定 defaultSize，几何由外部（主进程 sprite bounds）控制。
-   *  用于统一设置面板：13 个 tab 塞满后留给拖拽缩放的意义不大，反而会与主进程扩窗打架。 */
+  /** 关掉拖拽与缩放——固定 defaultSize 居中展示。用于统一设置面板等全屏模态场景。 */
   static?: boolean
 }
 
@@ -73,7 +72,7 @@ export function FloatingPanel({
 
   const { bind: dragBind, storedOffset } = usePanelDrag(`${storagePrefix}Offset`, () => panelRef.current)
 
-  // 静态模式：固定 defaultSize，无拖拽。尺寸 / 偏移由外部（主进程 sprite bounds）控制。
+  // 静态模式：固定 defaultSize 居中展示，无拖拽与缩放。
   const size = isStatic ? defaultSize : dynamicSize
   const effectiveOffset = isStatic ? null : storedOffset
 
@@ -160,12 +159,7 @@ export function FloatingPanel({
           RESIZE_HANDLES.map(h => (
             <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
           ))}
-        <PanelHeader
-          dragBind={isStatic ? undefined : dragBind}
-          icon={icon}
-          onClose={onClose}
-          title={title}
-        />
+        <PanelHeader dragBind={isStatic ? undefined : dragBind} icon={icon} onClose={onClose} title={title} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </div>
     </div>
