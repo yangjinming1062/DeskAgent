@@ -3,16 +3,48 @@ import { $gateway } from '@/shared/store/gateway'
 import type { ReactionBucket } from '@/shared/types/reactions'
 
 import { $lastIdleSeconds, reportInteractionStat } from './activity'
-import { $clipOverride, $spriteAction, $spriteEmotion, setSpriteState } from './companion-store'
+import {
+  $clipOverride,
+  $spriteAction,
+  $spriteEmotion,
+  playSpriteActionSequence,
+  setSpriteState
+} from './companion-store'
 import { $personalityTags } from './persona-store'
 import { $llmReactions } from './prefs'
 import { pickReaction, playReactionAudio } from './reactions/reaction-audio'
 import { emitVfx } from './vfx'
 
+export type NormalizedRegion = 'head' | 'body' | 'item'
+
+const HEAD_REGIONS = new Set(['head', 'hair', 'hair_front', 'bangs', 'ear', 'face', 'back_hair', 'front_hair'])
+
+const ITEM_REGIONS = new Set(['held', 'item', 'accessory'])
+
+export function normalizeRegion(rawRegion?: string): NormalizedRegion {
+  if (!rawRegion) {
+    return 'body'
+  }
+
+  const lower = rawRegion.toLowerCase().trim()
+
+  if (HEAD_REGIONS.has(lower)) {
+    return 'head'
+  }
+
+  if (ITEM_REGIONS.has(lower)) {
+    return 'item'
+  }
+
+  return 'body'
+}
+
 let lastPokeTime = 0
 let pokeCount = 0
 let resetTimer: ReturnType<typeof setTimeout> | null = null
 let lastLlmPokeAt = 0
+let inPokeWindow = false
+let pokeWindowTimer: ReturnType<typeof setTimeout> | null = null
 
 function bucketForPokeCount(): ReactionBucket {
   if (pokeCount >= 5) {
@@ -144,6 +176,25 @@ export function handleDizzyInteraction(): void {
   reportInteractionStat('poke')
 }
 
+export function isPokeActive(): boolean {
+  return inPokeWindow
+}
+
+export function handleLongPressBodyInteraction(region?: string): void {
+  inPokeWindow = true
+  // 400ms 触感/微颤反馈（spec §4.3 & §13）
+  $spriteAction.set('tremor')
+  handlePokeInteraction(region)
+}
+
+export function playAffectionateAction(): void {
+  // 亲昵动作序列（spec §4.2 & §4.3）
+  emitVfx('heart', { nx: 0.5, ny: 0.25, count: 2 })
+  $clipOverride.set('petting')
+  playSpriteActionSequence(['turn_towards', 'nod'])
+  setSpriteState('interacting', { durationMs: 2200 })
+}
+
 export function handlePokeInteraction(region?: string): void {
   const now = Date.now()
 
@@ -154,6 +205,17 @@ export function handlePokeInteraction(region?: string): void {
   }
 
   lastPokeTime = now
+  inPokeWindow = true
+
+  if (pokeWindowTimer) {
+    clearTimeout(pokeWindowTimer)
+  }
+
+  pokeWindowTimer = setTimeout(() => {
+    inPokeWindow = false
+    pokeCount = 0
+    pokeWindowTimer = null
+  }, 3000)
 
   if (resetTimer) {
     clearTimeout(resetTimer)

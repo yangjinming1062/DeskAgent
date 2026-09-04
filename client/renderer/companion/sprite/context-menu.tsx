@@ -1,9 +1,13 @@
 import { useStore } from '@nanostores/react'
+import { IconPower, IconVolume, IconVolumeOff } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import { EyeOff, type IconComponent, KeyRound, MessageSquareText, SlidersHorizontal } from '@/shared/lib/icons'
+import { resetToHomePosition, setDefaultScale, setLocale } from '@/companion/spatial'
+import type { SettingsView } from '@/setting'
+import { Home, type IconComponent, KeyRound, MessageSquareText, Shirt, SlidersHorizontal } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
+import { $effectiveTier, closeChat, setDisturbanceTier } from '../companion-store'
 import { isRegionHit, useInteractiveRegion } from '../interactive-regions'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
@@ -11,7 +15,7 @@ import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 interface ContextMenuProps {
   onOpenActivation?: () => void
   onOpenChat: () => void
-  onOpenSettings: () => void
+  onOpenSettings: (view?: SettingsView) => void
 }
 
 const MENU_ITEM_CLASS =
@@ -55,11 +59,41 @@ export function SpriteContextMenu({
 }: ContextMenuProps): React.JSX.Element {
   const auth = useStore($auth)
   const pos = useStore($contextMenuPos)
+  const effectiveTier = useStore($effectiveTier)
   const visible = pos !== null
   const authed = auth.kind === 'authenticated'
+  const isStill = effectiveTier === 'still'
 
   const backdropRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const toggleQuiet = () => {
+    if (isStill) {
+      setDisturbanceTier('normal')
+    } else {
+      setDisturbanceTier('still')
+      // 50 分钟后自动恢复（spec §8）
+      setTimeout(
+        () => {
+          if ($effectiveTier.get() === 'still') {
+            setDisturbanceTier('normal')
+          }
+        },
+        50 * 60 * 1000
+      )
+    }
+  }
+
+  const handleRest = () => {
+    closeChat()
+    resetToHomePosition()
+    setDefaultScale(1)
+    setLocale('home', { locomotion: 'fly' })
+  }
+
+  const handleQuit = () => {
+    void window.spiritagent.sprite.hide()
+  }
 
   const getInteractiveRect = useCallback(
     () => (visible && pos ? new DOMRect(0, 0, window.innerWidth, window.innerHeight) : null),
@@ -93,7 +127,7 @@ export function SpriteContextMenu({
   }, [visible])
 
   const left = visible ? Math.min(pos.x, window.innerWidth - 200) : 0
-  const top = visible ? Math.min(pos.y, window.innerHeight - 220) : 0
+  const top = visible ? Math.min(pos.y, window.innerHeight - 280) : 0
 
   return (
     <div
@@ -124,7 +158,7 @@ export function SpriteContextMenu({
       }}
     >
       <div
-        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-line-standard bg-glass p-1.5 text-xs text-strong shadow-2xl backdrop-blur-glass select-none transition-[opacity,transform] duration-150 ease-out"
+        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-line-standard bg-surface-panel/95 p-1.5 text-xs text-strong shadow-2xl backdrop-blur-glass select-none transition-[opacity,transform] duration-150 ease-out"
         onPointerDown={e => {
           e.stopPropagation()
         }}
@@ -140,17 +174,23 @@ export function SpriteContextMenu({
         {authed ? (
           <>
             <MenuItem icon={MessageSquareText} label="对话" onClick={onOpenChat} />
+            <MenuItem
+              icon={isStill ? IconVolume : IconVolumeOff}
+              label={isStill ? '可以吵我了' : '安静一会儿'}
+              onClick={toggleQuiet}
+            />
+            <MenuItem icon={Home} label="去休息" onClick={handleRest} />
             <MenuDivider />
-            <MenuItem icon={SlidersHorizontal} label="设置" onClick={onOpenSettings} />
-            <MenuDivider />
-            <MenuItem icon={EyeOff} label="隐藏" onClick={() => void window.spiritagent.sprite.hide()} />
+            <MenuItem icon={Shirt} label="换一身 / 形象" onClick={() => onOpenSettings('wardrobe')} />
+            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenSettings()} />
+            <MenuItem icon={IconPower} label="退出" onClick={handleQuit} />
           </>
         ) : (
           <>
             <MenuItem icon={KeyRound} label="激活 / 登录" onClick={() => onOpenActivation?.()} />
-            <MenuItem icon={SlidersHorizontal} label="设置" onClick={onOpenSettings} />
+            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenSettings()} />
             <MenuDivider />
-            <MenuItem icon={EyeOff} label="隐藏" onClick={() => void window.spiritagent.sprite.hide()} />
+            <MenuItem icon={IconPower} label="退出" onClick={handleQuit} />
           </>
         )}
       </div>

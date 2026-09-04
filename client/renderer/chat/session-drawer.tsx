@@ -1,4 +1,4 @@
-﻿import { useStore } from '@nanostores/react'
+import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -112,14 +112,33 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
 
   const isSpecialSession = (s: SessionInfo): boolean => s.kind === 'special'
 
-  // 服务端排序保证系统预设 + 手动置顶项是结果前缀，这里按谓词分组即可，不重排。
-  const pinnedSessions = sessions.filter(s => isSpecialSession(s) || s.pinned)
-  const regularSessions = sessions.filter(s => !isSpecialSession(s) && !s.pinned)
+  const isCompanionSession = (s: SessionInfo): boolean =>
+    s.system_preset_id === 'companion' || (s.title ? s.title.includes('陪伴') : false) || s.kind === 'companion'
+
+  // 服务端排序保证系统预设 + 手动置顶项是结果前缀；优先将「陪伴」置顶为默认话题
+  const pinnedSessions = sessions
+    .filter(s => isSpecialSession(s) || s.pinned || isCompanionSession(s))
+    .sort((a, b) => {
+      const aComp = isCompanionSession(a)
+      const bComp = isCompanionSession(b)
+
+      if (aComp && !bComp) {
+        return -1
+      }
+
+      if (!aComp && bComp) {
+        return 1
+      }
+
+      return 0
+    })
+
+  const regularSessions = sessions.filter(s => !isSpecialSession(s) && !s.pinned && !isCompanionSession(s))
 
   return (
     <aside className="sa-drawer-in flex w-64 shrink-0 flex-col border-r border-line-standard bg-surface-chrome">
       <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
-        <h3 className="text-xs font-semibold text-body">对话</h3>
+        <h3 className="text-xs font-semibold text-body">话题</h3>
         <div className="flex items-center gap-1">
           {SORT_OPTIONS.map(({ icon: Icon, label, value }) => (
             <button
@@ -142,13 +161,13 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
             type="button"
           >
             <Plus className="size-3" />
-            新建
+            新建话题
           </button>
         </div>
       </div>
 
       <div className="px-3 pb-2">
-        <SearchField ariaLabel="搜索对话" onChange={$sessionSearch.set} placeholder="搜索对话…" value={search} />
+        <SearchField ariaLabel="搜索话题" onChange={$sessionSearch.set} placeholder="搜索话题…" value={search} />
       </div>
 
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
@@ -156,7 +175,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
           searchLoading ? (
             <EmptyHint text="搜索中…" />
           ) : searchResults.length === 0 ? (
-            <EmptyHint text="没有匹配的对话" />
+            <EmptyHint text="没有匹配的话题" />
           ) : (
             searchResults.map(s => (
               <SessionRow
@@ -171,7 +190,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
         ) : loading ? (
           <EmptyHint text="加载中…" />
         ) : sessions.length === 0 ? (
-          <EmptyHint text="暂无对话记录" />
+          <EmptyHint text="暂无话题记录" />
         ) : (
           <>
             {pinnedSessions.map(s => (
@@ -186,7 +205,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
                       />
                       <RowAction
                         icon={Archive}
-                        label="归档对话"
+                        label="归档话题"
                         onClick={e => stopThen(e, () => void archiveSession(s.id, true))}
                       />
                     </>
@@ -207,18 +226,18 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
                   <>
                     <RowAction
                       icon={Pin}
-                      label="置顶对话"
+                      label="置顶话题"
                       onClick={e => stopThen(e, () => void pinSession(s.id, true))}
                     />
                     <RowAction
                       icon={Archive}
-                      label="归档对话"
+                      label="归档话题"
                       onClick={e => stopThen(e, () => void archiveSession(s.id, true))}
                     />
                     <RowAction
                       danger
                       icon={Trash2}
-                      label="删除对话"
+                      label="删除话题"
                       onClick={e => stopThen(e, () => void deleteSession(s.id))}
                     />
                   </>
@@ -250,7 +269,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
             {archivedLoading ? (
               <EmptyHint text="加载中…" />
             ) : archivedSessions.length === 0 ? (
-              <EmptyHint text="暂无归档对话" />
+              <EmptyHint text="暂无归档话题" />
             ) : (
               archivedSessions.map(s => (
                 <SessionRow
@@ -264,7 +283,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
                       <RowAction
                         danger
                         icon={Trash2}
-                        label="删除对话"
+                        label="删除话题"
                         onClick={e => stopThen(e, () => void deleteSession(s.id))}
                       />
                     </>
@@ -343,7 +362,7 @@ function SessionRow({
           />
         ) : (
           <p className={cn('truncate text-xs', isActive ? 'font-medium text-strong' : 'text-strong')}>
-            {session.title || (isSpecial ? (presetName ?? '系统对话') : '新建对话')}
+            {session.title || (isSpecial ? (presetName ?? '系统话题') : '新建话题')}
             {session.pinned && <Pin className="ml-1 inline size-3 text-faint" />}
           </p>
         )}

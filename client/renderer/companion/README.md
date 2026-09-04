@@ -33,13 +33,12 @@
 
 `emotion === 'neutral'` 不触发 EMOTIONAL 状态，直接回 `idle`。这是 LLM 的"无特定情绪"答案，不是"中性情绪"。
 
-## 2. 情绪表达（表情头像 + 肢体动画）
+## 2. 情绪表达（肢体动画）
 
 情绪枚举 21 项内置（不含 `neutral`；后端权威 `BUILTIN_EMOTIONS` 22 项含 neutral）∪ 自创情绪注册表（`create_expression` 落库、经 `/expressions` 水合）。`neutral` 不触发 EMOTIONAL，直接回 `idle`；LLM 任何未注册 token 走 `affect.py` 的 neutral 回退，tag 剥离后归 `idle`。
 
 情绪的渲染分工（3D 面部不承载情绪表情——生成模型脸部在桌面尺寸下精细度不足）：
 
-- **表情头像**：情绪激活时 chat-dock 左栏头像换为对应表情图（`POST /api/companion/expression-avatar` 按情绪 token 后端 match-or-generate）。store 按情绪 token 缓存结果（token 与服务端缓存行 1:1，单缓存即可）、失败 60s backoff；**生成结果永不浪费**——只要情绪未变，无论多晚生成完就换入；即便错过本次（情绪已切换）也同时落库落缓存，下次同情绪即时命中；情绪结束 / 未就绪 / 失败显示一律回退 portrait。订阅挂在 ChatDock 组件内——聊天窗关闭即不请求，桌面-only 情绪不触发生成。avatar 重生事件清全部缓存（身份锚点变了）。
 - **肢体动画**：按模型映射解析当前状态可用动画；解析与兜底规则见 [docs/PIPELINE.md §5](../../../docs/PIPELINE.md)。自创情绪不携带专属肢体动画，复用现有动画。情绪胶囊显示内置情绪与注册表情绪的并集，未水合标记兜底渲染。
 
 ## 3. 三档打扰（Client 实现）

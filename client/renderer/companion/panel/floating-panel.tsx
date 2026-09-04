@@ -9,6 +9,7 @@ import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { centeredPanelPosition } from '@/companion/panel/panel-position'
 import { $viewport } from '@/companion/spatial'
 import type { IconComponent } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 import { BorderBeam, HudCorners, PanelHeader } from '@/shared/panel'
 
 interface PanelSize {
@@ -29,6 +30,8 @@ interface FloatingPanelProps {
   children: ReactNode
   /** 关掉拖拽与缩放——固定 defaultSize 居中展示。用于统一设置面板等全屏模态场景。 */
   static?: boolean
+  /** 是否启用 HUD 科幻角标与发光流光边框（陪伴层默认禁用，保持纯净液态毛玻璃） */
+  hud?: boolean
 }
 
 export const RESIZE_HANDLES: Array<{ dir: ResizeDirection; className: string }> = [
@@ -54,7 +57,8 @@ export function FloatingPanel({
   minSize,
   maxSize,
   children,
-  static: isStatic = false
+  static: isStatic = false,
+  hud = false
 }: FloatingPanelProps): React.JSX.Element {
   const viewport = useStore($viewport)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -141,7 +145,10 @@ export function FloatingPanel({
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
       <div
-        className="relative flex flex-col overflow-hidden rounded-2xl border border-line-standard bg-surface-panel text-strong shadow-2xl border-beam-container"
+        className={cn(
+          'relative flex flex-col overflow-hidden rounded-2xl border border-line-standard bg-surface-panel text-strong shadow-2xl',
+          hud && 'border-beam-container'
+        )}
         ref={panelRef}
         style={{
           position: 'fixed',
@@ -153,8 +160,8 @@ export function FloatingPanel({
           transform: `translate3d(${visibleDx}px, ${visibleDy}px, 0)`
         }}
       >
-        <BorderBeam />
-        <HudCorners size={8} />
+        {hud && <BorderBeam />}
+        {hud && <HudCorners size={8} />}
         {!isStatic &&
           RESIZE_HANDLES.map(h => (
             <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />

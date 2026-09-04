@@ -22,13 +22,17 @@ export {
   $spriteEmotion,
   $spriteState,
   $userPreferredTier,
+  closeChat,
   type DisturbanceTier,
+  type DockKind,
+  openChat,
   pushEffectiveDisturbanceTier,
   requestOpenDock,
   setDisturbanceTier,
   setSpriteState,
   type SpriteEmotion,
-  type SpriteStateName
+  type SpriteStateName,
+  toggleChat
 } from './companion-store'
 export { DISTURBANCE_TIERS } from './disturbance-tiers'
 export { useAssemblyDrag } from './hooks/use-assembly-drag'

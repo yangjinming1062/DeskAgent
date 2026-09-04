@@ -1,18 +1,48 @@
 import { atom, computed } from 'nanostores'
 
+import { $chatOpen } from '@/chat'
 import type { SettingsView } from '@/setting'
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
 
+export type DockKind = 'chat' | 'settings'
+
 interface DockOpenRequest {
-  kind: 'chat' | 'settings'
+  kind: DockKind
   view?: SettingsView
 }
 
 export const $openDockRequest = atom<DockOpenRequest | null>(null)
 
-export function requestOpenDock(kind: 'chat' | 'settings', view?: SettingsView): void {
+export function requestOpenDock(kind: DockKind, view?: SettingsView): void {
   $openDockRequest.set({ kind, view })
+}
+
+export function openChat(): void {
+  requestOpenDock('chat')
+}
+
+export function closeChat(): void {
+  $chatOpen.set(false)
+}
+
+export function toggleChat(): void {
+  if ($chatOpen.get()) {
+    closeChat()
+  } else {
+    openChat()
+  }
+}
+
+export const SPRITE_STATE_USER_VISIBLE_LABELS: Record<SpriteStateName, string> = {
+  idle: '',
+  emotional: '',
+  listening: '在听',
+  thinking: '想想',
+  speaking: '',
+  working: '去帮忙',
+  interacting: '去帮忙',
+  disconnected: '走神了'
 }
 
 // 渲染层按 unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
@@ -286,4 +316,5 @@ registerStorageClearHandler(() => {
   $clipOverride.set(null)
   $effectiveTierOverride.set(null)
   $openDockRequest.set(null)
+  $chatOpen.set(false)
 })

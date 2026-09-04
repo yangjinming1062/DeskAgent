@@ -27,30 +27,19 @@ const COMPRESS_CARD_SUBTYPES = new Set(['compress_summary'])
 
 function ToolTimeline({ active, tools }: { active: boolean; tools: string[] }): React.JSX.Element {
   const current = tools[tools.length - 1]
-
-  if (tools.length === 1) {
-    return (
-      <div className="my-1.5 flex w-full justify-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-line-standard bg-surface-card/70 px-3 py-1 text-xs text-muted shadow-xs backdrop-blur-glass">
-          <span className={`size-1.5 rounded-full bg-accent ${active ? 'animate-pulse' : ''}`} />
-          <span className="font-mono text-accent">{current}</span>
-          {active ? <span className="text-faint">执行中…</span> : null}
-        </div>
-      </div>
-    )
-  }
+  const count = tools.length
 
   return (
-    <details className="mx-auto my-1.5 w-fit" open={active}>
-      <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-full border border-line-standard bg-surface-card/70 px-3 py-1 text-xs text-muted shadow-xs backdrop-blur-glass">
+    <details className="mx-auto my-1.5 w-fit">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-full border border-line-standard bg-surface-card/70 px-3 py-1 text-xs text-muted shadow-xs backdrop-blur-glass transition hover:bg-fill-hover">
         <span className={`size-1.5 rounded-full bg-accent ${active ? 'animate-pulse' : ''}`} />
-        <span className="font-mono text-accent">{active ? current : `${tools.length} 次工具`}</span>
-        {active ? <span className="text-faint">执行中…</span> : <ChevronDown className="size-3" />}
+        <span className="text-muted">{active ? `它正在忙… (${current})` : `它做了 ${count} 步`}</span>
+        <ChevronDown className="size-3 text-faint transition-transform duration-200" />
       </summary>
       <div className="mt-1 flex flex-col items-center gap-1">
         {tools.map((name, index) => (
           <div
-            className="inline-flex items-center gap-1.5 rounded-full border border-line-hairline bg-surface-panel/80 px-2 py-0.5 font-mono text-[11px] text-accent"
+            className="inline-flex items-center gap-1.5 rounded-full border border-line-hairline bg-surface-panel/80 px-2.5 py-0.5 font-mono text-[11px] text-muted shadow-xs"
             key={`${name}-${index}`}
           >
             {name}

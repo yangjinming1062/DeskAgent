@@ -1,9 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { $expressionAvatar, clearExpressionAvatar, requestExpressionAvatar } from '@/2d'
-import { $expressions } from '@/3d'
 import {
   $chatDraftFromUndo,
   $chatMessageList,
@@ -28,9 +26,7 @@ import {
 } from '@/chat/session-list-store'
 import {
   $chatDockAnchor,
-  $portraitUrl,
   $spatialPos,
-  $spriteEmotion,
   $spriteState,
   clearChatDockAnchor,
   establishChatDockAnchor,
@@ -53,8 +49,8 @@ import {
   Mic,
   PanelLeft,
   Plus,
+  Settings,
   SlidersHorizontal,
-  Sparkles,
   SquareFilled,
   Video,
   X
@@ -67,12 +63,11 @@ import { strings } from '@/shared/strings'
 
 import { attachVideoFile, IMAGE_EXT, pickFile, pickFolder, pickImage, pickVideo, VIDEO_EXT } from './chat-attach-picker'
 import { MessageBubble } from './chat-dock-message-bubble'
-import { EMOTION_MAP } from './chat-mood-labels'
 import { ChatParamsPanel } from './chat-params-panel'
 import { basename } from './chat-path'
 import { PendingAttachmentView } from './chat-pending-attachment'
 import { executeSlashCommand, slashPreCheck } from './chat-slash'
-import { ContextProgressBar } from './context-progress-bar'
+import { ChatContextAmbientLine, ChatContextCapsule } from './context-progress-bar'
 import { SessionDrawer } from './session-drawer'
 import { SlashCommandPopover } from './slash-command-popover'
 import { useChatSubmit } from './use-chat-submit'
@@ -115,19 +110,33 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const chatTurnInFlight = useStore($chatTurnInFlight)
   const pendingPromptBatch = useStore($pendingPromptBatch)
   const gatewayState = useStore($gatewayState)
-  const portraitUrl = useStore($portraitUrl)
-  const spriteEmotion = useStore($spriteEmotion)
-  const spriteState = useStore($spriteState)
-  const expressionAvatar = useStore($expressionAvatar)
-  const customExpressions = useStore($expressions)
   const sessionListOpen = useStore($sessionListOpen)
   const currentSessionTitle = useStore($currentSessionTitle)
   const { requestGateway } = useGatewayRequest()
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [paramsPanelOpen, setParamsPanelOpen] = useState(false)
+  const [paramsPanelTab, setParamsPanelTab] = useState<'context' | 'params'>('params')
   const attachMenuRef = useRef<HTMLDivElement>(null)
   const paramsPanelRef = useRef<HTMLDivElement>(null)
   const externalPathsRef = useRef<string[]>([])
+
+  const handleToggleContext = () => {
+    if (paramsPanelOpen && paramsPanelTab === 'context') {
+      setParamsPanelOpen(false)
+    } else {
+      setParamsPanelTab('context')
+      setParamsPanelOpen(true)
+    }
+  }
+
+  const handleToggleParams = () => {
+    if (paramsPanelOpen && paramsPanelTab === 'params') {
+      setParamsPanelOpen(false)
+    } else {
+      setParamsPanelTab('params')
+      setParamsPanelOpen(true)
+    }
+  }
 
   // IM 桥接会话在桌面端只读查看。
   const chatSessionKind = useStore($chatSessionKind)
@@ -298,17 +307,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     },
     []
   )
-
-  // 情绪激活时替换左栏头像，回退到半身像。
-  useEffect(() => {
-    if (spriteEmotion && spriteEmotion !== 'neutral') {
-      void requestExpressionAvatar(spriteEmotion)
-    } else {
-      clearExpressionAvatar()
-    }
-  }, [spriteEmotion])
-
-  useEffect(() => () => clearExpressionAvatar(), [])
 
   // Esc 优先收起参数面板、会话抽屉或附件菜单，不打断正在输入的正文。
   useEffect(() => {
@@ -526,37 +524,10 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const finalLeft = pos.x + activeAnchor.relX
   const finalTop = pos.y + activeAnchor.relY
 
-  const currentMood = useMemo(() => {
-    if (spriteEmotion) {
-      // 自定义情绪注册表（create_expression）：label + 可选 icon，
-      // 尚未水合的 token 用通用渲染。
-      const custom = customExpressions.find(e => e.name === spriteEmotion)
-
-      return EMOTION_MAP[spriteEmotion] ?? { icon: custom?.icon || '💫', label: custom?.label || spriteEmotion }
-    }
-
-    switch (spriteState) {
-      case 'thinking':
-        return { icon: '💭', label: '思考中' }
-
-      case 'speaking':
-        return { icon: '💬', label: '回复中' }
-
-      case 'listening':
-        return { icon: '🎙️', label: '倾听中' }
-
-      case 'working':
-        return { icon: '💼', label: '工作中' }
-
-      default:
-        return { icon: '😊', label: '平静' }
-    }
-  }, [spriteEmotion, spriteState, customExpressions])
-
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="relative flex flex-row overflow-hidden rounded-[24px] border border-line-standard bg-surface-panel text-strong shadow-2xl backdrop-blur-glass"
+        className="relative flex flex-col overflow-hidden rounded-[24px] border border-line-standard bg-surface-panel text-strong shadow-2xl backdrop-blur-glass"
         onDragOver={e => {
           if (e.dataTransfer.types.includes('Files')) {
             e.preventDefault()
@@ -581,116 +552,62 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         {sessionListOpen && (
           <>
             <div
-              className="absolute inset-y-0 left-[88px] right-0 z-20 bg-black/35 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-150"
+              className="absolute inset-y-0 left-0 right-0 z-20 bg-black/35 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-150"
               onClick={() => setSessionListOpen(false)}
             />
-            <div className="absolute inset-y-0 left-[88px] z-30 flex shadow-2xl animate-in slide-in-from-left duration-200">
+            <div className="absolute inset-y-0 left-0 z-30 flex shadow-2xl animate-in slide-in-from-left duration-200">
               <SessionDrawer onClose={() => setSessionListOpen(false)} />
             </div>
           </>
         )}
 
-        {/* Left Column: Visual Anchor & Character Status (~88px, Draggable) */}
-        <div
-          className="flex w-[88px] flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-line-standard bg-surface-chrome/40 p-2.5 select-none active:cursor-grabbing"
-          title="拖动以移动对话框"
-          {...dragBind}
-        >
-          <div className="flex flex-col items-center w-full min-h-0 overflow-y-auto no-scrollbar">
-            <div className="relative group mt-0.5">
-              <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-line-standard bg-fill-faint shadow-md transition duration-300 group-hover:border-line-strong">
-                {(expressionAvatar?.dataUrl ?? portraitUrl) ? (
-                  <img
-                    alt="角色形象"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    src={expressionAvatar?.dataUrl ?? portraitUrl ?? undefined}
-                  />
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-white/10 to-white/5 p-1 text-center">
-                    <Sparkles className="size-5 animate-pulse text-faint" />
-                  </div>
-                )}
-              </div>
-              <div className="mt-1.5 flex items-center justify-center gap-1 rounded-full border border-line-hairline bg-surface-panel/80 px-1.5 py-0.5 text-[9px] text-muted whitespace-nowrap shadow-xs">
-                <span
-                  className={`sprite-state-dot ${
-                    spriteState === 'thinking'
-                      ? 'animate-ping'
-                      : spriteState === 'speaking' || spriteState === 'listening' || spriteState === 'working'
-                        ? 'animate-pulse'
-                        : ''
-                  }`}
-                  data-state={spriteState}
-                />
-                <span>
-                  {spriteState === 'thinking'
-                    ? '思考'
-                    : spriteState === 'speaking'
-                      ? '回复'
-                      : spriteState === 'listening'
-                        ? '倾听'
-                        : '在线'}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-2.5 flex flex-col items-center text-center w-full">
-              <div className="flex items-center gap-1 rounded-full border border-line-hairline bg-fill-faint px-1.5 py-0.5 text-[10px] text-strong shadow-2xs">
-                <span className="text-xs">{currentMood.icon}</span>
-                <span className="font-medium truncate max-w-[50px]">{currentMood.label}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="w-full flex flex-col items-center pt-2 border-t border-line-hairline shrink-0">
-            <button
-              className="flex flex-col items-center gap-1 rounded-xl p-1.5 text-[10px] text-muted hover:text-strong hover:bg-fill-hover cursor-pointer transition w-full"
-              onClick={() => requestOpenDock('settings')}
-              title="打开设置"
-              type="button"
-            >
-              <SlidersHorizontal className="size-3.5 text-accent" />
-              <span>设置</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Right Column: Chat Stream & Input */}
-        <div className="flex flex-1 flex-col min-w-0 bg-surface-panel">
+        {/* Chat Stream & Input */}
+        <div className="flex flex-1 flex-col min-w-0 bg-surface-panel relative">
           <div
-            className="flex cursor-grab items-center justify-between gap-2 border-b border-line-standard px-3 py-2 active:cursor-grabbing"
-            title="拖动以移动对话框"
+            className="flex cursor-grab items-center justify-between gap-2 border-b border-line-standard px-3.5 py-2.5 select-none active:cursor-grabbing"
+            title="拖动以移动对话"
             {...dragBind}
           >
-            <div className="flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-2">
               <button
-                aria-label="切换对话"
+                aria-label="切换话题"
                 className={cn(BTN_ICON, sessionListOpen && 'bg-fill-hover text-strong')}
                 onClick={() => setSessionListOpen(!sessionListOpen)}
-                title="切换历史对话"
+                title="切换历史话题"
                 type="button"
               >
                 <PanelLeft />
               </button>
-              <span className="truncate text-xs font-medium text-strong">{currentSessionTitle}</span>
+              <span className="truncate text-xs font-semibold text-strong">{currentSessionTitle}</span>
             </div>
-            <div className="flex items-center gap-1">
-              <div className="relative" ref={paramsPanelRef}>
-                <button
-                  aria-label="当前会话参数设置"
-                  className={cn(BTN_ICON, paramsPanelOpen && 'bg-fill-hover text-accent')}
-                  onClick={() => setParamsPanelOpen(!paramsPanelOpen)}
-                  title="当前对话参数设置（采样温度、压缩阈值、推理等级）"
-                  type="button"
-                >
-                  <SlidersHorizontal className="size-3.5" />
-                </button>
-                {paramsPanelOpen && (
-                  <div className="absolute right-0 top-full mt-2 z-50">
-                    <ChatParamsPanel />
-                  </div>
-                )}
-              </div>
+
+            <div className="flex items-center gap-1.5" ref={paramsPanelRef}>
+              {/* 上下文使用胶囊徽标 */}
+              <ChatContextCapsule onClick={handleToggleContext} />
+
+              {/* 对话参数快速按钮 */}
+              <button
+                aria-label="对话参数"
+                className={cn(BTN_ICON, paramsPanelOpen && paramsPanelTab === 'params' && 'bg-fill-hover text-accent')}
+                onClick={handleToggleParams}
+                title="对话与推理参数"
+                type="button"
+              >
+                <SlidersHorizontal className="size-3.5" />
+              </button>
+
+              {/* 伙伴与全局设置 */}
+              <button
+                aria-label="伙伴设置"
+                className={BTN_ICON}
+                onClick={() => requestOpenDock('settings')}
+                title="伙伴设置"
+                type="button"
+              >
+                <Settings className="size-3.5 text-muted" />
+              </button>
+
+              {/* 关闭窗口 */}
               <button
                 aria-label="关闭对话"
                 className={cn(
@@ -698,12 +615,26 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                   'hover:border hover:border-line-strong hover:bg-rose-500/15 hover:text-rose-300'
                 )}
                 onClick={onClose}
+                title="关闭对话"
                 type="button"
               >
                 <X />
               </button>
             </div>
           </div>
+
+          {/* 顶栏底边微环境感知进度线 */}
+          <ChatContextAmbientLine />
+
+          {/* 下拉参数与上下文卡片 */}
+          {paramsPanelOpen && (
+            <div
+              className="absolute right-3 top-11 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+              ref={paramsPanelRef}
+            >
+              <ChatParamsPanel defaultTab={paramsPanelTab} onClose={() => setParamsPanelOpen(false)} />
+            </div>
+          )}
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
             {list.length === 0 && !sending && (
@@ -725,11 +656,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           <div className="border-t border-line-standard p-2.5 flex flex-col gap-1.5 shrink-0 bg-surface-chrome/20">
             {gatewayState !== 'open' && <p className="text-center text-[10px] text-amber-300/80">正在连接…</p>}
             {isReadOnlySession && <p className="text-center text-[10px] text-faint">IM 对话 · 只读</p>}
-
-            {/* 上下文占用与手动压缩条 */}
-            <div className="px-1">
-              <ContextProgressBar />
-            </div>
 
             {pending && (
               <div className="px-1">

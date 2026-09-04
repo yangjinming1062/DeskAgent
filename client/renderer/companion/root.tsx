@@ -3,13 +3,17 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 
 import { $mesh2dHitmap, $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
 import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/3d'
-import { $chatOpen, ChatDock, setChatOpen } from '@/chat'
+import { $chatOpen, ChatDock } from '@/chat'
 import { startActivityMonitor } from '@/companion/activity'
 import {
   $companionLifecycle,
   $openDockRequest,
+  closeChat,
+  type DockKind,
+  openChat,
   reportUserActivity,
-  setCompanionLifecycle
+  setCompanionLifecycle,
+  toggleChat
 } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { hydratePersona } from '@/companion/persona-store'
@@ -33,7 +37,13 @@ import { strings } from '@/shared/strings'
 
 import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
-import { handlePokeInteraction } from './interaction'
+import {
+  handlePetInteraction,
+  handlePokeInteraction,
+  isPokeActive,
+  normalizeRegion,
+  playAffectionateAction
+} from './interaction'
 import { MediaViewerOverlay } from './media-viewer-overlay'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
@@ -72,7 +82,6 @@ export function CompanionRoot(): React.JSX.Element {
   const auth = useStore($auth)
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)
-  const chatOpen = useStore($chatOpen)
   const renderMode = useStore($renderMode)
   const puppetReady = useStore($puppetReady)
   const modelInfo = useStore($modelInfo)
@@ -83,20 +92,25 @@ export function CompanionRoot(): React.JSX.Element {
   const hasHydratedRef = useRef(false)
   const { requestGateway } = useGatewayRequest()
 
-  // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
-  // 通过 $openDockRequest atom 与 openDock 协同，sprite-stage 等深层组件也能复用同一不变量。
-  // settings 可携带目标页直达（记忆 → 角色与记忆、音色失效提醒 → 音色）。
-  const openDock = useCallback((kind: 'chat' | 'settings', settingsView?: SettingsView): void => {
-    if (kind === 'settings' && settingsView) {
-      setSettingsView(settingsView)
-    }
+  const chatOpen = useStore($chatOpen)
 
-    setChatOpen(kind === 'chat')
-    setSettingsOpen(kind === 'settings')
+  // 精灵窗口的表面与 dock 互斥——打开一个就关掉其他。
+  const openDock = useCallback((kind: DockKind, settingsView?: SettingsView): void => {
+    if (kind === 'settings') {
+      if (settingsView) {
+        setSettingsView(settingsView)
+      }
+
+      closeChat()
+      setSettingsOpen(true)
+    } else {
+      setSettingsOpen(false)
+      $chatOpen.set(true)
+    }
   }, [])
 
   const handleCloseChat = useCallback((): void => {
-    setChatOpen(false)
+    closeChat()
     updateSpatialDecision()
   }, [])
 
@@ -142,32 +156,31 @@ export function CompanionRoot(): React.JSX.Element {
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
   useMainProcessListener('onTrayActivate', () => setActivationOpen(true), [])
 
-  // 托盘「打开对话」（DESIGN §6.1 对话模式触发源）：聊天面板同样要走
-  // openDock 的 dock 互斥，不能直接 setChatOpen。
+  // 托盘「打开对话」（spec §15.1「旧 kind 'chat' 映射为 'whisper'」）：
   useMainProcessListener(
     'onTrayOpenChat',
     () => {
       if (auth.kind === 'authenticated') {
-        openDock('chat')
+        openChat()
       }
     },
-    [auth.kind, openDock]
+    [auth.kind]
   )
 
   // 全局快捷键「打开/关闭对话」：已打开时收起；未打开时已登录开对话、未登录开激活。
   useEffect(() => {
     const off = window.spiritagent.shortcuts?.onToggleChat?.(() => {
       if (chatOpen) {
-        setChatOpen(false)
+        closeChat()
       } else if (auth.kind === 'authenticated') {
-        openDock('chat')
+        openChat()
       } else {
         setActivationOpen(true)
       }
     })
 
     return () => off?.()
-  }, [auth.kind, chatOpen, openDock])
+  }, [auth.kind, chatOpen])
 
   // 托盘「一键归位」：将精灵落位与状态重置回默认 Home 位置
   useMainProcessListener(
@@ -358,16 +371,32 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      // 2D 路径下尝试子区域命中；3D 路径忽略 nx/ny（silhouette hit 走自己的通道）
-      let region: string | undefined
+      let rawRegion: string | undefined
 
       if (nx !== undefined && ny !== undefined) {
         const hit = $mesh2dHitmap.get()
         const result = hit ? hit.hit(nx, ny) : null
-        region = result?.region
+        rawRegion = result?.region
       }
 
-      handlePokeInteraction(region)
+      const region = normalizeRegion(rawRegion)
+
+      // 单击 head 摸头（spec §4.3）
+      if (region === 'head') {
+        handlePetInteraction(nx, ny)
+
+        return
+      }
+
+      // 处于 poke 激活窗口内时累加戳击
+      if (isPokeActive()) {
+        handlePokeInteraction(rawRegion)
+
+        return
+      }
+
+      // 单击 body 切换对话窗口
+      toggleChat()
 
       return
     }
@@ -376,7 +405,7 @@ export function CompanionRoot(): React.JSX.Element {
     setActivationOpen(true)
   }
 
-  // DESIGN §6.1：双击 ready 状态的伙伴打开 Chat。
+  // 双击播放亲昵动作序列，不开窗（spec §4.3）
   const onDoubleTap = (): void => {
     if (authed) {
       if (lifecycle === 'onboarding') {
@@ -385,7 +414,7 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      openDock('chat')
+      playAffectionateAction()
 
       return
     }
@@ -420,12 +449,12 @@ export function CompanionRoot(): React.JSX.Element {
       </SpriteStage>
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}
-        onOpenChat={() => openDock('chat')}
-        onOpenSettings={() => openDock('settings')}
+        onOpenChat={() => openChat()}
+        onOpenSettings={view => openDock('settings', view)}
       />
       {authed && chatOpen && <ChatDock onClose={handleCloseChat} />}
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
-      {authed && <ProactiveBubble />}
+      <ProactiveBubble />
       {authed && <MediaViewerOverlay />}
       <NotificationStack regionRef={notificationStackRef} />
       <BootFailureOverlay />

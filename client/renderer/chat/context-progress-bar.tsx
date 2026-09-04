@@ -1,4 +1,4 @@
-﻿import { useStore } from '@nanostores/react'
+import { useStore } from '@nanostores/react'
 import { clamp } from '@runtime'
 import type React from 'react'
 import { useState } from 'react'
@@ -19,7 +19,7 @@ import type { SessionMessage } from '@/shared/types/spiritagent'
 const DEFAULT_THRESHOLD = 0.8
 const DEFAULT_LIMIT = 1_000_000
 
-interface CompressContextResponse {
+export interface CompressContextResponse {
   compressed: boolean
   messages?: SessionMessage[]
   reason?: string
@@ -32,13 +32,33 @@ interface CompressContextResponse {
   }
 }
 
-export function ContextProgressBar(): React.JSX.Element {
+export function formatTokenNumber(num: number): string {
+  if (num >= 1_000_000) {
+    return `${(num / 1_000_000).toFixed(1)}M`
+  }
+
+  if (num >= 1_000) {
+    return `${(num / 1_000).toFixed(1)}k`
+  }
+
+  return num.toLocaleString()
+}
+
+export function useContextStatus(): {
+  barColor: string
+  contextLimit: number
+  isHealthy: boolean
+  isInactive: boolean
+  isWarning: boolean
+  pct: number
+  sessionId: string | null
+  threshold: number
+  thresholdPct: number
+  totalTokens: number
+} {
   const sessionId = useStore($chatSessionId)
   const usage = useStore($sessionContextUsage)
   const settings = useStore($sessionSettings)
-  const gateway = useStore($gateway)
-  const [hovered, setHovered] = useState(false)
-  const [compressing, setCompressing] = useState(false)
 
   const threshold =
     typeof settings.context_compression_threshold === 'number'
@@ -51,11 +71,6 @@ export function ContextProgressBar(): React.JSX.Element {
   const pct = clamp(rawPct, 0, 100)
   const thresholdPct = clamp(threshold * 100, 1, 100)
 
-  // 色彩逻辑：
-  // 1. 刚开始/基本无占用（< 2%）：未激活的灰色
-  // 2. 健康占用（< 阈值的 50%，如 < 40%）：健康的绿色
-  // 3. 上下文逐渐变长（40% ~ 阈值的 88%，如 40% ~ 70%）：黄色
-  // 4. 靠近或超过压缩节点（>= 阈值的 88%）：红色
   const isInactive = totalTokens <= 0 || pct < 2
   const isHealthy = !isInactive && pct < thresholdPct * 0.5
   const isWarning = !isInactive && !isHealthy && pct < thresholdPct * 0.88
@@ -63,10 +78,91 @@ export function ContextProgressBar(): React.JSX.Element {
   const barColor = isInactive
     ? 'bg-fill-faint'
     : isHealthy
-      ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.35)]'
+      ? 'bg-emerald-400'
       : isWarning
-        ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.35)]'
-        : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.45)]'
+        ? 'bg-amber-400'
+        : 'bg-rose-500'
+
+  return {
+    barColor,
+    contextLimit,
+    isHealthy,
+    isInactive,
+    isWarning,
+    pct,
+    sessionId,
+    threshold,
+    thresholdPct,
+    totalTokens
+  }
+}
+
+/** 顶栏极简环境感知细线：1.5px 极细微进度条，带阈值标记刻度 */
+export function ChatContextAmbientLine(): React.JSX.Element {
+  const { pct, thresholdPct, isInactive, isHealthy, isWarning } = useContextStatus()
+
+  const lineColor = isInactive
+    ? 'bg-fill-faint'
+    : isHealthy
+      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+      : isWarning
+        ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+        : 'bg-gradient-to-r from-rose-500 to-rose-400'
+
+  return (
+    <div className="relative h-[1.5px] w-full bg-line-hairline overflow-hidden select-none">
+      <div
+        className={cn('h-full transition-all duration-300 ease-out', lineColor)}
+        style={{ width: `${Math.max(pct, isInactive ? 0 : 1)}%` }}
+      />
+      <div
+        className="absolute top-0 bottom-0 w-[1px] bg-line-strong z-10 opacity-70"
+        style={{ left: `${thresholdPct}%` }}
+        title={`自动压缩阈值节点 (${Math.round(thresholdPct)}%)`}
+      />
+    </div>
+  )
+}
+
+/** 顶栏上下文胶囊微徽标：展示健康指示点、实时 Token 数及百分比 */
+export function ChatContextCapsule({ onClick }: { onClick?: () => void }): React.JSX.Element {
+  const { totalTokens, contextLimit, pct, isInactive, isHealthy, isWarning, thresholdPct } = useContextStatus()
+
+  const dotColor = isInactive
+    ? 'bg-muted-foreground/40'
+    : isHealthy
+      ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]'
+      : isWarning
+        ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]'
+        : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.7)]'
+
+  const titleText = `上下文：${totalTokens.toLocaleString()} / ${contextLimit.toLocaleString()} Tokens (${pct.toFixed(1)}%) · 阈值: ${Math.round(thresholdPct)}%`
+
+  return (
+    <button
+      aria-label="查看上下文与会话参数"
+      className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line-hairline bg-fill-faint px-2 text-[10px] text-body transition hover:border-line-standard hover:bg-fill-hover hover:text-strong cursor-pointer"
+      onClick={onClick}
+      title={titleText}
+      type="button"
+    >
+      <span className={cn('size-1.5 rounded-full shrink-0 transition-colors', dotColor)} />
+      <span className="font-mono text-[10px] tracking-tight">
+        {formatTokenNumber(totalTokens)}
+        <span className="text-faint font-sans"> / </span>
+        <span className="text-muted">{formatTokenNumber(contextLimit)}</span>
+      </span>
+      <span className="text-[9px] text-faint">({pct.toFixed(0)}%)</span>
+    </button>
+  )
+}
+
+/** 兼容保留的完整进度条与手动压缩组件 */
+export function ContextProgressBar(): React.JSX.Element {
+  const { sessionId, totalTokens, contextLimit, pct, thresholdPct, isInactive, barColor } = useContextStatus()
+  const gateway = useStore($gateway)
+  const [hovered, setHovered] = useState(false)
+  const [compressing, setCompressing] = useState(false)
 
   const handleManualCompress = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -119,7 +215,6 @@ export function ContextProgressBar(): React.JSX.Element {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* 悬停浮层提示信息 */}
       {hovered && (
         <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 rounded-md border border-line-standard bg-neutral-900/95 px-2.5 py-1 text-[10px] text-strong shadow-lg backdrop-blur-sm whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-150">
           {compressing ? (
@@ -145,7 +240,6 @@ export function ContextProgressBar(): React.JSX.Element {
         </div>
       )}
 
-      {/* 进度条轨道（可点击触发压缩） */}
       <button
         aria-label="手动压缩上下文"
         className={cn(
@@ -157,13 +251,10 @@ export function ContextProgressBar(): React.JSX.Element {
         title="点击手动压缩当前会话上下文"
         type="button"
       >
-        {/* 填充条 */}
         <div
           className={cn('h-full rounded-full transition-all duration-300 ease-out', barColor)}
           style={{ width: `${Math.max(pct, isInactive ? 0 : 1)}%` }}
         />
-
-        {/* 压缩阈值节点标识 (Node Marker) */}
         <div
           className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-[2px] rounded-full bg-line-strong shadow-xs transition group-hover:h-3.5"
           style={{ left: `${thresholdPct}%` }}
