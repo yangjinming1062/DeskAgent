@@ -40,7 +40,7 @@ import {
   usePanelResize,
   useVoiceRecorder
 } from '@/companion'
-import { useGatewayRequest } from '@/onboarding'
+import { useGatewayRequest } from '@/shared'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 import {
   ArrowRight,

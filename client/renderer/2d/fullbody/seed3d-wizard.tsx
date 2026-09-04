@@ -2,7 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { MAX_APPEARANCE, resolvePortraitUrl, WizardModal } from '@/companion'
-import { HistoryGallery, PortraitLightbox, useNaturalAspectRatio } from '@/onboarding'
+import { HistoryGallery, PortraitLightbox, useNaturalAspectRatio } from '@/shared'
 import { cn } from '@/shared/lib/utils'
 import { BTN_PRIMARY, BTN_SUBTLE, INPUT_CLASS } from '@/shared/panel'
 

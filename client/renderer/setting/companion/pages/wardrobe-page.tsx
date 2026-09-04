@@ -3,7 +3,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { $outfits, activateOutfit, deleteOutfit, hydrateWardrobe, useOutfitDesignSession } from '@/companion'
-import { PortraitLightbox } from '@/onboarding'
+import { PortraitLightbox } from '@/shared'
 import { Check, FileImage, Pencil, Send, Trash2 } from '@/shared/lib/icons'
 import { log } from '@/shared/lib/log'
 import { cn } from '@/shared/lib/utils'

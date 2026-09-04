@@ -16,7 +16,7 @@ import {
   type VoiceCatalog,
   type VoiceDesignPreview
 } from '@/companion'
-import { useGatewayRequest } from '@/onboarding'
+import { useGatewayRequest } from '@/shared'
 import { Check } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import {

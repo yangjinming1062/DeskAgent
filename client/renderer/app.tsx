@@ -1,7 +1,8 @@
 import React, { Suspense } from 'react'
 
-import { CompanionRoot } from '@/companion'
 import { SettingRoot } from '@/setting'
+
+import { CompanionRoot } from './companion/root'
 
 const ClipDebugger = React.lazy(async () => {
   const mod = await import('@/clip-debugger/clip-debugger')

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 
 import { cancelAutoVoice, setSpriteState } from '@/companion'
-import { useGatewayRequest } from '@/onboarding'
+import { useGatewayRequest } from '@/shared'
 import { parseSlashInput } from '@/shared/lib/slash-commands'
 import { notify } from '@/shared/store/notifications'
 import type { ChatAttachment } from '@/shared/types/spiritagent'

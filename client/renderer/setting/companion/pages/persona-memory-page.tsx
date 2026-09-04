@@ -1,9 +1,9 @@
-﻿import { useStore } from '@nanostores/react'
+import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useState } from 'react'
 
 import { $persona } from '@/companion'
-import { useGatewayRequest } from '@/onboarding'
+import { useGatewayRequest } from '@/shared'
 import { cn } from '@/shared/lib/utils'
 import { BTN_SUBTLE, HINT_TEXT, SECTION_TITLE, SettingsPage } from '@/shared/panel'
 import { notifyError } from '@/shared/store/notifications'

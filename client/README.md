@@ -73,9 +73,7 @@ client/
 | `setting/settings` ↔ `companion`               | ✗（系统全局设置与桌宠状态机互不耦合） |
 | `shared` → 任何                                | ✗    |
 
-ESLint `no-restricted-imports` 在模块间设置拦截。**唯一例外**是 `renderer/app.tsx`——这是角色分发点，需要同时 import 对应 root。
-
-模块公共面经 `index.ts` barrel 暴露（`@/companion`、`@/setting`、`@/chat`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
+ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/setting-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/setting`、`@/chat`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
 
 ## 4. 关键设计决策
 

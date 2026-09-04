@@ -1,10 +1,17 @@
 import { useCallback, useState } from 'react'
 
-import { playOnboardingAudio, useGatewayRequest } from '@/onboarding'
+import {
+  $activeAvatarId,
+  $portraitUrl,
+  $regenFeedback,
+  applyPortrait,
+  awaitAvatarRegeneration,
+  type PickedImage,
+  pushPortraitEntry
+} from '@/companion'
+import { useGatewayRequest } from '@/shared'
 
-import { type PickedImage } from './avatar-image'
-import { awaitAvatarRegeneration } from './avatar-regen-store'
-import { $activeAvatarId, $portraitUrl, $regenFeedback, applyPortrait, pushPortraitEntry } from './portrait-store'
+import { playOnboardingAudio } from './onboarding-audio'
 
 interface UseRegeneratePortraitOptions {
   /**
@@ -72,8 +79,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
       const onApplied = () => {
         pushPortraitEntry({
-          portraitUrl: $portraitUrl.get(),
-          avatarId: $activeAvatarId.get()
+          avatarId: $activeAvatarId.get(),
+          portraitUrl: $portraitUrl.get()
         })
         $regenFeedback.set('')
 
@@ -93,23 +100,23 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
             asset_url?: string | null
             id?: number
           }>({
-            path: '/api/companion/avatar/from-image',
-            method: 'POST',
             body: {
               content_type: primaryRef.contentType,
-              image: primaryRef.base64,
               description: feedback,
+              image: primaryRef.base64,
               ...(secondaryRef && {
-                presentation_image: secondaryRef.base64,
-                presentation_content_type: secondaryRef.contentType
+                presentation_content_type: secondaryRef.contentType,
+                presentation_image: secondaryRef.base64
               })
-            }
+            },
+            method: 'POST',
+            path: '/api/companion/avatar/from-image'
           })
 
           if (res?.asset_url) {
             const applied = await applyPortrait({
-              id: res.id,
-              assetUrl: res.asset_url
+              assetUrl: res.asset_url,
+              id: res.id
             })
 
             onRegenerated?.({ ...applied, id: res.id ?? null })
@@ -120,10 +127,10 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         }
 
         const queued = await requestGateway<{
-          queued?: boolean
-          job_id?: string
           asset_url?: string | null
           id?: number
+          job_id?: string
+          queued?: boolean
         }>('avatar.regenerate', { feedback })
 
         const settled =
@@ -135,8 +142,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
         if (settled?.asset_url) {
           const applied = await applyPortrait({
-            id: settled.id,
-            assetUrl: settled.asset_url
+            assetUrl: settled.asset_url,
+            id: settled.id
           })
 
           onRegenerated?.({ ...applied, id: settled.id ?? null })
@@ -154,5 +161,5 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     [requestGateway, refImage, presentationRef, playAudioOnSuccess, optionFeedback, onRegenerated]
   )
 
-  return { regenerate, busy }
+  return { busy, regenerate }
 }

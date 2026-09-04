@@ -1,9 +1,12 @@
 import { atom } from 'nanostores'
 
+import { $renderMode, type RenderMode, setRenderMode } from '@/companion'
 import { authedApi } from '@/shared/lib/authed-api'
 import { log } from '@/shared/lib/log'
-import { definePersistedAtom, definePersistedEnum } from '@/shared/lib/storage'
+import { definePersistedAtom } from '@/shared/lib/storage'
 import { $auth } from '@/shared/store/auth'
+
+export { $renderMode, type RenderMode, setRenderMode }
 
 // 2D 命中检测的引用句柄（懒加载；SpriteStage 在 pointermove / tap 时通过
 // 这里的 ref 调用 hitRegion，避免 React 重渲染）。
@@ -15,7 +18,6 @@ export function setMesh2DHitmap(map: { hit: (nx: number, ny: number) => { region
 }
 
 export type Mesh2DStatus = 'idle' | 'generating' | 'succeeded' | 'failed'
-export type RenderMode = '2d' | '3d'
 
 interface Mesh2DInfo {
   id: number | null
@@ -36,15 +38,6 @@ interface Mesh2DResponse {
   content_hash?: string | null
   error?: string | null
 }
-
-const renderModePersisted = definePersistedEnum<RenderMode>({
-  allowed: ['2d', '3d'] as const,
-  fallback: '2d',
-  key: 'da.companion.renderMode'
-})
-
-export const $renderMode = renderModePersisted.$atom
-export const setRenderMode = renderModePersisted.set
 
 const DEFAULT_MESH2D_INFO: Mesh2DInfo = {
   contentHash: null,

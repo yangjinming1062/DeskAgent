@@ -219,8 +219,7 @@ export default [
     files: [
       'renderer/setting/companion/**/*.{ts,tsx}',
       'renderer/clip-debugger/**/*.{ts,tsx}',
-      'renderer/puppet-entry.tsx',
-      'renderer/sprite-entry.tsx'
+      'renderer/puppet-entry.tsx'
     ],
     ignores: ['**/node_modules/**'],
     rules: {

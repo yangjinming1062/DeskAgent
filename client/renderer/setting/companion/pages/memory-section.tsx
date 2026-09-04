@@ -1,9 +1,9 @@
-﻿import { useStore } from '@nanostores/react'
+import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { $memoryBrowserTab, type MemoryTab, setMemoryBrowserTab } from '@/companion'
-import { useGatewayRequest } from '@/onboarding'
+import { useGatewayRequest } from '@/shared'
 import { cn } from '@/shared/lib/utils'
 import { BTN_GHOST, BTN_SUBTLE, CHIP, CHIP_FILTER, CHIP_FILTER_ACTIVE, HINT_TEXT, INPUT_CLASS } from '@/shared/panel'
 import { notifyError } from '@/shared/store/notifications'

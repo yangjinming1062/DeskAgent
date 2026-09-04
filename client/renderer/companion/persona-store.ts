@@ -1,12 +1,12 @@
-﻿import { atom } from 'nanostores'
+import { atom } from 'nanostores'
 
-import { $renderMode, setRenderMode } from '@/2d'
 import { authedApi } from '@/shared/lib/authed-api'
 import { safeJsonParse } from '@/shared/lib/safe-json'
 import { registerStorageClearHandler } from '@/shared/lib/storage'
 import { $auth } from '@/shared/store/auth'
 
 import { personaFromWire } from './persona-mappers'
+import { $renderMode, setRenderMode } from './render-mode'
 
 export interface PersonaDefinition {
   name: string

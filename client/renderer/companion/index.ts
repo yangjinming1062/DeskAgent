@@ -10,6 +10,7 @@ export {
   resolvePortraitUrl,
   saveDraftRefImage
 } from './avatar-image'
+export { awaitAvatarRegeneration } from './avatar-regen-store'
 export {
   $clipOverride,
   $companionLifecycle,
@@ -86,7 +87,7 @@ export {
   setCompanionVoiceId,
   setResponseMode
 } from './prefs'
-export { CompanionRoot } from './root'
+export { $renderMode, type RenderMode, setRenderMode } from './render-mode'
 export {
   $defaultScale,
   $dragVelocity,
@@ -104,7 +105,6 @@ export {
 } from './spatial'
 export { $contextMenuOpen, openContextMenu } from './sprite/context-menu-store'
 export { speakChatMessage, speakScripted, stopSpeaking } from './tts'
-export { useRegeneratePortrait } from './use-regenerate-portrait'
 export { clearVfx, emitVfx } from './vfx'
 export {
   designVoice,

@@ -44,7 +44,6 @@ import {
   useInteractiveRegion,
   USER_AGE_BUCKET_PRESETS,
   USER_GENDER_PRESETS,
-  useRegeneratePortrait,
   VOICE_PRESETS,
   type VoiceOption,
   warmAudioContext
@@ -68,6 +67,7 @@ import {
   PortraitPanel,
   useNaturalAspectRatio
 } from './onboarding-components'
+import { useRegeneratePortrait } from './use-regenerate-portrait'
 
 type Phase =
   | 'q-character'

@@ -21,11 +21,10 @@ import {
   EggStage,
   OnboardingFlow,
   useGatewayBoot,
-  useGatewayRequest,
   useMainProcessListener
 } from '@/onboarding'
 import { CompanionSettings, setSettingsView, type SettingsView } from '@/setting'
-import { NotificationStack } from '@/shared'
+import { NotificationStack, useGatewayRequest } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
