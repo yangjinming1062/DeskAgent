@@ -20,6 +20,8 @@ import {
   archiveSession,
   createNewSession,
   deleteSession,
+  fetchArchived,
+  fetchSessions,
   fetchSystemPresets,
   isCompanionSession,
   pinSession,
@@ -122,6 +124,11 @@ export function SessionSidebar(): React.JSX.Element {
   }, [search])
 
   useEffect(() => {
+    void fetchSessions()
+    void fetchArchived()
+  }, [])
+
+  useEffect(() => {
     if (!presetsFetched) {
       void fetchSystemPresets()
     }
@@ -140,7 +147,8 @@ export function SessionSidebar(): React.JSX.Element {
     await switchSession(id)
   }
 
-  const isSpecialSession = (s: SessionInfo): boolean => s.kind === 'special'
+  const isSpecialSession = (s: SessionInfo): boolean =>
+    s.kind === 'special' || (typeof s.system_preset_id === 'string' && s.system_preset_id in WORKBENCH_PRESET_META)
 
   const workbenchSessions = sessions.filter(s => !isCompanionSession(s))
 
@@ -227,38 +235,46 @@ export function SessionSidebar(): React.JSX.Element {
           </div>
         ) : (
           <>
-            {/* 4 个专业工作预设 */}
+            {/* 特殊对话：4 个专业工作预设 */}
             <div>
-              <div className="mb-1 flex items-center justify-between px-1.5 text-[11px] font-semibold text-muted tracking-wider">
+              <div className="mb-1.5 flex items-center justify-between px-1.5 text-[11px] font-semibold text-muted tracking-wider">
                 <span>专业工作预设</span>
-                <span className="rounded bg-white/10 px-1 py-0.2 text-[10px] text-muted">4</span>
+                <span className="rounded bg-white/10 px-1 py-0.2 text-[10px] text-muted">{specialSessions.length}</span>
               </div>
-              <div className="space-y-0.5">
-                {specialSessions.map(s => {
-                  const meta = s.system_preset_id ? WORKBENCH_PRESET_META[s.system_preset_id] : undefined
-                  const Icon = meta?.icon ?? Cpu
+              {loading && specialSessions.length === 0 ? (
+                <div className="py-3 text-center text-[11px] text-muted">加载预设会话中…</div>
+              ) : specialSessions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/10 p-3 text-center text-[11px] text-muted">
+                  暂无专业预设会话
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {specialSessions.map(s => {
+                    const meta = s.system_preset_id ? WORKBENCH_PRESET_META[s.system_preset_id] : undefined
+                    const Icon = meta?.icon ?? Cpu
 
-                  return (
-                    <SessionRow
-                      customIcon={Icon}
-                      customLabel={meta?.label}
-                      isActive={s.id === activeSessionId}
-                      isSpecial
-                      key={s.id}
-                      onSwitch={handleSwitch}
-                      session={s}
-                    />
-                  )
-                })}
-              </div>
+                    return (
+                      <SessionRow
+                        customIcon={Icon}
+                        customLabel={meta?.label}
+                        isActive={s.id === activeSessionId}
+                        isSpecial
+                        key={s.id}
+                        onSwitch={handleSwitch}
+                        session={s}
+                      />
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* 用户自定义会话 */}
-            <div>
-              <div className="mb-1 flex items-center justify-between px-1.5 text-[11px] font-semibold text-muted tracking-wider">
-                <span>自定义会话</span>
+            {/* 常规对话：用户自建与置顶会话 */}
+            <div className="pt-1">
+              <div className="mb-1.5 flex items-center justify-between px-1.5 text-[11px] font-semibold text-muted tracking-wider">
+                <span>常规对话</span>
                 {pinnedRegularSessions.length + unpinnedRegularSessions.length > 0 && (
-                  <span className="text-[10px] text-muted">
+                  <span className="rounded bg-white/10 px-1 py-0.2 text-[10px] text-muted">
                     {pinnedRegularSessions.length + unpinnedRegularSessions.length}
                   </span>
                 )}
@@ -268,7 +284,7 @@ export function SessionSidebar(): React.JSX.Element {
                 <div className="py-4 text-center text-muted">加载会话中…</div>
               ) : pinnedRegularSessions.length === 0 && unpinnedRegularSessions.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-muted">
-                  暂无自建会话，点击上方新建
+                  暂无常规对话，点击上方新建
                 </div>
               ) : (
                 <div className="space-y-0.5">

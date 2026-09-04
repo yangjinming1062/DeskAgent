@@ -47,14 +47,19 @@ export function WorkbenchRoot(): React.JSX.Element {
     return false
   })
 
-  // 保证工作台不处于生活空间的「陪伴」会话下
+  // 保证工作台处于有效工作会话下（不处于生活空间的「陪伴」会话下，且空会话时自动定位到开发工位）
   useEffect(() => {
+    if (sessions.length === 0) {
+      return
+    }
+
     const current = sessions.find(s => s.id === currentSessionId)
 
-    if (isCompanionSession(current)) {
-      const workTarget = sessions.find(s => s.system_preset_id === 'developer' || !isCompanionSession(s))
+    if (!current || isCompanionSession(current)) {
+      const workTarget =
+        sessions.find(s => s.system_preset_id === 'developer') ?? sessions.find(s => !isCompanionSession(s))
 
-      if (workTarget) {
+      if (workTarget && workTarget.id !== currentSessionId) {
         void switchSession(workTarget.id)
       }
     }
@@ -176,6 +181,7 @@ export function WorkbenchRoot(): React.JSX.Element {
 
         <main className={styles.center}>
           <ChatPanel
+            className="flex-1 min-h-0"
             gatewayState={gatewayState}
             inputWrapperClassName={styles.chatInputWrapper}
             isReadOnlySession={isReadOnlySession}

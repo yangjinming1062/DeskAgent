@@ -111,6 +111,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     boundsUnbinders.get(id)?.()
 
     let reporterRaf: ReturnType<typeof setTimeout> | null = null
+    let hasPendingMove = false
 
     const rebroadcast = (): void => {
       if (openSurfaceId !== id) {
@@ -121,14 +122,21 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     }
 
     const onChange = (): void => {
-      // 拖动期间节流：合帧避免每像素都广播。
       if (reporterRaf !== null) {
+        hasPendingMove = true
+
         return
       }
 
+      rebroadcast()
+
       reporterRaf = setTimeout(() => {
         reporterRaf = null
-        rebroadcast()
+
+        if (hasPendingMove) {
+          hasPendingMove = false
+          rebroadcast()
+        }
       }, 16)
     }
 
@@ -142,6 +150,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
         reporterRaf = null
       }
 
+      hasPendingMove = false
       win.off('move', onChange)
       win.off('resize', onChange)
       win.off('show', rebroadcast)

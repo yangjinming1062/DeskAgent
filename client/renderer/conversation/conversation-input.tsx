@@ -255,7 +255,12 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
 
   return (
     <div
-      className="border-t border-line-standard p-2.5 flex flex-col gap-1.5 shrink-0 bg-surface-chrome/20"
+      className={cn(
+        'flex flex-col gap-1.5 shrink-0',
+        variant === 'workbench'
+          ? 'border-0 bg-transparent p-0'
+          : 'border-t border-line-standard p-2.5 bg-surface-chrome/20'
+      )}
       onDragOver={onDrop ? e => e.preventDefault() : undefined}
       onDrop={onDrop}
     >

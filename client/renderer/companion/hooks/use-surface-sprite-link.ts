@@ -14,12 +14,6 @@ export function useSurfaceSpriteLink(): void {
   const open = useStore($surfaceOpen)
 
   useEffect(() => {
-    if (open === 'workbench') {
-      setLocale('workbench', { instant: true })
-
-      return
-    }
-
     if (open === 'living') {
       // 生活空间打开：精灵在房间里画里，不出现在桌面；locale 回 home 但模型隐藏。
       setLocale('home', { instant: true })
@@ -29,6 +23,13 @@ export function useSurfaceSpriteLink(): void {
     }
 
     delete document.documentElement.dataset.spriteHidden
+
+    if (open === 'workbench') {
+      setLocale('workbench', { instant: true })
+
+      return
+    }
+
     setLocale('home', { instant: true })
   }, [open])
 }

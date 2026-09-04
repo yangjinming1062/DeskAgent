@@ -518,35 +518,111 @@ function generateRoamWaypoint(): { x: number; y: number } {
   }
 }
 
-// 工作台窗外侧伴工栖息：右侧优先，溢出翻转至左侧，空间不足时按比例缩身
+const WORKBENCH_SPRITE_MARGIN = 16
+let workbenchSide: 'left' | 'right' = 'left'
+
+export function computeWorkbenchPlacement(
+  bounds: { height: number; width: number; x: number; y: number },
+  scale = $defaultScale.get()
+): { pos: { x: number; y: number }; side: 'left' | 'right'; sideChanged: boolean } {
+  const spriteW = getBaseSpriteWidth() * scale
+  const spriteH = getBaseSpriteHeight() * scale
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  const leftTargetX = bounds.x - spriteW - WORKBENCH_SPRITE_MARGIN
+  const rightTargetX = bounds.x + bounds.width + WORKBENCH_SPRITE_MARGIN
+
+  const leftCanFit = leftTargetX >= REST_MARGIN
+  const rightCanFit = rightTargetX + spriteW <= vw - REST_MARGIN
+
+  let nextSide = workbenchSide
+
+  if (workbenchSide === 'left') {
+    // 默认在左侧；若窗口贴左边导致精灵展示不全（leftTargetX < REST_MARGIN），切换到右侧
+    if (!leftCanFit) {
+      const leftSpace = bounds.x
+      const rightSpace = vw - (bounds.x + bounds.width)
+
+      if (rightCanFit || rightSpace > leftSpace) {
+        nextSide = 'right'
+      }
+    }
+  } else {
+    // 当前在右侧；若窗口贴右边导致精灵展示不全，切换到左侧
+    if (!rightCanFit) {
+      const leftSpace = bounds.x
+      const rightSpace = vw - (bounds.x + bounds.width)
+
+      if (leftCanFit || leftSpace > rightSpace) {
+        nextSide = 'left'
+      }
+    }
+  }
+
+  const sideChanged = nextSide !== workbenchSide
+  workbenchSide = nextSide
+
+  const targetX = nextSide === 'left' ? leftTargetX : rightTargetX
+  // 垂直方向对齐工作台窗口底部，与参考图一致，并在视口内钳制
+  const idealY = bounds.y + bounds.height - spriteH
+  const targetY = clamp(idealY, REST_MARGIN, Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN))
+
+  return {
+    pos: { x: targetX, y: targetY },
+    side: nextSide,
+    sideChanged
+  }
+}
+
+// 工作台窗外侧伴工伴读：左侧默认，贴边展示不全自动切换到右侧，拖拽窗口时严格同步坐标保持恒定距离
 function applyWorkbenchPerch(bounds: { height: number; width: number; x: number; y: number }): void {
-  // 当前正在拖拽或别的应用抢占焦点时不要强行挪动精灵，让用户握住的精灵先跟完手势。
+  // 当前正在手动拖拽精灵时不要强行挪动
   if ($spatialLocomotion.get() === 'drag') {
     return
   }
 
-  const maxScale = $defaultScale.get()
+  const scale = $defaultScale.get()
+  const { pos: targetPos, sideChanged } = computeWorkbenchPlacement(bounds, scale)
 
-  const perch = computePerchPlacement({ h: bounds.height, w: bounds.width, x: bounds.x, y: bounds.y }, maxScale)
+  // 保证缩放恒定为用户设置，不随移动动态缩放，维持整体感
+  if (Math.abs($spatialScale.get() - scale) > 0.01) {
+    setScaleTarget(scale, true)
+  }
 
-  if (!perch) {
+  const isCurrentlyWorkbench = $spatialLocale.get() === 'workbench' || $spatialLocale.get() === 'perch'
+
+  // 触发贴边导致展示不全翻转换侧时，平滑飞向对侧
+  if (sideChanged) {
+    cancelMovement()
+    moveTo(targetPos, 'fly')
+    $spatialLocale.set('workbench')
+
     return
   }
 
-  const workspaceScale = Math.max(0.5, perch.scale)
-
-  // 已在飞行中且 locale 仍是 perch → 重瞄目标；其他情况照常启动新的飞行。
-  if ($spatialLocale.get() === 'perch' && retargetMove(perch.pos)) {
-    perchScaleLimit = workspaceScale
-    updateAdaptiveScale()
+  // 正在换侧飞行过程中：动态更新目标点
+  if (rafId !== null) {
+    retargetMove(targetPos)
 
     return
   }
 
-  setLocale('perch', {
+  // 处于工作台同一侧平移：坐标即时锁步同步，消除补间延迟，距离恒定如同一体
+  if (isCurrentlyWorkbench) {
+    cancelMovement()
+    $spatialPos.set(targetPos)
+    $homePosition.set(targetPos)
+    $spatialLocomotion.set('still')
+    $spatialLocale.set('workbench')
+
+    return
+  }
+
+  // 首次打开工作台进入栖息：平滑飞到落位
+  setLocale('workbench', {
     locomotion: 'fly',
-    position: perch.pos,
-    scaleLimit: workspaceScale
+    position: targetPos
   })
 }
 
@@ -849,7 +925,9 @@ export function initSpatial(): () => void {
         applyWorkbenchPerch(bounds)
       }
     } else {
-      if ($spatialLocale.get() === 'perch') {
+      workbenchSide = 'left'
+
+      if ($spatialLocale.get() === 'perch' || $spatialLocale.get() === 'workbench') {
         setLocale('home')
       }
 

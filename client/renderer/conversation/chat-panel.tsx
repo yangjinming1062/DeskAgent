@@ -130,7 +130,7 @@ export function ChatPanel({
       : 'bg-white/30'
 
   return (
-    <div className={cn('flex flex-col h-full min-h-0', className)}>
+    <div className={cn('flex flex-col flex-1 h-full min-h-0', className)}>
       {variant === 'workbench' && (
         <div className="flex items-center justify-between border-b border-white/8 px-4 py-2.5 bg-surface-chrome/20 shrink-0">
           <div className="flex items-center gap-2">
@@ -143,8 +143,12 @@ export function ChatPanel({
           </div>
         </div>
       )}
-      <ConversationSurface className={surfaceClassName} scrollRef={scrollRef} variant={variant} />
-      <div className={inputWrapperClassName}>
+      <ConversationSurface
+        className={cn('flex-1 min-h-0 overflow-y-auto', surfaceClassName)}
+        scrollRef={scrollRef}
+        variant={variant}
+      />
+      <div className={cn('mt-auto shrink-0', inputWrapperClassName)}>
         <ConversationInput
           attachMenuOpen={attachMenuOpen}
           externalPathsRef={externalPathsRef}

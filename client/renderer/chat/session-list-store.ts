@@ -135,7 +135,7 @@ export function setSessionSort(sort: SessionSort): void {
   }
 }
 
-async function fetchSessions(): Promise<void> {
+export async function fetchSessions(): Promise<void> {
   const token = ++sessionsToken
   $sessionsLoading.set(true)
 
@@ -156,7 +156,7 @@ async function fetchSessions(): Promise<void> {
   }
 }
 
-async function fetchArchived(): Promise<void> {
+export async function fetchArchived(): Promise<void> {
   const token = ++archivedToken
   $archivedLoading.set(true)
 
