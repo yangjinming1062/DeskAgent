@@ -29,8 +29,6 @@ export interface RunnerBridgeDeps {
   fileExists: (path: string) => boolean
   getMainWindow: () => BrowserWindow | null
   getSpriteWindow: () => BrowserWindow | null
-  getToolWindow: () => BrowserWindow | null
-  hideToolWindow: () => void
   isQuitting: boolean
   setQuitting: (quitting: boolean) => void
   rebuildTrayMenu: () => void
@@ -40,7 +38,6 @@ export interface RunnerBridgeDeps {
   rewireAuthToken: () => void
   runnerBridge: null | RunnerBridge
   safeStorage: SafeStorage
-  showToolWindow: () => void
   spiritagentHome: string
   taggedLogger: (prefix: string) => (msg: string) => void
 }
@@ -64,14 +61,11 @@ export interface CreateBridgeDepsGlobals {
   getAuthToken: { getter: () => string | null; setter: (fn: () => string | null) => void }
   getMainWindow?: () => BrowserWindow | null
   getSpriteWindow?: () => BrowserWindow | null
-  getToolWindow?: () => BrowserWindow | null
-  hideToolWindow: () => void
   readStoredBackendUrl: (home: string | null | undefined) => string | null
   rebuildTrayMenu: () => void
   rememberLog: (chunk: string) => void
   resetBackendCache: () => void
   safeStorage: SafeStorage
-  showToolWindow: () => void
   spiritagentHome: string
 }
 
@@ -143,8 +137,6 @@ export function createBridgeDeps(globals: CreateBridgeDepsGlobals): RunnerBridge
     fileExists: globals.fileExists,
     getMainWindow: globals.getMainWindow || (() => null),
     getSpriteWindow: globals.getSpriteWindow || (() => null),
-    getToolWindow: globals.getToolWindow || (() => null),
-    hideToolWindow: globals.hideToolWindow,
     get isQuitting() {
       return quitting
     },
@@ -163,7 +155,6 @@ export function createBridgeDeps(globals: CreateBridgeDepsGlobals): RunnerBridge
     },
     runnerBridge: null,
     safeStorage: globals.safeStorage,
-    showToolWindow: globals.showToolWindow,
     spiritagentHome: globals.spiritagentHome,
     taggedLogger: (prefix: string) => (chunk: string) => globals.rememberLog(`${prefix} ${chunk}`)
   }

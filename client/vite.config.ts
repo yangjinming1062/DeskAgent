@@ -20,7 +20,6 @@ export default defineConfig({
       input: {
         index: path.resolve(__dirname, 'index.html'),
         sprite: path.resolve(__dirname, 'sprite.html'),
-        setting: path.resolve(__dirname, 'setting.html'),
         'clip-debugger': path.resolve(__dirname, 'clip-debugger.html'),
         puppet: path.resolve(__dirname, 'puppet.html')
       },

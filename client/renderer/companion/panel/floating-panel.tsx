@@ -27,6 +27,9 @@ interface FloatingPanelProps {
   minSize?: PanelSize
   maxSize?: PanelSize
   children: ReactNode
+  /** 关掉拖拽与缩放——固定 defaultSize，几何由外部（主进程 sprite bounds）控制。
+   *  用于统一设置面板：13 个 tab 塞满后留给拖拽缩放的意义不大，反而会与主进程扩窗打架。 */
+  static?: boolean
 }
 
 export const RESIZE_HANDLES: Array<{ dir: ResizeDirection; className: string }> = [
@@ -51,14 +54,15 @@ export function FloatingPanel({
   defaultSize,
   minSize,
   maxSize,
-  children
+  children,
+  static: isStatic = false
 }: FloatingPanelProps): React.JSX.Element {
   const viewport = useStore($viewport)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useInteractiveRegion(regionId, panelRef)
 
-  const { size, getResizeHandleProps } = usePanelResize({
+  const { size: dynamicSize, getResizeHandleProps } = usePanelResize({
     sizeStorageKey: `${storagePrefix}Size`,
     offsetStorageKey: `${storagePrefix}Offset`,
     defaultSize,
@@ -69,13 +73,21 @@ export function FloatingPanel({
 
   const { bind: dragBind, storedOffset } = usePanelDrag(`${storagePrefix}Offset`, () => panelRef.current)
 
+  // 静态模式：固定 defaultSize，无拖拽。尺寸 / 偏移由外部（主进程 sprite bounds）控制。
+  const size = isStatic ? defaultSize : dynamicSize
+  const effectiveOffset = isStatic ? null : storedOffset
+
   // 面板几何上云（companion.settings_panel）：拖拽/缩放停稳后防抖上报，
   // 跳过挂载首跑——未交互过不上报，避免本机默认值覆写另一端的已存几何。
-  const dxRaw = storedOffset?.dx ?? 0
-  const dyRaw = storedOffset?.dy ?? 0
+  const dxRaw = effectiveOffset?.dx ?? 0
+  const dyRaw = effectiveOffset?.dy ?? 0
   const geometryReported = useRef(false)
 
   useEffect(() => {
+    if (isStatic) {
+      return
+    }
+
     if (!geometryReported.current) {
       geometryReported.current = true
 
@@ -90,7 +102,7 @@ export function FloatingPanel({
     }, 600)
 
     return () => window.clearTimeout(timer)
-  }, [size, dxRaw, dyRaw])
+  }, [size, dxRaw, dyRaw, isStatic])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -122,8 +134,8 @@ export function FloatingPanel({
 
   // 历史拖拽偏移可能把居中面板整个推出视口（只余一角）——渲染期钳制，
   // 保证面板在屏幕内至少保留 160px 宽 / 64px 高的可见条带。
-  const dx = storedOffset?.dx ?? 0
-  const dy = storedOffset?.dy ?? 0
+  const dx = effectiveOffset?.dx ?? 0
+  const dy = effectiveOffset?.dy ?? 0
   const visibleDx = clamp(left + dx, 176 - size.width, viewport.width - 160) - left
   const visibleDy = clamp(top + dy, 80 - size.height, viewport.height - 64) - top
 
@@ -144,10 +156,16 @@ export function FloatingPanel({
       >
         <BorderBeam />
         <HudCorners size={8} />
-        {RESIZE_HANDLES.map(h => (
-          <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
-        ))}
-        <PanelHeader dragBind={dragBind} icon={icon} onClose={onClose} title={title} />
+        {!isStatic &&
+          RESIZE_HANDLES.map(h => (
+            <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
+          ))}
+        <PanelHeader
+          dragBind={isStatic ? undefined : dragBind}
+          icon={icon}
+          onClose={onClose}
+          title={title}
+        />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </div>
     </div>

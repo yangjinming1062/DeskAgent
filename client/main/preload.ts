@@ -98,7 +98,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
     set: (payload: SpiritAgentPrefsSet) => ipcRenderer.send(IPC.send.prefsSet, payload)
   },
   setUiTheme: (payload: SpiritAgentUiTheme) => ipcRenderer.send(IPC.send.uiTheme, payload),
-  showToolWindow: () => ipcRenderer.invoke(IPC.invoke.windowShowTool),
+  setCompanionWindowExpanded: (expanded: boolean) =>
+    ipcRenderer.invoke(IPC.invoke.windowSetCompanionSize, { expanded }),
   shortcuts: {
     get: () => ipcRenderer.invoke(IPC.invoke.shortcutsGet),
     onChanged: (cb: (payload: DesktopShortcutsState) => void) => subscribe(IPC.event.shortcutsChanged, cb),

@@ -262,7 +262,7 @@ export interface IpcInvokeContract {
   'spiritagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
 
   // 窗口与界面
-  'spiritagent:window:show-tool': () => Promise<void> | void
+  'spiritagent:window:set-companion-size': (payload: { expanded: boolean }) => Promise<void> | void
 
   // 后端 API 代理
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
@@ -404,7 +404,7 @@ export const IPC = {
     apiAsset: 'spiritagent:api:asset',
     apiAssetBuffer: 'spiritagent:api:asset-buffer',
     apiAssetModelUrl: 'spiritagent:api:asset-model-url',
-    windowShowTool: 'spiritagent:window:show-tool',
+    windowSetCompanionSize: 'spiritagent:window:set-companion-size',
     readFileDataUrl: 'spiritagent:readFileDataUrl',
     readImageForAttach: 'spiritagent:readImageForAttach',
     selectPaths: 'spiritagent:selectPaths',

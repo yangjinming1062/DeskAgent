@@ -6,7 +6,6 @@ import {
   type IconComponent,
   KeyRound,
   MessageSquareText,
-  Settings,
   SlidersHorizontal
 } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
@@ -148,15 +147,14 @@ export function SpriteContextMenu({
           <>
             <MenuItem icon={MessageSquareText} label="对话" onClick={onOpenChat} />
             <MenuDivider />
-            <MenuItem icon={SlidersHorizontal} label="伙伴设置" onClick={onOpenSettings} />
-            <MenuItem icon={Settings} label="应用设置" onClick={() => void window.spiritagent.showToolWindow()} />
+            <MenuItem icon={SlidersHorizontal} label="设置" onClick={onOpenSettings} />
             <MenuDivider />
             <MenuItem icon={EyeOff} label="隐藏" onClick={() => void window.spiritagent.sprite.hide()} />
           </>
         ) : (
           <>
             <MenuItem icon={KeyRound} label="激活 / 登录" onClick={() => onOpenActivation?.()} />
-            <MenuItem icon={Settings} label="应用设置" onClick={() => void window.spiritagent.showToolWindow()} />
+            <MenuItem icon={SlidersHorizontal} label="设置" onClick={onOpenSettings} />
             <MenuDivider />
             <MenuItem icon={EyeOff} label="隐藏" onClick={() => void window.spiritagent.sprite.hide()} />
           </>

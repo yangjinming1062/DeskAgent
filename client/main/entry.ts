@@ -7,13 +7,11 @@ import {
   type DesktopAuthSnapshot,
   type DesktopPrefsHydrated,
   type DesktopShortcutsConfig,
-  getThemeBackgroundColor,
   IPC,
   normalizeUiTheme,
-  type SpiritAgentConnection,
-  type SpiritAgentUiTheme
+  type SpiritAgentConnection
 } from '@ipc/contracts'
-import { sleep } from '@runtime'
+import { clamp, sleep } from '@runtime'
 import {
   app,
   BrowserWindow,
@@ -161,13 +159,12 @@ const configSync = createConfigSync({
     }
 
     syncShortcutsFromConfig()
-    applyToolWindowTheme(theme)
 
-    for (const win of [mainWindow, toolWindow]) {
-      sendToMain(win, IPC.event.prefsHydrated, payload)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      sendToMain(mainWindow, IPC.event.prefsHydrated, payload)
 
       if (theme) {
-        sendToMain(win, IPC.event.uiThemeChanged, { theme })
+        sendToMain(mainWindow, IPC.event.uiThemeChanged, { theme })
       }
     }
   }
@@ -245,7 +242,6 @@ function registerMediaProtocol(): void {
 }
 
 let mainWindow: BrowserWindow | null = null
-let toolWindow: BrowserWindow | null = null
 let spriteBoundsListenerInstalled = false
 
 const zoomPersistence = createZoomPersistence({ app, rememberLog })
@@ -370,10 +366,6 @@ function resolveWebDist(): string {
 function htmlFileNameForRole(role?: string): string {
   if (role === 'sprite') {
     return 'sprite.html'
-  }
-
-  if (role === 'tool' || role === 'setting') {
-    return 'setting.html'
   }
 
   if (role === 'clip' || role === 'anim' || role === 'animation') {
@@ -536,60 +528,6 @@ function rendererUrlFor(role: string): string {
   return pathToFileURL(resolveRendererHtml(htmlFile)).toString()
 }
 
-function applyToolWindowTheme(theme: SpiritAgentUiTheme): void {
-  if (toolWindow && !toolWindow.isDestroyed()) {
-    const target = getThemeBackgroundColor(theme)
-
-    if (toolWindow.getBackgroundColor() !== target) {
-      toolWindow.setBackgroundColor(target)
-    }
-  }
-}
-
-function createToolWindow(): void {
-  const icon = getAppIconPath() || undefined
-  const initialTheme = normalizeUiTheme((runnerConfigStore.read().ui as Record<string, unknown> | undefined)?.theme)
-  toolWindow = new BrowserWindow({
-    backgroundColor: getThemeBackgroundColor(initialTheme),
-    height: 640,
-    icon,
-    minHeight: 540,
-    minWidth: 720,
-    title: '应用设置',
-    titleBarStyle: 'hidden',
-    vibrancy: IS_MAC ? 'sidebar' : undefined,
-    webPreferences: {
-      backgroundThrottling: false,
-      contextIsolation: true,
-      devTools: !app.isPackaged,
-      nodeIntegration: false,
-      preload: path.join(import.meta.dirname, 'preload.cjs'),
-      sandbox: true
-    },
-    width: 960
-  })
-
-  // 与伙伴设置一致的面板形态：不用系统原生窗口控件（Win/Linux 无 WCO，
-  // mac 隐藏红绿灯），关闭只走应用侧面板头；常驻置顶，失焦不被其它应用盖住。
-  // 精灵窗在 mac 上位于更高的 screen-saver 层，保持压在设置面板上。
-  toolWindow.setAlwaysOnTop(true, 'floating')
-
-  if (IS_MAC) {
-    toolWindow.setWindowButtonVisibility(false)
-  }
-
-  windowHandlers.installZoomShortcuts(toolWindow)
-  windowHandlers.installContextMenu(toolWindow)
-  windowHandlers.installStandardWindowHandlers(toolWindow)
-  installCloseInterceptor(toolWindow)
-
-  void toolWindow.loadURL(rendererUrlFor('tool'))
-
-  toolWindow.webContents.once('did-finish-load', () => {
-    zoomPersistence.restorePersistedZoomLevel(toolWindow)
-  })
-}
-
 const SPRITE_TRANSPARENT = !REMOTE_DISPLAY_REASON
 
 function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
@@ -605,6 +543,58 @@ function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
     : mainWindow.getBounds()
 
   mainWindow.setBounds(screen.getDisplayMatching(base).workArea)
+}
+
+// 「设置」面板展开时把 sprite 窗口从紧凑态 (480×320) 放大到能装下 960×640 面板；
+// 关闭时回到紧凑态。以原 bounds 中心为锚点，避免精灵随面板一起「跳」。
+// 落点钳制在目标显示器 workArea 内——屏幕边缘的精灵放大时不会跑到屏幕外。
+let spriteCompactBounds: Electron.Rectangle | null = null
+const SPRITE_EXPANDED_SIZE: { width: number; height: number } = { width: 1000, height: 700 }
+
+function clampBoundsToDisplay(bounds: Electron.Rectangle): Electron.Rectangle {
+  const display = screen.getDisplayMatching(bounds)
+  const work = display.workArea
+  const width = Math.min(bounds.width, work.width)
+  const height = Math.min(bounds.height, work.height)
+  const x = clamp(bounds.x, work.x, Math.max(work.x, work.x + work.width - width))
+  const y = clamp(bounds.y, work.y, Math.max(work.y, work.y + work.height - height))
+
+  return { height, width, x, y }
+}
+
+function setCompanionWindowExpanded(expanded: boolean): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+
+  if (expanded) {
+    if (!spriteCompactBounds) {
+      spriteCompactBounds = mainWindow.getBounds()
+    }
+
+    const compact = spriteCompactBounds
+    const centerX = compact.x + compact.width / 2
+    const centerY = compact.y + compact.height / 2
+
+    const target = clampBoundsToDisplay({
+      height: SPRITE_EXPANDED_SIZE.height,
+      width: SPRITE_EXPANDED_SIZE.width,
+      x: Math.round(centerX - SPRITE_EXPANDED_SIZE.width / 2),
+      y: Math.round(centerY - SPRITE_EXPANDED_SIZE.height / 2)
+    })
+
+    mainWindow.setBounds(target)
+    // 面板打开期间关掉穿透——FloatingPanel 的 interactive region 接管命中。
+    mainWindow.setIgnoreMouseEvents(false)
+
+    return
+  }
+
+  if (spriteCompactBounds) {
+    mainWindow.setBounds(clampBoundsToDisplay(spriteCompactBounds))
+    spriteCompactBounds = null
+    mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
+  }
 }
 
 function createSpriteWindow(): void {
@@ -664,38 +654,6 @@ function createSpriteWindow(): void {
   })
 }
 
-function showToolWindow(): void {
-  if (!toolWindow || toolWindow.isDestroyed()) {
-    createToolWindow()
-
-    return
-  }
-
-  if (toolWindow.isMinimized()) {
-    toolWindow.restore()
-  }
-
-  if (!toolWindow.isVisible()) {
-    if (process.platform === 'win32') {
-      toolWindow.setSkipTaskbar(false)
-    }
-
-    toolWindow.show()
-  }
-
-  toolWindow.focus()
-}
-
-function hideToolWindow(): void {
-  if (toolWindow && !toolWindow.isDestroyed()) {
-    toolWindow.hide()
-
-    if (process.platform === 'win32') {
-      toolWindow.setSkipTaskbar(true)
-    }
-  }
-}
-
 function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   rebuildTrayMenu()
 
@@ -716,8 +674,8 @@ function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   // 用户身份变化触发配置水合（登录/换号；登出只停摆待写）。
   configSync.handleAuthUserChanged(authenticated ? (snapshot?.user?.id ?? null) : null)
 
-  for (const win of [mainWindow, toolWindow]) {
-    sendToMain(win, IPC.event.authChanged, payload)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    sendToMain(mainWindow, IPC.event.authChanged, payload)
   }
 }
 
@@ -727,13 +685,11 @@ registerSystemIpc({
 })
 registerUiThemeIpc({
   getMainWindow: () => mainWindow,
-  getToolWindow: () => toolWindow,
   ipcMain
 })
 registerPrefsIpc({ ipcMain })
 registerShortcutsIpc({
   getMainWindow: () => mainWindow,
-  getToolWindow: () => toolWindow,
   hideMainWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.hide()
@@ -828,14 +784,11 @@ const bridgeDeps = createBridgeDeps({
   },
   getMainWindow: () => mainWindow,
   getSpriteWindow: () => mainWindow,
-  getToolWindow: () => toolWindow,
-  hideToolWindow,
   readStoredBackendUrl,
   rebuildTrayMenu,
   rememberLog: (chunk: string) => rememberLog(chunk),
   resetBackendCache,
   safeStorage,
-  showToolWindow,
   spiritagentHome: SPIRITAGENT_HOME
 })
 
@@ -863,8 +816,8 @@ registerSpriteIpc({
   ipcMain
 })
 
-ipcMain.handle(IPC.invoke.windowShowTool, async () => {
-  showToolWindow()
+ipcMain.handle(IPC.invoke.windowSetCompanionSize, (_evt, payload: { expanded: boolean }) => {
+  setCompanionWindowExpanded(payload?.expanded === true)
 })
 
 ipcMain.handle(IPC.invoke.runnerGetTools, async () => {

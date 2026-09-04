@@ -95,6 +95,22 @@ export function CompanionRoot(): React.JSX.Element {
     setSettingsOpen(kind === 'settings')
   }, [])
 
+  // 设置面板占用 960×640——sprite 紧凑态（480×320）装不下。
+  // 打开时通知主进程放大精灵窗，关闭时复位到原 bounds。面板挂载在 sprite 内，
+  // 主进程扩窗时同时关掉 ignoreMouseEvents，让面板能接收点击。
+  useEffect(() => {
+    void window.spiritagent?.setCompanionWindowExpanded?.(settingsOpen)
+
+    if (!settingsOpen) {
+      return
+    }
+
+    // 退出登录或窗口被销毁时面板会卸载——离开时再发一次 false，确保 bounds 复位。
+    return () => {
+      void window.spiritagent?.setCompanionWindowExpanded?.(false)
+    }
+  }, [settingsOpen])
+
   const handleCloseChat = useCallback((): void => {
     setChatOpen(false)
     updateSpatialDecision()

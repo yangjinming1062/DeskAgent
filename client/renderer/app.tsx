@@ -1,7 +1,5 @@
 import React, { Suspense } from 'react'
 
-import { SettingRoot } from '@/setting'
-
 import { CompanionRoot } from './companion/root'
 
 const ClipDebugger = React.lazy(async () => {
@@ -17,7 +15,7 @@ const ROLE_MAP: Record<string, 'clip' | 'sprite'> = {
   animation: 'clip'
 }
 
-function readRole(): 'clip' | 'sprite' | 'tool' {
+function readRole(): 'clip' | 'sprite' {
   const params = new URLSearchParams(window.location.search)
   const role = params.get('role')
   const fromQuery = role ? ROLE_MAP[role] : undefined
@@ -30,7 +28,7 @@ function readRole(): 'clip' | 'sprite' | 'tool' {
     return 'clip'
   }
 
-  return 'tool'
+  return 'sprite'
 }
 
 export default function App(): React.JSX.Element {
@@ -40,13 +38,9 @@ export default function App(): React.JSX.Element {
     return <CompanionRoot />
   }
 
-  if (role === 'clip') {
-    return (
-      <Suspense fallback={<div className="h-screen w-screen bg-[#0d0d0d]" />}>
-        <ClipDebugger />
-      </Suspense>
-    )
-  }
-
-  return <SettingRoot />
+  return (
+    <Suspense fallback={<div className="h-screen w-screen bg-[#0d0d0d]" />}>
+      <ClipDebugger />
+    </Suspense>
+  )
 }

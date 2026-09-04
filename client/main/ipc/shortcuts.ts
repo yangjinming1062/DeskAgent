@@ -15,7 +15,6 @@ import { errorMessage } from '../shared/utils'
 
 interface ShortcutsIpcDeps {
   getMainWindow: () => BrowserWindow | null | undefined
-  getToolWindow?: () => BrowserWindow | null | undefined
   hideMainWindow: () => void
   ipcMain: IpcMain
   rememberLog?: (chunk: string) => void
@@ -46,7 +45,6 @@ function broadcastShortcutsChanged(state: DesktopShortcutsState): void {
   }
 
   sendToWindow(deps.getMainWindow(), IPC.event.shortcutsChanged, state)
-  sendToWindow(deps.getToolWindow?.(), IPC.event.shortcutsChanged, state)
 }
 
 function sendToMainWindow<C extends IpcEventChannel>(channel: C, ...payload: IpcEventContract[C]): void {

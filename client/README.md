@@ -53,11 +53,10 @@ client/
 │   ├── 3d/                # 3D 渲染模块（Three.js 引擎、骨骼装配、clip 动作系统与物理倾角）
 │   ├── chat/              # 对话模块（贴身浮层、消息流、会话参数调优、上下文进度条、会话抽屉）
 │   ├── onboarding/        # 引导模块（破蛋阶段、问卷流、激活与网关启动流水线）
-│   ├── setting/           # 设置模块（应用设置窗口 + 伙伴专属设置面板与微调）
+│   ├── setting/           # 设置模块（应用层 + 伙伴层共用 13 个 tab 的设置面板）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点
-│   ├── sprite-entry.tsx   # 精灵窗口入口
-│   └── setting-entry.tsx  # 设置窗口入口
+│   └── sprite-entry.tsx   # 精灵窗口入口（设置面板在此内挂载）
 ├── scripts/               # 构建/测试钩子
 └── assets/                # icon 与 wasm 资源
 ```
@@ -73,19 +72,19 @@ client/
 | `setting/settings` ↔ `companion`               | ✗（系统全局设置与桌宠状态机互不耦合） |
 | `shared` → 任何                                | ✗    |
 
-ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/setting-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/setting`、`@/chat`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
+ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/setting`、`@/chat`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
 
 ## 4. 关键设计决策
 
 - **preload 必须保持 CJS（即便主进程已迁 ESM）**：沙盒 preload 由运行时虚拟机执行脚本，不按 ESM 解析——输出含 import 语句即抛语法错，渲染桥的全局对象变 `undefined`，根组件的兜底页把整棵子树（含激活码录入页）一起埋掉。打包分两条流水线：主进程入口走 ESM，preload 走 CJS、扩展名 `.cjs`。**不要**把 preload 重新合成 ESM——沙盒层限制绕不过模块解析。
 - **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零 JS 涂色、零组件重渲染；色值权威全在 CSS，TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名与预览色板。新增控件进 panel kit，不新增硬编码色值。
-- **主题切换入口仅工具窗，夜色与日色液态玻璃**：用户在工具窗设置「外观」页切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；工具窗背景色随主题更新（日色 `#f8f7f5`、夜色 `#0e0f14`），避免浅色模式黑底穿透。样式库 `:root` 首帧直出夜色变量，加载不闪烁。
+- **主题切换入口在设置面板「外观」tab，夜色与日色液态玻璃**：用户在设置面板（合并后）切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；样式库 `:root` 首帧直出夜色变量，加载不闪烁。
 - **液态玻璃表面与集成显卡降级**：以毛玻璃（24px 模糊）、0.6px 细描边、大圆角与低饱和强调色为视觉基座。低功耗与集成显卡环境下给根节点加 `.no-blur`，关闭高开销 backdrop-filter 并将表面不透明度提升至 0.94~0.96，避免集显掉帧。
-- **工具窗的 `data-role` 必须是 `tool`**：setting.html 打的角色属性是样式侧按窗口分流的键——精灵窗的透明规则只匹配 `data-role='sprite'`，工具窗的通知让位覆写（`--titlebar-height` 抬到面板头高度）只匹配 `data-role='tool'`。写成别的值会让通知栈压在面板头上。
+- **工具窗与伙伴设置已合并为单一设置面板**：13 个 tab 在 sprite 内的 FloatingPanel 承载（侧栏 nav），主进程在面板打开时把 sprite 窗口从 480×320 扩到 1000×700 容纳 960×640 面板，关闭时回到原 bounds。两条入口——右键菜单的「设置」项、聊天坞左下「设置」钮——都改走 `requestOpenDock('settings')`，通知 deep-link（音色失效）也复用同一收口。
 - **精灵窗口透明需要双重保证**：窗口级透明标志**加**渲染层 body 透明（由内嵌脚本在 head 解析时同步设置角色属性）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
 - **交互范围仅限可见矩形（透明窗口交互陷阱）**：Electron 的鼠标穿透是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，所有弹层与精灵实体把自身矩形注册到统一的交互区域登记处，由顶层常驻的鼠标捕获机制统一做命中测试与穿透切换。任何弹层都不能自行一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
 - **弹层交互契约**：面板头部统一接同一拖拽钩子（位移本地持久化、命中区域自动跟随）、打开入口统一经互斥收口——同一时刻最多一个面板在屏，避免弹层堆叠。
-- **工具窗与伙伴设置共用同一面板形态**：外壳是同一款面板头（图标 + 标题 + 关闭钮，头部即窗口拖拽区，见 `shared/panel` 的 PanelHeader），不绘制系统原生窗口控件——Win/Linux 不建 WCO、mac 隐藏红绿灯，关闭只走应用侧（关闭钮 / Esc，经关闭拦截器隐藏而非销毁）。窗口常驻置顶（floating 层，失焦不被其它应用盖住；mac 上精灵窗在更高的 screen-saver 层保持压在其上）。通知栈的顶部让位由 `--titlebar-height` 派生，工具窗经 `html[data-role='tool']` 覆写为面板头高度；工具窗主进程背景色随夜色/日色主题切换。
+- **设置面板共用同一面板形态**：外壳是同一款面板头（图标 + 标题 + 关闭钮，见 `shared/panel` 的 PanelHeader），不绘制系统原生窗口控件——Win/Linux 不建 WCO、mac 隐藏红绿灯，关闭只走应用侧（关闭钮 / Esc）。面板挂在 sprite 窗口内，常驻置顶（floating 层 / mac screen-saver 层）。
 - **激活码持久 + 会话 JWT 仅内存**：磁盘只持久化加密激活码 + 服务地址 + 用户；每次启动用激活码换取新的会话 JWT（含主动刷新机制）。为什么不持久会话 JWT：一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
 - **用户配置云端真源 + 本地镜像（config-sync 协调器）**：backend `user_settings` 为真源，`desktop-settings.json` 是镜像；`shared/lib/config-sync.ts` 挂在 runner-config-store 的写路径上（`setCloudSync` 委托），每次变更走 镜像原子写 → 推 Runner → 防抖 PUT `/api/config`。为什么按节白名单而不是整文件上云：本地文件含明文机密（terminal 节）与设备路径，白名单 + 节内本机键剔除（browser.profile_dir）把机密钉死在本机（PROTOCOL §5.3）；镜像带 sync.user_id 归属戳，换号残留按不信任处理（清空同步节、不上传），防止把 A 的编辑泄给 B。离线编辑照常写镜像，恢复后由水合的键级播种（本地有而云端无的键回传）自愈补传——多端为按保存 LWW、无合并，另一端的改动下次水合收敛。推理与对话/语音键（language/agent.* 等）无本地消费者，不入镜像、由设置页直连云端读写，与镜像键集天然不相交（PUT 只 upsert 传入键，见 PROTOCOL §2.4）。
 - **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../PROTOCOL.md)。

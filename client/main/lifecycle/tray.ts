@@ -21,7 +21,6 @@ interface TrayDeps {
     ensureBackendSession?: () => BackendSessionLike | null | undefined
     getMainWindow: () => BrowserWindow | null | undefined
     isQuitting?: boolean
-    showToolWindow: () => void
   }
   createWindow: () => void
   getAppIconPath: () => null | string

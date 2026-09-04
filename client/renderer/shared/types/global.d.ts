@@ -59,7 +59,7 @@ declare global {
       refreshSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:refresh']>
       logout: AsyncIpc<IpcInvokeContract['spiritagent:auth:logout']>
       getSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:get-session']>
-      showToolWindow: AsyncIpc<IpcInvokeContract['spiritagent:window:show-tool']>
+      setCompanionWindowExpanded: (expanded: boolean) => Promise<void>
       api: <T = unknown>(request: SpiritAgentApiRequest) => Promise<T>
       /** 把后端服务的二进制资产以 data URL 的形式取回(见 connection.cjs)。 */
       apiAsset: AsyncIpc<IpcInvokeContract['spiritagent:api:asset']>

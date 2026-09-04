@@ -33,6 +33,7 @@ import {
   $spriteState,
   $viewport,
   computeCompanionChatAnchor,
+  requestOpenDock,
   RESIZE_HANDLES,
   setSpriteState,
   useInteractiveRegion,
@@ -631,8 +632,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           <div className="w-full flex flex-col items-center pt-2 border-t border-line-hairline shrink-0">
             <button
               className="flex flex-col items-center gap-1 rounded-xl p-1.5 text-[10px] text-muted hover:text-strong hover:bg-fill-hover cursor-pointer transition w-full"
-              onClick={() => void window.spiritagent.showToolWindow()}
-              title="展开工作台与应用设置"
+              onClick={() => requestOpenDock('settings')}
+              title="打开设置"
               type="button"
             >
               <SlidersHorizontal className="size-3.5 text-accent" />
