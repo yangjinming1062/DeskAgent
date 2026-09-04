@@ -8,7 +8,7 @@ import { $clipOverride, $spriteAction, requestOpenDock, setSpriteState } from '@
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 
-import { handleDizzyInteraction, handleDragEndInteraction, handlePetInteraction } from '../interaction'
+import { handleDragEndInteraction, handlePetInteraction } from '../interaction'
 import {
   $edgeDockSide,
   $homePosition,
@@ -248,9 +248,6 @@ export function SpriteStage({
       onPetTick: (nx, ny) => {
         // 摸头粒子以爱心为主、花瓣偶尔混入（DESIGN §6.3 爱心 💖/🌸 同族）
         emitVfx(Math.random() < 0.35 ? 'petal' : 'heart', { nx, ny, count: 1 })
-      },
-      onShakeDizzy: () => {
-        handleDizzyInteraction()
       }
     })
   }
@@ -312,7 +309,7 @@ export function SpriteStage({
     const d = dragRef.current
 
     if (!d) {
-      gestureTrackerRef.current?.feedPointerMove(nx, ny, false, region)
+      gestureTrackerRef.current?.feedPointerMove(nx, ny, region)
 
       return
     }
@@ -333,7 +330,7 @@ export function SpriteStage({
     }
 
     if (d.moved) {
-      gestureTrackerRef.current?.feedPointerMove(nx, ny, true, region)
+      // 拖拽期间不再喂手势识别器：拖拽只做位置移动，不触发戳/摸头/眩晕反馈（DESIGN §6.3 / README §7 拖拽只走 onDragEnd 桶）。
 
       if (e.clientX < 0 || e.clientX > window.innerWidth || e.clientY < 0 || e.clientY > window.innerHeight) {
         probeDisplaySwitch()

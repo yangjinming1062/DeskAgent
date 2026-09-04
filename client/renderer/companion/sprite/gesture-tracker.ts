@@ -1,16 +1,16 @@
 /** Mesh2D 多手势识别器。
  *
  * 识别以下手势：
- * 1. head_pat（摸头）：光标在 head/face/front_hair 区域内横向往复滑动（500ms 内 ≥2 次转向）；
- * 2. rapid_shake（狂甩）：拖拽或光标高速剧烈往复摆动（触发眩晕 dizzy）；
- * 3. poke_streak（连戳激怒）：由 interaction.ts 结合连戳频次调度。
+ * 1. head_pat（摸头）：光标在 head/face/front_hair 区域内横向往复滑动（500ms 内 ≥2 次转向）。
+ *
+ * 注：拖拽与眩晕反馈互斥——拖拽只做位置移动（README §7），故 shake/dizzy
+ * 检测已移除；眩晕反馈的触发入口仅剩精灵状态机的 `handleDizzyInteraction`。
  */
 
 interface GestureCallbacks {
   onPetStart?: (nx: number, ny: number) => void
   onPetTick?: (nx: number, ny: number) => void
   onPetEnd?: () => void
-  onShakeDizzy?: () => void
 }
 
 interface PointerSample {
@@ -23,23 +23,16 @@ export class Mesh2DGestureTracker {
   private samples: PointerSample[] = []
   private isPetting = false
   private lastPetTickAt = 0
-  // pet 与 shake 是两个独立手势通道，各自维护方向与反转状态，避免互相污染：
-  // pet 用 position 阈值（dx > 0.015），shake 用 velocity 阈值（vx > 0.0018），
-  // 二者方向翻转检测条件不同，共享 lastDirX 会导致 shake 在 pet 结束后立刻把
-  // 残留方向当作"反转"误触发。
   private lastPetDirX = 0
   private reversalCount = 0
   private lastReversalAt = 0
-  private lastShakeDirX = 0
-  private shakeReversals = 0
-  private lastShakeReversalAt = 0
   private callbacks: GestureCallbacks
 
   constructor(callbacks: GestureCallbacks) {
     this.callbacks = callbacks
   }
 
-  public feedPointerMove(nx: number, ny: number, isDown: boolean, region?: string | null): void {
+  public feedPointerMove(nx: number, ny: number, region?: string | null): void {
     const now = performance.now()
     this.samples.push({ x: nx, y: ny, time: now })
 
@@ -54,10 +47,7 @@ export class Mesh2DGestureTracker {
 
     const prev = this.samples[this.samples.length - 2]!
     const dx = nx - prev.x
-    const dt = Math.max(1, now - prev.time)
-    const vx = dx / dt
 
-    // 1. 摸头手势判定（head / face / front_hair 区域）
     const isHeadRegion = region === 'head' || region === 'face' || region === 'front_hair'
 
     if (isHeadRegion && Math.abs(dx) > 0.015) {
@@ -89,29 +79,6 @@ export class Mesh2DGestureTracker {
     } else if (!isHeadRegion && this.isPetting) {
       this.endPetting()
     }
-
-    // 2. 高速剧烈狂甩判定（仅在按住拖拽时）
-    if (isDown && Math.abs(vx) > 0.0018) {
-      const currentDirX = dx > 0 ? 1 : -1
-
-      if (this.lastShakeDirX !== 0 && currentDirX !== this.lastShakeDirX) {
-        if (now - this.lastShakeReversalAt < 350) {
-          this.shakeReversals++
-        } else {
-          this.shakeReversals = 1
-        }
-
-        this.lastShakeReversalAt = now
-        this.lastShakeDirX = currentDirX
-
-        if (this.shakeReversals >= 4) {
-          this.shakeReversals = 0
-          this.callbacks.onShakeDizzy?.()
-        }
-      } else {
-        this.lastShakeDirX = currentDirX
-      }
-    }
   }
 
   public feedPointerUp(): void {
@@ -120,10 +87,8 @@ export class Mesh2DGestureTracker {
     }
 
     this.reversalCount = 0
-    this.shakeReversals = 0
     this.samples = []
     this.lastPetDirX = 0
-    this.lastShakeDirX = 0
   }
 
   public tick(now: number): void {
