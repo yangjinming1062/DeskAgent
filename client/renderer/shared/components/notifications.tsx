@@ -67,7 +67,7 @@ export function NotificationStack({ regionRef }: { regionRef?: Ref<HTMLDivElemen
 
   // 渲染到 <body>，z-index 高于 Radix 对话框层（overlay z-[120]、content z-[130]）。
   // 不做 portal 时，堆叠上下文留在 React 根子树内，body 级对话框 / overlay 的 portal
-  // 会盖在上面——所以在对话框打开时（或 OverlayView 页面上）触发的成功提示
+  // 会盖在上面——所以在对话框打开时（或任意设置面板上）触发的成功提示
   // 会不可见。titlebar-height 变量只在 app shell 作用域内存在，
   // 在 <body> 上挂载时退回到其常量值（34px）。
   return createPortal(

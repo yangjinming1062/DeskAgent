@@ -1,20 +1,20 @@
 import { atom, computed } from 'nanostores'
 
 import { $chatOpen } from '@/chat'
-import type { SettingsView } from '@/setting'
 import { log } from '@/shared/lib/log'
 import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
 
-export type DockKind = 'chat' | 'settings'
+// 精灵窗口的悬浮层集合：对话坞 + 三个平级独立设置面板（伙伴设置 / 换一身/形象 / 应用设置）。
+export type DockKind = 'chat' | 'companion-settings' | 'outfit' | 'app-settings'
 
 interface DockOpenRequest {
   kind: DockKind
-  view?: SettingsView
+  view?: string
 }
 
 export const $openDockRequest = atom<DockOpenRequest | null>(null)
 
-export function requestOpenDock(kind: DockKind, view?: SettingsView): void {
+export function requestOpenDock(kind: DockKind, view?: string): void {
   $openDockRequest.set({ kind, view })
 }
 

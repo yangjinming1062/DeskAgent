@@ -27,7 +27,17 @@ import {
   useGatewayBoot,
   useMainProcessListener
 } from '@/onboarding'
-import { CompanionSettings, setSettingsView, type SettingsView } from '@/setting'
+import {
+  AppSettingsPanel,
+  type AppSettingsView,
+  CompanionSettingsPanel,
+  type CompanionSettingsView,
+  OutfitPanel,
+  type OutfitView,
+  setAppSettingsView,
+  setCompanionSettingsView,
+  setOutfitView
+} from '@/setting'
 import { NotificationStack, useGatewayRequest } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -88,24 +98,34 @@ export function CompanionRoot(): React.JSX.Element {
   const glbLoadFailed = useStore($glbLoadFailed)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [activationOpen, setActivationOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [panel, setPanel] = useState<Exclude<DockKind, 'chat'> | null>(null)
   const hasHydratedRef = useRef(false)
   const { requestGateway } = useGatewayRequest()
 
   const chatOpen = useStore($chatOpen)
 
   // 精灵窗口的表面与 dock 互斥——打开一个就关掉其他。
-  const openDock = useCallback((kind: DockKind, settingsView?: SettingsView): void => {
-    if (kind === 'settings') {
-      if (settingsView) {
-        setSettingsView(settingsView)
-      }
-
-      closeChat()
-      setSettingsOpen(true)
-    } else {
-      setSettingsOpen(false)
+  const openDock = useCallback((kind: DockKind, view?: string): void => {
+    if (kind === 'chat') {
+      setPanel(null)
       $chatOpen.set(true)
+
+      return
+    }
+
+    closeChat()
+    setPanel(kind)
+
+    if (!view) {
+      return
+    }
+
+    if (kind === 'companion-settings') {
+      setCompanionSettingsView(view as CompanionSettingsView)
+    } else if (kind === 'outfit') {
+      setOutfitView(view as OutfitView)
+    } else if (kind === 'app-settings') {
+      setAppSettingsView(view as AppSettingsView)
     }
   }, [])
 
@@ -358,7 +378,10 @@ export function CompanionRoot(): React.JSX.Element {
         kind: 'warning',
         title: strings.notifications.voice.invalidTitle,
         message: strings.notifications.voice.invalidMessage(result.name),
-        action: { label: strings.notifications.voice.invalidAction, onClick: () => openDock('settings', 'voice') }
+        action: {
+          label: strings.notifications.voice.invalidAction,
+          onClick: () => openDock('companion-settings', 'voice')
+        }
       })
     })
   }, [lifecycle, gatewayState, requestGateway, openDock])
@@ -450,10 +473,12 @@ export function CompanionRoot(): React.JSX.Element {
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}
         onOpenChat={() => openChat()}
-        onOpenSettings={view => openDock('settings', view)}
+        onOpenDock={openDock}
       />
       {authed && chatOpen && <ChatDock onClose={handleCloseChat} />}
-      {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
+      {authed && panel === 'companion-settings' && <CompanionSettingsPanel onClose={() => setPanel(null)} />}
+      {authed && panel === 'outfit' && <OutfitPanel onClose={() => setPanel(null)} />}
+      {authed && panel === 'app-settings' && <AppSettingsPanel onClose={() => setPanel(null)} />}
       <ProactiveBubble />
       {authed && <MediaViewerOverlay />}
       <NotificationStack regionRef={notificationStackRef} />

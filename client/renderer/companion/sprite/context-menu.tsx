@@ -2,8 +2,8 @@ import { useStore } from '@nanostores/react'
 import { IconPower, IconVolume, IconVolumeOff } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef } from 'react'
 
+import type { DockKind } from '@/companion/companion-store'
 import { resetToHomePosition, setDefaultScale, setLocale } from '@/companion/spatial'
-import type { SettingsView } from '@/setting'
 import { Home, type IconComponent, KeyRound, MessageSquareText, Shirt, SlidersHorizontal } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
@@ -15,7 +15,7 @@ import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 interface ContextMenuProps {
   onOpenActivation?: () => void
   onOpenChat: () => void
-  onOpenSettings: (view?: SettingsView) => void
+  onOpenDock: (kind: DockKind, view?: string) => void
 }
 
 const MENU_ITEM_CLASS =
@@ -52,11 +52,7 @@ function MenuDivider(): React.JSX.Element {
 // 精灵右键菜单（瞬时浮层·轻玻璃档）：始终挂载、visibility 切换（避免 mount/unmount DOM），
 // 状态走 $contextMenuPos 原子，宿主 CompanionRoot 不参与。页面切换由面板内
 // 侧栏承担，菜单只负责开入口——与应用设置菜单形态一致。
-export function SpriteContextMenu({
-  onOpenActivation,
-  onOpenChat,
-  onOpenSettings
-}: ContextMenuProps): React.JSX.Element {
+export function SpriteContextMenu({ onOpenActivation, onOpenChat, onOpenDock }: ContextMenuProps): React.JSX.Element {
   const auth = useStore($auth)
   const pos = useStore($contextMenuPos)
   const effectiveTier = useStore($effectiveTier)
@@ -181,14 +177,14 @@ export function SpriteContextMenu({
             />
             <MenuItem icon={Home} label="去休息" onClick={handleRest} />
             <MenuDivider />
-            <MenuItem icon={Shirt} label="换一身 / 形象" onClick={() => onOpenSettings('wardrobe')} />
-            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenSettings()} />
+            <MenuItem icon={Shirt} label="换一身 / 形象" onClick={() => onOpenDock('outfit', 'wardrobe')} />
+            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenDock('app-settings')} />
             <MenuItem icon={IconPower} label="退出" onClick={handleQuit} />
           </>
         ) : (
           <>
             <MenuItem icon={KeyRound} label="激活 / 登录" onClick={() => onOpenActivation?.()} />
-            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenSettings()} />
+            <MenuItem icon={SlidersHorizontal} label="设置" onClick={() => onOpenDock('app-settings')} />
             <MenuDivider />
             <MenuItem icon={IconPower} label="退出" onClick={handleQuit} />
           </>

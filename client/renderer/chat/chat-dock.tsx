@@ -600,7 +600,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
               <button
                 aria-label="伙伴设置"
                 className={BTN_ICON}
-                onClick={() => requestOpenDock('settings')}
+                onClick={() => requestOpenDock('companion-settings')}
                 title="伙伴设置"
                 type="button"
               >
