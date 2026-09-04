@@ -15,7 +15,6 @@ export interface PersonaDefinition {
   relationship?: string
   biological_type?: string
   gender?: string
-  // appearance：外貌特征（脸 / 体型 / 标志性细节）。
   appearance?: string
 }
 

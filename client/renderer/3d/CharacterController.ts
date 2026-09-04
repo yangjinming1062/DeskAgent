@@ -385,7 +385,6 @@ export class CharacterController {
     this.breathPhase += delta
     this.mixer?.update(delta)
 
-    // 平滑衰减拖拽倾角
     this.dragTilt.x = THREE.MathUtils.lerp(this.dragTilt.x, 0, 0.1)
     this.dragTilt.z = THREE.MathUtils.lerp(this.dragTilt.z, 0, 0.1)
 
@@ -469,9 +468,7 @@ export class CharacterController {
     }
   }
 
-  // ── Procedural fallback character ───────────────────────────
-  // 适用场景：onboarding 引导期（尚无形象资产），以及 2D/3D 资产生成中
-  // 或彻底不可用时的兜底——画面永不空白（不变量 #10）。
+  // 兜底形象：onboarding 引导期（尚无形象资产）以及 2D/3D 资产生成中或彻底不可用时撑住画面（不变量 #10）。
 
   private createProcedural(scene: THREE.Scene): void {
     this.isProcedural = true
@@ -571,7 +568,6 @@ export class CharacterController {
     } else {
       bodyMat.emissiveIntensity = 0.15 + 0.4 * breath
 
-      // 12s periodic crack opacity flash
       if (this.proc.crackMats && this.proc.crackMats.length > 0) {
         const cycle = t % 12
         const activeIdx = Math.floor(t / 12) % this.proc.crackMats.length
@@ -595,7 +591,6 @@ export class CharacterController {
     this.proc.mouth.scale.y = 1
     this.proc.mouth.scale.x = 1
 
-    // 复用同一个 baseY 写眼睛基线；具体状态再覆盖。
     const baseEyeY = 1
 
     switch (this.currentState) {

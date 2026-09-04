@@ -616,7 +616,7 @@ export class PuppetRuntime {
     const hairStrands = rig.layers.some(l => /hair/.test(l.name) && (l.strands?.length ?? 0) > 0)
     const need = ['neck', 'front hair', 'back hair', 'topwear', 'mouth_open', 'mouth_close']
 
-    return need.every(n => bns.has(n)) && A.eyeL && A.eyeR && A.mouth && hairStrands ? 'semantic' : 'grouped'
+    return need.every(n => bns.has(n)) && A.eyeL && A.eyeR && hairStrands ? 'semantic' : 'grouped'
   }
 
   /** see-through 产出 `-l/-r` 后缀层名，绕过 vendor SLOTS 匹配（side/fade/眼锚点缺失，
@@ -851,7 +851,7 @@ export class PuppetRuntime {
       const sig = spacing * 0.6
       sw = new Float32Array(nv * nS)
       su = new Float32Array(nv)
-      spr = S.map((s, i) => ({
+      spr = S.map((_s, i) => ({
         nodes: Array.from({ length: HAIR_CHAIN }, () => ({ x: 0, v: 0 })),
         phase: i * 1.37 + Lr.z
       }))

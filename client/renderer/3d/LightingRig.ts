@@ -20,11 +20,8 @@ export class LightingRig {
   // 因此 target 句柄因渲染器类型而异。
   private readonly envTexture: THREE.Texture
   private readonly disposeEnvTarget: () => void
-  private readonly scene: THREE.Scene
 
   constructor(scene: THREE.Scene, renderer: RendererHost, enableShadows: boolean) {
-    this.scene = scene
-
     // PMREM 环境贴图为 PBR 材质提供真实的环境反射，
     // 无需额外的 HDRI 文件。
     if (renderer instanceof WebGPURenderer) {

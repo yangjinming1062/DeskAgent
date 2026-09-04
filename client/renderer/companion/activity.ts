@@ -236,11 +236,8 @@ function maybePushTierOverride(): void {
   pushEffectiveDisturbanceTier(desired)
 }
 
-// Runner 的活动快照聚合。单个 ``system.snapshot`` 往返替代四次
-// 独立的 ``system.*`` 探测——数据结构相同，
-// 但只需一次 IPC + WS 消息，而非四次。当底层 OS API 缺失时，
-// 返回与各独立工具相同的探针安全默认值（idle=-1.0, locked=false,
-// focused={}, fullscreen=false）。
+// Runner 的活动快照聚合。一次 ``system.snapshot`` 往返替代四次独立 ``system.*`` 探测，
+// 把 4 条 IPC 折叠成 1 条；探针失败时返回与各独立工具相同的默认值。
 interface SystemSnapshot {
   idle_seconds?: number
   locked?: boolean

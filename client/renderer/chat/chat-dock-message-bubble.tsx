@@ -242,7 +242,7 @@ function MessageBubbleWithBody({
       </div>
 
       {/* hover 区承载 Fork / Undo；Play 属内容播放范畴，保持在气泡下方常驻。pointer-events-auto 防止父级 pointer-events-none 把按钮吃掉。 */}
-      {(canFork || canUndo) && (
+      {canFork && (
         <div
           className="pointer-events-auto absolute -top-3 right-2 z-10 flex items-center gap-1
                      rounded-md border border-line-standard bg-surface-panel/90 px-1.5 py-1
@@ -250,7 +250,7 @@ function MessageBubbleWithBody({
                      transition-opacity duration-150
                      group-hover/message:opacity-100"
         >
-          {canFork && <ChatMessageForkButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
+          <ChatMessageForkButton messageId={message.id} sourceMessageId={message.backendMessageId!} />
           {canUndo && <ChatMessageUndoButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
         </div>
       )}

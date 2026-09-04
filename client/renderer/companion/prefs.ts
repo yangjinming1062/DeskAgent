@@ -28,8 +28,6 @@ export function setResponseMode(mode: ResponseMode): void {
   reportCloud('companion.response_mode', mode)
 }
 
-// 由 localStorage 支撑的布尔开关——供伙伴设置里的 LLM 驱动反应开关使用。
-// 每个开关的持久化都由工厂函数原子创建，以后新增只需一行。
 interface BooleanPref {
   $atom: WritableAtom<boolean>
   set: (value: boolean) => void

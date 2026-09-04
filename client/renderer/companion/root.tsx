@@ -116,9 +116,6 @@ export function CompanionRoot(): React.JSX.Element {
   }, [openDock])
 
   const validityCheckedRef = useRef(false)
-  // 标记一次点击精灵后触发了登录流程的「点击」——用于区分全新登录
-  // 与带缓存会话的启动（后者需要再点一下才会打开向导）。
-  const pendingOnboardingAutoOpenRef = useRef(false)
 
   useEffect(() => {
     void hydrateAuth()
@@ -187,13 +184,6 @@ export function CompanionRoot(): React.JSX.Element {
   useEffect(() => {
     if (auth.kind === 'unauthenticated') {
       setActivationOpen(true)
-    }
-  }, [auth.kind])
-
-  // 登出时清掉，保证下次登录从干净状态开始。
-  useEffect(() => {
-    if (auth.kind === 'unauthenticated') {
-      pendingOnboardingAutoOpenRef.current = false
     }
   }, [auth.kind])
 
@@ -383,7 +373,6 @@ export function CompanionRoot(): React.JSX.Element {
     }
 
     // 鉴权前：点击打开伙伴窗口内的激活浮层。
-    pendingOnboardingAutoOpenRef.current = true
     setActivationOpen(true)
   }
 

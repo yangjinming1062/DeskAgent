@@ -11,7 +11,6 @@ import {
 import { $gateway } from '@/shared/store/gateway'
 import type { ChatAttachment, ChatMediaItem, SessionMessage, SessionRuntimeInfo } from '@/shared/types/spiritagent'
 
-// 消息身份与稳定元数据，挂载于 $chatMessageList。
 export interface ChatMessageListItem {
   id: string
   role: 'user' | 'assistant'
@@ -20,7 +19,6 @@ export interface ChatMessageListItem {
   backendMessageId?: number
 }
 
-// 消息可变主体，按 id 键入 $chatMessageBodies。
 export interface ChatMessageBody {
   text: string
   streaming?: boolean
@@ -115,7 +113,7 @@ export function resetSessionContextUsage(contextLimit?: number): void {
   })
 }
 
-// 待发送附件：支持图片、视频、普通文件、文件夹 4 种类型
+// 待发送附件（图片 / 视频 / 文件 / 文件夹四种）
 export type PendingAttachment =
   | { type: 'image'; value: string; fileName?: string }
   | {
@@ -459,7 +457,6 @@ export function cancelPendingFlush(): void {
   }
 }
 
-// 冲刷排队的提示批次并作为合并回合提交。
 export function submitPendingBatch(): void {
   if ($chatTurnInFlight.get()) {
     return
@@ -519,7 +516,6 @@ export function submitPendingBatch(): void {
   void submitWithRetry()
 }
 
-// 确保存在活跃的流式助手气泡。
 export function beginAssistantMessage(): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]

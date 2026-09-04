@@ -5,8 +5,6 @@ import { speakScripted } from '../tts'
 import manifestJson from './manifest.json'
 
 interface ManifestShape {
-  language: string
-  format: 'mp3'
   buckets: readonly ReactionBucket[]
   files: readonly { id: string; tags: readonly string[]; bucket: ReactionBucket; text: string }[]
 }

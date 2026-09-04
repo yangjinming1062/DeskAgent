@@ -44,12 +44,7 @@ import { PuppetCanvas, type PuppetCanvasHandle } from './PuppetCanvas'
 const REDUCED_MOTION_QUERY =
   typeof window !== 'undefined' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
 
-// ---------------------------------------------------------------------------
 // hitmap：当前帧部件网格精确命中 → mesh2d 交互区域
-// ---------------------------------------------------------------------------
-
-// 部件规范层名（bn，vendor SLOTS 全集）→ 交互区域（区域白名单见 PROTOCOL §1.4；
-// gesture-tracker 与 interaction.ts 消费同名区域）。未列出的部件按 body。
 const PART_REGION: Record<string, string> = {
   face: 'face',
   eyewhite: 'face',
@@ -81,10 +76,7 @@ const PART_REGION: Record<string, string> = {
   legwear: 'skirt'
 }
 
-// ---------------------------------------------------------------------------
 // 情绪 → 面部参数（只写 target 通道；眨眼自动化用 min 合成不会顶掉 squint）
-// ---------------------------------------------------------------------------
-
 type FaceParams = Partial<
   Pick<
     PuppetRuntime['target'],
@@ -154,9 +146,7 @@ function applyEmotion(rt: PuppetRuntime, emotion: string | null): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // 动作 → 定时包络（通用语义子集；未注册键忽略）
-// ---------------------------------------------------------------------------
 
 interface ActionEnvelope {
   durMs: number
@@ -485,7 +475,6 @@ export function PuppetStage(): React.JSX.Element {
     }
   }, [puppet.psdUrl, puppet.contentHash])
 
-  // 驱动层：视线 / TTS / 情绪 / 动作 / hover 冲量 / 动作包络推进
   useEffect(() => {
     let raf = 0
 

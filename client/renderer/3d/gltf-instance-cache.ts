@@ -62,7 +62,7 @@ export function disposeThreeResources(root: THREE.Object3D): void {
   }
 
   const disposeMaterial = (material: THREE.Material): void => {
-    if (!material || disposedMaterials.has(material)) {
+    if (disposedMaterials.has(material)) {
       return
     }
 
@@ -117,7 +117,7 @@ export function disposeThreeResources(root: THREE.Object3D): void {
         }
       }
 
-      if (child instanceof THREE.SkinnedMesh && child.skeleton) {
+      if (child instanceof THREE.SkinnedMesh) {
         try {
           child.skeleton.dispose()
         } catch {}

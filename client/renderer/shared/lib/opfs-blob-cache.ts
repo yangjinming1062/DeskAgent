@@ -362,7 +362,6 @@ export class OpfsBlobCache {
           // 三道闸门：clearEpoch 未变 + authed + 未被 abort，避免过期 fetch 复活刚清空的 OPFS
           if (
             contentHash &&
-            buffer &&
             currentClearEpoch() === fetchEpoch &&
             $auth.get().kind === 'authenticated' &&
             !controller.signal.aborted

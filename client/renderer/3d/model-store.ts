@@ -27,7 +27,6 @@ interface CompanionExpression {
   id: number
   name: string
   label: string
-  valence: string
   description: string
   icon?: string | null
   tags: string[]

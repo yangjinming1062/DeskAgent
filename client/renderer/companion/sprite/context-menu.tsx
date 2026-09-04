@@ -92,8 +92,8 @@ export function SpriteContextMenu({
     }
   }, [visible])
 
-  const left = visible && pos ? Math.min(pos.x, window.innerWidth - 200) : 0
-  const top = visible && pos ? Math.min(pos.y, window.innerHeight - 220) : 0
+  const left = visible ? Math.min(pos.x, window.innerWidth - 200) : 0
+  const top = visible ? Math.min(pos.y, window.innerHeight - 220) : 0
 
   return (
     <div

@@ -28,7 +28,6 @@ export async function pickAvatarImage(title: string): Promise<{ image: PickedIma
       return null
     }
 
-    // 后端按 ';' 切分 mime，末尾的 ";base64" 不会带来副作用。
     return base64.length > MAX_IMAGE_BASE64
       ? { error: '这张图太大了，换张小一点的吧' }
       : { image: { base64, contentType: dataUrl.slice(5, comma), previewUrl: dataUrl } }
@@ -90,7 +89,7 @@ export async function loadDraftRefImage(): Promise<PickedImage | null> {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const req = tx.objectStore(STORE_NAME).get(REF_IMAGE_KEY)
 
-      req.onsuccess = () => resolve((req.result as PickedImage) || null)
+      req.onsuccess = () => resolve((req.result as PickedImage | undefined) ?? null)
       req.onerror = () => resolve(null)
     })
   } catch {

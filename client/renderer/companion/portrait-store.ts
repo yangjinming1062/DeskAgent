@@ -20,7 +20,7 @@ interface PortraitUrls {
   id?: number | null
 }
 
-// 把新拿到的 asset_url 与正面/背面种子解析成 data URL。asset_url 写入全局 $portraitUrl；
+// 把新拿到的 asset_url 与正面/背面种子解析成 data URL；asset_url 写入全局 $portraitUrl。
 export async function applyPortrait(
   urls: PortraitUrls
 ): Promise<{ avatar: string | null; seedBack: string | null; seedFront: string | null }> {

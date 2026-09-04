@@ -226,10 +226,6 @@ export class Engine {
     const w = Math.max(1, Math.round(canvasW / HITMAP_SCALE))
     const h = Math.max(1, Math.round(canvasH / HITMAP_SCALE))
 
-    if (this.disposed) {
-      return null
-    }
-
     if (!this.hitRT || this.hitRT.width !== w || this.hitRT.height !== h) {
       this.hitRT?.dispose()
       // 经典档位的异步 read 需要 WebGLRenderTarget；节点档位接受核心 RenderTarget。
@@ -239,7 +235,7 @@ export class Engine {
 
     const rt = this.hitRT
 
-    if (this.disposed || !rt) {
+    if (!rt) {
       return null
     }
 
@@ -247,20 +243,12 @@ export class Engine {
       // 参数转换收窄渲染器联合类型——节点档位接受 RenderTarget 父类型，
       // 经典档位接受 WebGLRenderTarget，两档位在此按 kind 各自构造。
       try {
-        if (this.disposed) {
-          return null
-        }
-
         this.renderer.setRenderTarget(rt as THREE.WebGLRenderTarget)
         this.renderer.render(this.scene, this.camera)
       } finally {
         if (!this.disposed) {
           this.renderer.setRenderTarget(null)
         }
-      }
-
-      if (this.disposed) {
-        return null
       }
 
       const data =
@@ -317,10 +305,6 @@ export class Engine {
     const gl = glRenderer.getContext() as WebGL2RenderingContext
 
     if (!(gl instanceof WebGL2RenderingContext)) {
-      if (this.disposed) {
-        return null
-      }
-
       const out = new Uint8Array(width * height * 4)
       glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
 
@@ -330,10 +314,6 @@ export class Engine {
     const pbo = gl.createBuffer()
 
     if (!pbo) {
-      if (this.disposed) {
-        return null
-      }
-
       const out = new Uint8Array(width * height * 4)
       glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
 
@@ -344,12 +324,8 @@ export class Engine {
     const glProps = glRenderer.properties.get(rt) as { __webglFramebuffer?: WebGLFramebuffer } | undefined
     const fb = glProps?.__webglFramebuffer
 
-    if (!fb || this.disposed) {
+    if (!fb) {
       gl.deleteBuffer(pbo)
-
-      if (this.disposed) {
-        return null
-      }
 
       const out = new Uint8Array(size)
       glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
@@ -368,10 +344,6 @@ export class Engine {
 
     if (!sync) {
       gl.deleteBuffer(pbo)
-
-      if (this.disposed) {
-        return null
-      }
 
       const out = new Uint8Array(size)
       glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)

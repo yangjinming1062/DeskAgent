@@ -9,8 +9,6 @@ export interface ThemeDefinition {
   preview: { chrome: string; panel: string; card: string; accent: string }
 }
 
-export const DEFAULT_THEME_ID: SpiritAgentUiTheme = 'night'
-
 export const THEMES: readonly ThemeDefinition[] = [
   {
     id: 'night',

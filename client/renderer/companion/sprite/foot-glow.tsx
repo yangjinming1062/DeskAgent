@@ -4,9 +4,9 @@ import type React from 'react'
 
 import { $spriteState } from '@/companion/companion-store'
 
-export type FootGlowPulse = 'completed' | 'failed' | null
+type FootGlowPulse = 'completed' | 'failed' | null
 
-export const $footGlowPulse = atom<FootGlowPulse>(null)
+const $footGlowPulse = atom<FootGlowPulse>(null)
 
 let pulseTimer: ReturnType<typeof setTimeout> | null = null
 

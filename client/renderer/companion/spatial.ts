@@ -137,7 +137,7 @@ function contentBox(scale = $spatialScale.get()): { left: number; top: number; r
   }
 }
 
-export function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
+function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
   const c = contentBox()
   const vw = window.innerWidth
   const vh = window.innerHeight
@@ -235,50 +235,6 @@ export function computeOverlayAnchorBesideSprite(opts: {
   )
 
   return { left, top }
-}
-
-/** 肩线取立绘顶部向下 22%；用默认比例内容盒，避免情绪瞬时缩放带动卡片。 */
-export function computeCompanionChatAnchor(opts: {
-  pos: { x: number; y: number }
-  cardW: number
-  cardH: number
-  vw: number
-  vh: number
-  gap?: number
-}): { left: number; top: number; side: 'left' | 'right' } {
-  const { pos, cardW, cardH, vw, vh, gap = 16 } = opts
-  const c = contentBox($defaultScale.get())
-  const charLeft = pos.x + c.left
-  const charRight = pos.x + c.right
-  const charTop = pos.y + c.top
-  const charHeight = Math.max(100, c.bottom - c.top)
-  const charCenterX = (charLeft + charRight) / 2
-
-  const shoulderTop = charTop + charHeight * 0.22
-
-  const fitsLeft = charLeft - gap - cardW >= 8
-  const fitsRight = charRight + gap + cardW <= vw - 8
-
-  const preferLeft = charCenterX > vw / 2
-
-  const side: 'left' | 'right' = preferLeft
-    ? fitsLeft
-      ? 'left'
-      : fitsRight
-        ? 'right'
-        : 'left'
-    : fitsRight
-      ? 'right'
-      : fitsLeft
-        ? 'left'
-        : 'right'
-
-  const targetLeft = side === 'left' ? charLeft - gap - cardW : charRight + gap
-
-  const left = clamp(targetLeft, 8, Math.max(8, vw - cardW - 8))
-  const top = clamp(shoulderTop, 8, Math.max(8, vh - cardH - 8))
-
-  return { left, top, side }
 }
 
 export function establishChatDockAnchor(size: { width: number; height: number }, gap = 14): ChatDockAnchor {
@@ -679,7 +635,7 @@ function roamStep(): void {
   })
 }
 
-export function stopRoam(): void {
+function stopRoam(): void {
   roaming = false
 
   if (roamTimer !== null) {

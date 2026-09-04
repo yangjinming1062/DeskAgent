@@ -129,12 +129,7 @@ interface PersistedEnumResult<T extends string> {
   get: () => T
 }
 
-/** Persisted Atom/Enum 共享骨架：把「注册 key + 加载 + 写时持久化 + 登出自动重置」四件套折叠到一处。
- * 外部保留两条入口（definePersistedAtom / definePersistedEnum）只为类型签名清晰；行为不再分叉。
- *
- * 设计意图：「registerStorageClearHandler(reset) 把内存 atom + localStorage 一起清」；
- * preserveOnLogout=true 的 key 跳过该注册——是为了跨登出保留偏好（窗口尺寸、面板偏移等），
- * 但仍保留在注册 key 清单内，applyAuthBroadcast 那条清空路径会跳过它们。
+/** preserveOnLogout=true 的 key 不挂 clear handler：跨登出保留偏好（窗口尺寸、面板偏移等）。
  * 想做「登出时清缓存但保留偏好」的复合语义：另起一个 key，不要复用本 helper。 */
 function createPersisted<T>(opts: {
   key: string

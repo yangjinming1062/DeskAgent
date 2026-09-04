@@ -177,7 +177,6 @@ export function endAutoVoiceTurn(): void {
 
 async function pump(run: AutoVoiceRun): Promise<void> {
   while (currentRun === run) {
-    // 门控检查：锁屏状态中止后续播放
     if ($screenLocked.get()) {
       break
     }
@@ -218,12 +217,10 @@ async function pump(run: AutoVoiceRun): Promise<void> {
     }
 
     if (!dataUrl) {
-      // 合成失败降级跳过
       continue
     }
 
-    // 准备起播前，若队列还有待播句且尚未预取，发起下一句前瞻合成
-    if (run.pending.length > 0 && !run.prefetched) {
+    if (run.pending.length > 0) {
       const nextText = run.pending[0]
       run.prefetched = {
         text: nextText,
@@ -237,7 +234,6 @@ async function pump(run: AutoVoiceRun): Promise<void> {
     run.playing = false
 
     if (currentRun !== run || !ok) {
-      // 被外部抢占、中止或播放异常
       break
     }
   }

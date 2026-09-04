@@ -88,8 +88,8 @@ export function createSkeletonViz(root: THREE.Object3D): SkeletonViz | null {
   const bones: THREE.Bone[] = []
 
   root.traverse(obj => {
-    if ((obj as THREE.Bone).isBone) {
-      bones.push(obj as THREE.Bone)
+    if (obj instanceof THREE.Bone) {
+      bones.push(obj)
     }
   })
 

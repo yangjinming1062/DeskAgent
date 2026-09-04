@@ -280,7 +280,7 @@ export function Companion3D(): React.JSX.Element {
 
         // 用刚加载的角色立刻预热实时轮廓命中图，并顺手发布可见内容包围盒。
         void engine.silhouetteHitmap().then(map => {
-          if (!cancelled && map) {
+          if (map) {
             $spriteContentRect.set(alphaMapContentRect(map))
             probeInteractiveRegions()
           }

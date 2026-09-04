@@ -46,11 +46,7 @@ export function MorphInspector(): React.JSX.Element {
 
         break
 
-      case 'neutral':
-
       default:
-        resetAllMorphs()
-
         break
     }
   }
