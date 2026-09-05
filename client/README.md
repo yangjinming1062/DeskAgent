@@ -89,7 +89,7 @@ ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`
 - **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零 JS 涂色、零组件重渲染；色值权威全在 CSS，TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名与预览色板。新增控件进 panel kit，不新增硬编码色值。
 - **主题切换入口在「生活空间」的「外观设置」，夜色与日色液态玻璃**：用户在此切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；样式库 `:root` 首帧直出夜色变量，加载不闪烁。
 - **液态玻璃表面与集成显卡降级**：以毛玻璃（24px 模糊）、0.6px 细描边、大圆角与低饱和强调色为视觉基座。低功耗与集成显卡环境下给根节点加 `.no-blur`，关闭高开销 backdrop-filter 并将表面不透明度提升至 0.94~0.96，避免集显掉帧。
-- **无边框透明窗口与自定义控制契约（消除系统原生白标题栏）**：工作台与生活空间窗口统一采用无边框透明外壳（`frame: false`, `transparent: true`, `backgroundColor: '#00000000'`），Windows 下启用原生亚克力材质（`backgroundMaterial: 'acrylic'`）。顶栏内置原生平替样式的轻量窗口控制按钮（最小化、最大化/还原、关闭），通过强类型 IPC 通道（`spiritagent:surface:minimize`、`spiritagent:surface:maximize`、`spiritagent:surface:is-maximized`）由主进程统一调度，支持顶栏双击最大化与拖拽。
+- **无边框透明窗口与自定义控制契约（消除系统原生白标题栏）**：工作台与生活空间窗口统一采用无边框真透明外壳（`frame: false`, `transparent: true`, `backgroundColor: '#00000000'`），并关闭系统圆角与原生阴影。液态玻璃由 CSS 圆角、细描边、内高光与毛玻璃绘制；系统亚克力按窗口矩形铺底，会在大圆角四角漏出灰底，也会盖住工作台伴工外侧的桌面。顶栏内置原生平替样式的轻量窗口控制按钮（最小化、最大化/还原、关闭），通过强类型 IPC 通道（`spiritagent:surface:minimize`、`spiritagent:surface:maximize`、`spiritagent:surface:is-maximized`）由主进程统一调度，支持顶栏双击最大化与拖拽。
 - **双入口互斥开窗与统一表面调度（`requestOpenSurface`）**：主进程集中裁决互斥开窗，生活空间与工作台严格二选一，同一时刻最多存在一个入口窗口；原设置面板按场景分别重新挂载至生活空间设置（生活向表单与房间管理）与工作台抽屉（工位环境、Runner、Skills、Toolsets）；旧 `requestOpenDock` 全面收敛为 `requestOpenSurface`。
 - **房间图取色与生活空间对比度保障**：从确认半身像提取主题强调色（`persona-skin`），房间图主色仅影响背景暗调遮罩（`--persona-room-overlay`）；生活空间右栏毛玻璃面板保证实底厚度，确保在亮色房间背景上文字对比度达标。工作台不铺房间图、不消费立绘底图，只使用同一套强调色并提高对比。换装成功后强调色随新衣过渡。提取色过脏时向当前昼夜默认强调色回退混合。
 - **精灵窗口透明需要双重保证**：窗口级透明标志**加**渲染层 body 透明（由内嵌脚本在 head 解析时同步设置角色属性）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
@@ -133,3 +133,4 @@ ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`
 | **WebGPU 透明合成依赖 premultiplied** | 透明画布按预乘 alpha 配置；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
 | **非默认主题冷启动一帧石墨色**        | 工具窗建窗时按配置镜像里的主题设背景色；渲染层 localStorage 与镜像若短暂不一致，仍可能闪一帧。精灵窗保持透明，不受此限 |
 | **液态玻璃的 backdrop-blur 成本**     | 透明置顶精灵窗内 blur 采样桌面合成，成本随面板面积与拖拽上升；blur 只下放在 surface-panel/chrome 两级。集成显卡或系统要求降低透明度时根节点加 `.no-blur`，提高表面 alpha 并去掉 blur |
+| **入口窗玻璃不采样桌面**              | 入口窗毛玻璃只模糊窗内内容（房间图、内层卡片）；圆角外是真透明像素，露出桌面 |

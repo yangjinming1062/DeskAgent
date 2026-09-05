@@ -1,33 +1,67 @@
 /* ── 生活空间超高质感液态玻璃（Liquid Glass）样式层 ── */
 
+.windowFrame {
+  background: transparent;
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 16px;
+  width: 100vw;
+}
+
+html[data-maximized='true'] .windowFrame {
+  padding: 0;
+}
+
 .shell {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 20px;
   box-shadow:
-    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.2),
-    0 24px 64px -12px rgba(0, 0, 0, 0.7);
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 18px 48px -8px rgba(0, 0, 0, 0.55);
   color: var(--ui-text-strong);
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   position: relative;
-  width: 100vw;
+  width: 100%;
+}
+
+.shell::before {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 22%, transparent 48%);
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+html[data-theme='day'] .shell {
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 40px -8px rgba(0, 0, 0, 0.12);
 }
 
 html[data-maximized='true'] .shell {
   border: none;
   border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-maximized='true'] .shell::before {
+  display: none;
 }
 
 .titlebar {
   align-items: center;
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  background: rgba(14, 16, 22, 0.5);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(32px) saturate(190%);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  background: rgba(12, 14, 20, 0.34);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   display: flex;
   flex-shrink: 0;
   gap: 12px;
@@ -40,9 +74,9 @@ html[data-maximized='true'] .shell {
 }
 
 html[data-theme='day'] .titlebar {
-  background: rgba(250, 248, 245, 0.7);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  background: rgba(252, 250, 248, 0.42);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .titleArea {
@@ -137,7 +171,7 @@ html[data-theme='day'] .workbenchButton:hover {
 .rail {
   backdrop-filter: blur(32px) saturate(190%) contrast(102%);
   -webkit-backdrop-filter: blur(32px) saturate(190%) contrast(102%);
-  background: rgba(18, 20, 28, 0.55);
+  background: rgba(18, 20, 28, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px;
   box-shadow:
@@ -336,7 +370,7 @@ html[data-theme='day'] .navItemActive {
 .stage {
   backdrop-filter: blur(28px) saturate(185%);
   -webkit-backdrop-filter: blur(28px) saturate(185%);
-  background: rgba(16, 18, 26, 0.5);
+  background: rgba(16, 18, 26, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 20px;
   box-shadow:
@@ -407,4 +441,31 @@ html[data-theme='day'] .chatInputWrapper {
   font-size: 13px;
   margin: 0;
   opacity: 0.7;
+}
+
+html[class~='no-blur'] .titlebar,
+html[class~='no-blur'] .rail,
+html[class~='no-blur'] .stage,
+html[class~='no-blur'] .chatInputWrapper,
+html[class~='no-blur'] .workbenchButton {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[class~='no-blur'] .titlebar {
+  background: rgba(14, 16, 22, 0.94);
+}
+
+html[class~='no-blur'] .rail {
+  background: rgba(18, 20, 28, 0.94);
+}
+
+html[class~='no-blur'] .stage {
+  background: rgba(16, 18, 26, 0.94);
+}
+
+html[data-theme='day'][class~='no-blur'] .titlebar,
+html[data-theme='day'][class~='no-blur'] .rail,
+html[data-theme='day'][class~='no-blur'] .stage {
+  background: rgba(252, 250, 248, 0.96);
 }

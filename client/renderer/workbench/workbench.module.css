@@ -57,17 +57,18 @@ html[data-maximized='true'] .windowContainer {
 }
 
 .shell {
-  backdrop-filter: blur(40px) saturate(190%);
-  -webkit-backdrop-filter: blur(40px) saturate(190%);
+  backdrop-filter: blur(48px) saturate(200%);
+  -webkit-backdrop-filter: blur(48px) saturate(200%);
   background:
-    radial-gradient(circle at 18% 12%, rgba(56, 80, 140, 0.22) 0%, transparent 45%),
-    radial-gradient(circle at 82% 88%, rgba(28, 44, 75, 0.25) 0%, transparent 50%),
-    rgba(13, 16, 25, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+    radial-gradient(circle at 18% 12%, rgba(90, 120, 190, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 82% 88%, rgba(28, 44, 75, 0.2) 0%, transparent 50%),
+    rgba(12, 16, 26, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 20px;
   box-shadow:
-    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.2),
-    0 24px 64px -12px rgba(0, 0, 0, 0.7);
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 22px 56px -10px rgba(0, 0, 0, 0.58);
   color: var(--ui-text-strong);
   display: flex;
   flex: 1;
@@ -78,29 +79,43 @@ html[data-maximized='true'] .windowContainer {
   position: relative;
 }
 
+.shell::before {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 20%, transparent 48%);
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
 html[data-theme='day'] .shell {
   background:
-    radial-gradient(circle at 18% 12%, rgba(180, 200, 235, 0.35) 0%, transparent 45%),
-    radial-gradient(circle at 82% 88%, rgba(220, 230, 245, 0.3) 0%, transparent 50%),
-    rgba(246, 244, 240, 0.78);
+    radial-gradient(circle at 18% 12%, rgba(180, 200, 235, 0.28) 0%, transparent 45%),
+    radial-gradient(circle at 82% 88%, rgba(220, 230, 245, 0.22) 0%, transparent 50%),
+    rgba(246, 244, 240, 0.52);
   border-color: rgba(255, 255, 255, 0.85);
   box-shadow:
-    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.95),
-    0 24px 60px -12px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 22px 52px -10px rgba(0, 0, 0, 0.12);
 }
 
 html[data-maximized='true'] .shell {
   border: none;
   border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-maximized='true'] .shell::before {
+  display: none;
 }
 
 .titlebar {
   align-items: center;
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  background: rgba(14, 16, 26, 0.6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  background: rgba(14, 16, 26, 0.28);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   display: flex;
   flex-shrink: 0;
   gap: 12px;
@@ -113,9 +128,9 @@ html[data-maximized='true'] .shell {
 }
 
 html[data-theme='day'] .titlebar {
-  background: rgba(252, 250, 248, 0.75);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  background: rgba(252, 250, 248, 0.4);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .titleArea {
@@ -235,7 +250,7 @@ html[data-theme='day'] .glassButton:hover {
 .sidebarArea {
   backdrop-filter: blur(32px) saturate(190%);
   -webkit-backdrop-filter: blur(32px) saturate(190%);
-  background: rgba(16, 18, 26, 0.55);
+  background: rgba(16, 18, 26, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 18px;
   box-shadow:
@@ -259,7 +274,7 @@ html[data-theme='day'] .sidebarArea {
 .center {
   backdrop-filter: blur(28px) saturate(185%);
   -webkit-backdrop-filter: blur(28px) saturate(185%);
-  background: rgba(14, 16, 24, 0.5);
+  background: rgba(14, 16, 24, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   box-shadow:
@@ -340,7 +355,7 @@ html[data-theme='day'] .chatInputWrapper {
 .runRail {
   backdrop-filter: blur(28px) saturate(190%);
   -webkit-backdrop-filter: blur(28px) saturate(190%);
-  background: rgba(14, 16, 24, 0.55);
+  background: rgba(14, 16, 24, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   box-shadow:
@@ -374,7 +389,7 @@ html[data-theme='day'] .runRail {
   align-items: center;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  background: rgba(14, 16, 24, 0.55);
+  background: rgba(14, 16, 24, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 14px;
   color: var(--ui-text-muted);
@@ -609,4 +624,36 @@ html[data-theme='day'] .outputText {
   display: grid;
   gap: 6px;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+html[class~='no-blur'] .shell,
+html[class~='no-blur'] .titlebar,
+html[class~='no-blur'] .sidebarArea,
+html[class~='no-blur'] .center,
+html[class~='no-blur'] .runRail,
+html[class~='no-blur'] .runRailExpand,
+html[class~='no-blur'] .chatInputWrapper,
+html[class~='no-blur'] .glassButton,
+html[class~='no-blur'] .drawerOverlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[class~='no-blur'] .shell {
+  background: rgba(13, 16, 25, 0.94);
+}
+
+html[class~='no-blur'] .titlebar,
+html[class~='no-blur'] .sidebarArea,
+html[class~='no-blur'] .center,
+html[class~='no-blur'] .runRail {
+  background: rgba(14, 16, 24, 0.94);
+}
+
+html[data-theme='day'][class~='no-blur'] .shell,
+html[data-theme='day'][class~='no-blur'] .titlebar,
+html[data-theme='day'][class~='no-blur'] .sidebarArea,
+html[data-theme='day'][class~='no-blur'] .center,
+html[data-theme='day'][class~='no-blur'] .runRail {
+  background: rgba(252, 250, 248, 0.96);
 }

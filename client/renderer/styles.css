@@ -200,12 +200,16 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* 精灵窗口、生活空间与工作台：BrowserWindow 为透明亚克力无边框窗体，
-     将 html/body/#root 设为透明，让系统桌面与亚克力模糊在内容底层自然透出。 */
+  /* 精灵窗口、生活空间与工作台：BrowserWindow 为无边框真透明窗体。
+     html 也必须透明——color-scheme: dark 会给 :root 铺一层画布灰，
+     正好填进 CSS 圆角切出的四角楔形。 */
+  html[data-role='sprite'],
   html[data-role='sprite'] body,
   html[data-role='sprite'] #root,
+  html[data-role='workbench'],
   html[data-role='workbench'] body,
   html[data-role='workbench'] #root,
+  html[data-role='living'],
   html[data-role='living'] body,
   html[data-role='living'] #root {
     background: transparent !important;

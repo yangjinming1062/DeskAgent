@@ -22,43 +22,45 @@ export function LivingRoot(): React.JSX.Element {
   }, [])
 
   return (
-    <div className={styles.shell} data-surface="living">
-      <RoomBackdrop />
+    <div className={styles.windowFrame}>
+      <div className={styles.shell} data-surface="living">
+        <RoomBackdrop />
 
-      <header
-        className={styles.titlebar}
-        onDoubleClick={() => {
-          void window.spiritagent?.surface?.maximize?.()
-        }}
-      >
-        <div className={styles.titleArea}>
-          <Home className={styles.titleIcon} size={18} />
-          <h1 className={styles.title}>生活空间</h1>
-          <div className={styles.statusBadge}>
-            <span className={styles.statusDot} />
-            <span>陪伴中</span>
+        <header
+          className={styles.titlebar}
+          onDoubleClick={() => {
+            void window.spiritagent?.surface?.maximize?.()
+          }}
+        >
+          <div className={styles.titleArea}>
+            <Home className={styles.titleIcon} size={18} />
+            <h1 className={styles.title}>生活空间</h1>
+            <div className={styles.statusBadge}>
+              <span className={styles.statusDot} />
+              <span>陪伴中</span>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <button
-            className={styles.workbenchButton}
-            onClick={() => {
-              void requestOpenSurface('workbench')
-            }}
-            type="button"
-          >
-            <span>前往工作台</span>
-            <ArrowRight size={13} />
-          </button>
-          <WindowControls />
-        </div>
-      </header>
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <button
+              className={styles.workbenchButton}
+              onClick={() => {
+                void requestOpenSurface('workbench')
+              }}
+              type="button"
+            >
+              <span>前往工作台</span>
+              <ArrowRight size={13} />
+            </button>
+            <WindowControls />
+          </div>
+        </header>
 
-      <div className={styles.body}>
-        <LivingRail />
-        <main className={styles.stage}>
-          <LivingStage />
-        </main>
+        <div className={styles.body}>
+          <LivingRail />
+          <main className={styles.stage}>
+            <LivingStage />
+          </main>
+        </div>
       </div>
     </div>
   )
