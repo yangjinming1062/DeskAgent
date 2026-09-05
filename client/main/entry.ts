@@ -111,6 +111,16 @@ if (process.env.SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
   }
 }
 
+// `whenReady` 内的 `createSpriteWindow()` 之前若收到第二实例事件，会被 Electron 直接丢弃。
+// 顶层先挂一个轻量 listener 把事件折叠成标志；完整 forwarder 注册后再兑现一次。
+let pendingSecondInstance = false
+
+const onEarlySecondInstance = (): void => {
+  pendingSecondInstance = true
+}
+
+app.on('second-instance', onEarlySecondInstance)
+
 const REMOTE_DISPLAY_REASON = detectRemoteDisplay()
 
 if (REMOTE_DISPLAY_REASON) {
@@ -385,7 +395,7 @@ function htmlFileNameForRole(role?: string): string {
     return 'workbench.html'
   }
 
-  if (role === 'clip' || role === 'anim' || role === 'animation') {
+  if (role === 'clip') {
     return 'clip-debugger.html'
   }
 
@@ -942,6 +952,13 @@ void app.whenReady().then(async () => {
     rememberLog,
     Tray
   })
+
+  app.removeListener('second-instance', onEarlySecondInstance)
+
+  if (pendingSecondInstance) {
+    pendingSecondInstance = false
+    showMainWindow()
+  }
 
   installTray({
     app,
