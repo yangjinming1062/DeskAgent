@@ -45,7 +45,8 @@ export const strings = {
       startingSpiritAgentDesktop: '正在启动 SpiritAgent 桌面版…'
     },
     errors: {
-      desktopBootFailed: '桌面启动失败'
+      desktopBootFailed: '桌面启动失败',
+      desktopReconnectFailed: '与后端连接已中断，应用正在持续重试。'
     },
     failure: {
       title: 'SpiritAgent 无法启动',

@@ -129,6 +129,8 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let graceTimer: ReturnType<typeof setTimeout> | null = null
     let reconnectAttempt = 0
+    let lastReconnectError: Error | null = null
+    let reconnectErrorNotified = false
 
     const dismissOverlayOnce = () => {
       if (bootOverlayDismissed) {
@@ -185,13 +187,21 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         void syncRunnerTools(gateway)
         void fetchSlashCommandMeta(method => gateway.request(method))
         reconnectAttempt = 0
-      } catch {
-        // 传输失败——交给 finally 块里的退避逻辑处理。
+        lastReconnectError = null
+        reconnectErrorNotified = false
+      } catch (error) {
+        lastReconnectError = error instanceof Error ? error : new Error(String(error))
+        log.warn('gateway-boot', 'attemptReconnect failed', lastReconnectError)
       } finally {
         reconnecting = false
 
         if (!cancelled && !gatewayOpen()) {
           scheduleReconnect()
+
+          if (reconnectAttempt >= 5 && !reconnectErrorNotified && lastReconnectError) {
+            reconnectErrorNotified = true
+            notifyError(lastReconnectError, strings.boot.errors.desktopReconnectFailed)
+          }
         }
       }
     }
@@ -216,6 +226,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
       clearReconnectTimer()
       reconnectAttempt = 0
+      reconnectErrorNotified = false
 
       if (!gatewayOpen()) {
         void attemptReconnect()
@@ -243,6 +254,8 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
       if (st === 'open') {
         reconnectAttempt = 0
+        lastReconnectError = null
+        reconnectErrorNotified = false
         clearReconnectTimer()
         clearGraceTimer()
         // 重推打扰档位与本地时区，覆盖离线期间尚未上云的变化。
