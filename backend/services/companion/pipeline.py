@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 from components import SESSION_LOCAL, SETTINGS, backoff_for_poll, get_logger, log_paid_call
 from modules.companion import Companion3DModel
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,7 +97,7 @@ async def _emit_progress(user_id: int, stage: str, progress_pct: int, *, provide
         payload["provider"] = provider
     try:
         async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="model.gen.progress", payload=json.dumps(payload)))
+            emit_ws_event(db, user_id=user_id, event_type="model.gen.progress", payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit model.gen.progress", exc_info=True)
@@ -130,7 +130,7 @@ async def _emit_model_ready(
         payload["content_hash"] = content_hash
     try:
         async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="model.ready", payload=json.dumps(payload, ensure_ascii=False)))
+            emit_ws_event(db, user_id=user_id, event_type="model.ready", payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit model.ready", exc_info=True)
@@ -145,7 +145,7 @@ async def _emit_model_failed(user_id: int, reason: str, *, retry_download: bool 
         payload["model_id"] = model_id
     try:
         async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="model.failed", payload=json.dumps(payload, ensure_ascii=False)))
+            emit_ws_event(db, user_id=user_id, event_type="model.failed", payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit model.failed", exc_info=True)
@@ -704,7 +704,7 @@ async def emit_companion_assets_updated(user_id: int) -> None:
     """推送 companion.assets.updated,让在线客户端重新拉取新生成的自定义表情。"""
     try:
         async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="companion.assets.updated", payload="{}"))
+            emit_ws_event(db, user_id=user_id, event_type="companion.assets.updated", payload="{}")
             await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.assets.updated event", exc_info=True)

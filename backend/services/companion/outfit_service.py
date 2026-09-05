@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from components import DEFAULT_LANGUAGE, SESSION_LOCAL, get_logger, resolve_prompt_text, safe_json_loads, utc_now
 from modules.companion import AvatarAsset, Companion2DModel, CompanionOutfit
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -388,13 +388,7 @@ async def activate_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Com
         )
         model.active = True
         outfit.active = True
-        db.add(
-            WSEvent(
-                user_id=user_id,
-                event_type="companion.outfit.updated",
-                payload=json.dumps({"outfit_id": outfit.id, "worn": True}, ensure_ascii=False),
-            ),
-        )
+        emit_ws_event(db, user_id=user_id, event_type="companion.outfit.updated", payload={"outfit_id": outfit.id, "worn": True})
         await db.commit()
         await db.refresh(outfit)
     # 换装成功 → 让当前 active 房间图失效并 schedule origin=outfit 重建
@@ -440,13 +434,7 @@ async def delete_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> None:
         _delete_reference_file(outfit)
         if outfit.fullbody_url not in avatar_files:
             delete_portrait_file(outfit.fullbody_url)
-        db.add(
-            WSEvent(
-                user_id=user_id,
-                event_type="companion.outfit.updated",
-                payload=json.dumps({"outfit_id": outfit.id, "worn": False}, ensure_ascii=False),
-            ),
-        )
+        emit_ws_event(db, user_id=user_id, event_type="companion.outfit.updated", payload={"outfit_id": outfit.id, "worn": False})
         await db.delete(outfit)
         await db.commit()
 

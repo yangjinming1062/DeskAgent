@@ -7,7 +7,7 @@ import json
 
 from components import SESSION_LOCAL, get_logger
 from modules.companion import Companion2DModel, CompanionOutfit
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -256,13 +256,7 @@ async def _mark_failed(*, user_id: int, model_id: int, error: str, reason: str) 
 async def _emit_outfit_event(user_id: int, event_type: str, payload: dict) -> None:
     try:
         async with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=user_id,
-                    event_type=event_type,
-                    payload=json.dumps(payload, ensure_ascii=False),
-                ),
-            )
+            emit_ws_event(db, user_id=user_id, event_type=event_type, payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit %s", event_type, exc_info=True)
@@ -282,13 +276,7 @@ async def _emit_mesh2d_ready(
             "layers": layer_entries,
         }
         async with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=user_id,
-                    event_type="companion.2d.ready",
-                    payload=json.dumps(payload, ensure_ascii=False),
-                ),
-            )
+            emit_ws_event(db, user_id=user_id, event_type="companion.2d.ready", payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.2d.ready", exc_info=True)
@@ -303,13 +291,7 @@ async def _emit_mesh2d_failed(
     try:
         payload = {"model_id": model_id, "reason": reason}
         async with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=user_id,
-                    event_type="companion.2d.failed",
-                    payload=json.dumps(payload, ensure_ascii=False),
-                ),
-            )
+            emit_ws_event(db, user_id=user_id, event_type="companion.2d.failed", payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.2d.failed", exc_info=True)

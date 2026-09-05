@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Any
 
-from components import ATTACHMENT_TYPE_VIDEO, BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, TITLE_GENERATION_TEMPERATURE, get_logger, safe_json_loads, session_scope
+from components import ATTACHMENT_TYPE_VIDEO, BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, TITLE_GENERATION_TEMPERATURE, TaskBag, get_logger, safe_json_loads, session_scope
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,20 +19,18 @@ from .types import TrackTask
 logger = get_logger(__name__)
 
 # track_task=None 路径的兜底：模块级强引用集合，防止 CPython GC 在 await 期间销毁进行中的 task。
-# 与 scheduler/cron.py 的 _BG_TASTS 同模式。已 done 的 task 回调里从集合中移除，避免无限增长。
-_BACKGROUND_TASKS: set[asyncio.Task] = set()
+# 与 scheduler/cron.py 的 _BG 同模式（TaskBag 在 components/background.py）。
+_BG = TaskBag("chat.persistence")
+
+
+def _on_bg_error(task: asyncio.Task) -> None:
+    if (exc := task.exception()) is not None:
+        logger.warning("background task raised after completion", exc_info=exc)
 
 
 def _track_background_task(task: asyncio.Task) -> None:
     """将 task 纳入模块级强引用集合，done 时自动移除并打日志。"""
-    _BACKGROUND_TASKS.add(task)
-
-    def _on_done(t: asyncio.Task) -> None:
-        _BACKGROUND_TASKS.discard(t)
-        if not t.cancelled() and (exc := t.exception()) is not None:
-            logger.warning("background task raised after completion", exc_info=exc)
-
-    task.add_done_callback(_on_done)
+    _BG.add(task, on_error=_on_bg_error)
 
 
 async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None:

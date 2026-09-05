@@ -1,8 +1,6 @@
-import json
-
 from components import session_scope
 from modules.channels import ChannelBinding
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 
 
 async def update_binding_status(
@@ -29,19 +27,15 @@ async def update_binding_status(
         if account_name and not row.account_name:
             row.account_name = account_name
         if changed:
-            db.add(
-                WSEvent(
-                    user_id=row.user_id,
-                    event_type="channel.status",
-                    payload=json.dumps(
-                        {
-                            "channel": row.channel,
-                            "status": status,
-                            **({"account_name": row.account_name} if row.account_name else {}),
-                            **({"error": error} if error else {}),
-                        },
-                        ensure_ascii=False,
-                    ),
-                ),
+            emit_ws_event(
+                db,
+                user_id=row.user_id,
+                event_type="channel.status",
+                payload={
+                    "channel": row.channel,
+                    "status": status,
+                    **({"account_name": row.account_name} if row.account_name else {}),
+                    **({"error": error} if error else {}),
+                },
             )
         await db.commit()

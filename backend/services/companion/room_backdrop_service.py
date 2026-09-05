@@ -7,7 +7,6 @@ ready 行同步设 active（除非 policy=locked 且 origin=llm 主动换房）�
 """
 
 import asyncio
-import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, TypedDict
@@ -36,7 +35,7 @@ from modules.companion import (
     MomentKind,
     Persona,
 )
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,7 +92,7 @@ async def _emit_backdrop_event(user_id: int, event_type: str, payload: dict[str,
     """统一事件写入口：失败只记日志，不冒泡影响主流程。"""
     try:
         async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False, default=str)))
+            emit_ws_event(db, user_id=user_id, event_type=event_type, payload=payload)
             await db.commit()
     except Exception:
         logger.warning("Failed to emit %s", event_type, exc_info=True)

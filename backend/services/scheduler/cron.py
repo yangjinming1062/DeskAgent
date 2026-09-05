@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
@@ -14,6 +13,7 @@ from components import (
     NIGHTLY_WINDOW_END_HOUR,
     NIGHTLY_WINDOW_START_HOUR,
     BackgroundTask,
+    TaskBag,
     begin_local_scope,
     get_logger,
     session_scope,
@@ -23,7 +23,7 @@ from modules.auth import User
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
-from modules.ws import CRON_TURN_EVENT, WSEvent
+from modules.ws import CRON_TURN_EVENT, emit_ws_event
 from sqlalchemy import bindparam, delete, func, select, text, tuple_
 from sqlalchemy.engine import Row
 
@@ -46,7 +46,7 @@ from .outbox_gc import run_outbox_gc
 
 logger = get_logger(__name__)
 
-_BG_TASKS: set[asyncio.Task] = set()
+_BG = TaskBag("scheduler.cron")
 
 # 每个慢扫描的在飞 task：LLM 流水线可能比扫描间隔跑得更久，而 per-user 去重标记只在成功后才写——不挡住重入会让同一用户的流水线并行跑两遍。
 _SCANS: dict[str, asyncio.Task] = {}
@@ -87,13 +87,7 @@ _SCHEDULER = BackgroundTask("scheduler.cron_loop")
 
 async def drain() -> None:
     """取消并 await 所有后台 task，容忍 CancelledError；由 main.py lifespan 关停时调用，避免 SIGTERM 在 db.commit() 中途被 engine 释放。"""
-    if not _BG_TASKS:
-        return
-    pending = list(_BG_TASKS)
-    for t in pending:
-        if not t.done():
-            t.cancel()
-    await asyncio.gather(*pending, return_exceptions=True)
+    await _BG.drain()
 
 
 def _log_task_error(name: str, task: asyncio.Task) -> None:
@@ -119,9 +113,7 @@ def _spawn_scan(name: str, factory: Callable[[], Coroutine[Any, Any, None]]) -> 
 
     task = asyncio.create_task(_scoped(), name=f"scheduler.{name}")
     _SCANS[name] = task
-    _BG_TASKS.add(task)
-    task.add_done_callback(_BG_TASKS.discard)
-    task.add_done_callback(partial(_log_task_error, name))
+    _BG.add(task, on_error=partial(_log_task_error, name))
 
 
 async def _select_due_jobs() -> list[Row]:
@@ -208,9 +200,7 @@ async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
             continue
         try:
             t = asyncio.create_task(_kick_autonomous_turn(job_id, meta))
-            _BG_TASKS.add(t)
-            t.add_done_callback(_BG_TASKS.discard)
-            t.add_done_callback(partial(_log_task_error, f"kick:{job_id}"))
+            _BG.add(t, on_error=partial(_log_task_error, f"kick:{job_id}"))
         except RuntimeError:
             # 没有运行中的 loop——跳过本 tick；job 的 next_run_at 已推进，下一 tick 会再拾起。
             logger.warning("cron: no running loop, skipping autonomous turn", extra={"job_id": job_id})
@@ -220,7 +210,7 @@ async def _kick_cron_turn(user_id: int, prompt: str, job_id: int) -> None:
     """向 ws_events 写一条 cron.turn.request；持有该用户 WS 的 replica 通过 outbox claim 循环拣起，全副本离线则被 GC 收割。"""
 
     async with session_scope() as db:
-        db.add(WSEvent(user_id=user_id, event_type=CRON_TURN_EVENT, payload=json.dumps({"job_id": job_id, "prompt": prompt}, ensure_ascii=False)))
+        emit_ws_event(db, user_id=user_id, event_type=CRON_TURN_EVENT, payload={"job_id": job_id, "prompt": prompt})
         await db.commit()
 
 

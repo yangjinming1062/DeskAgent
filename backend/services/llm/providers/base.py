@@ -50,7 +50,11 @@ class BaseProvider(ABC):
 
 
 class ProviderError(Exception):
-    """供应商级错误；字段对齐 error_classifier：status_code 给 _extract_status_code，body 给 _extract_error_body。"""
+    """供应商级错误；字段对齐 error_classifier：status_code 给 _extract_status_code，body 给 _extract_error_body。
+
+    字段契约：``status_code``/``body``/``provider``/``model`` 与 ``image_to_3d`` 的 ``ImageTo3DError`` 对齐；
+    两侧各自演进，不抽共享基类（避免跨模块依赖）。
+    """
 
     def __init__(self, message: str, *, status_code: int | None = None, body: dict | None = None, provider: str = "", model: str = "") -> None:
         super().__init__(message)

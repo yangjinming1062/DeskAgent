@@ -1,8 +1,6 @@
-import json
-
 from components import SESSION_LOCAL
 from modules.conversation import Message
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 
 from services.conversation import get_or_create_special_conversation, record_user_outreach
 
@@ -10,7 +8,7 @@ from services.conversation import get_or_create_special_conversation, record_use
 async def emit_companion_affect(user_id: int, emotion: str) -> None:
     """推送纯情绪事件到桌面端：只切换 EMOTIONAL 状态，不弹气泡也不合成 TTS。"""
     async with SESSION_LOCAL() as db:
-        db.add(WSEvent(user_id=user_id, event_type="companion.affect", payload=json.dumps({"emotion": emotion}, ensure_ascii=False)))
+        emit_ws_event(db, user_id=user_id, event_type="companion.affect", payload={"emotion": emotion})
         await db.commit()
 
 
@@ -29,7 +27,7 @@ async def emit_companion_message(
     if affect:
         payload["affect"] = {"emotion": affect}
     async with SESSION_LOCAL() as db:
-        db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
+        emit_ws_event(db, user_id=user_id, event_type="companion.message", payload=payload)
         # status_proactive 留在 LLM 上下文中（用户可回复），空消息不应在那里累积出一段空白对话回合。
         if text.strip():
             main_conv = await get_or_create_special_conversation(db, user_id, "companion")

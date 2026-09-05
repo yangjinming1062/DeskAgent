@@ -26,7 +26,11 @@ class Model3DPollResult:
 
 
 class ImageTo3DError(Exception):
-    """图生 3D 服务及供应商的基础异常。"""
+    """图生 3D 服务及供应商的基础异常。
+
+    字段契约：``status_code``/``body``/``provider``/``model`` 与 ``llm.providers.base.ProviderError`` 对齐；
+    两侧各自演进，不抽共享基类（避免跨模块依赖）。
+    """
 
     def __init__(self, message: str, *, status_code: int | None = None, body: dict | None = None, provider: str = "", model: str = "") -> None:
         super().__init__(message)

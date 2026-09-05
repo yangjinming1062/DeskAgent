@@ -3,10 +3,10 @@ import json
 from dataclasses import replace
 from datetime import timedelta
 
-from components import SESSION_LOCAL, SETTINGS, backoff_for_poll, download_capped, get_logger, save_file, utc_now
+from components import SESSION_LOCAL, SETTINGS, TaskBag, backoff_for_poll, download_capped, get_logger, save_file, utc_now
 from modules.conversation import Message
 from modules.media import VideoGenJob
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,18 +17,21 @@ logger = get_logger(__name__)
 
 _INFLIGHT: set[int] = set()
 
-_BG_TASKS: set[asyncio.Task] = set()
+_BG = TaskBag("media.video_jobs")
+
+
+def _on_video_task_error(task: asyncio.Task) -> None:
+    """视频后台任务失败落日志；poll 路径自身已记录详细原因,这里只兜底未捕获异常。"""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.exception("video background task failed", exc_info=exc)
 
 
 async def drain() -> None:
     """取消并等待所有后台视频任务完成，吞下 CancelledError。"""
-    if not _BG_TASKS:
-        return
-    pending = list(_BG_TASKS)
-    for t in pending:
-        if not t.done():
-            t.cancel()
-    await asyncio.gather(*pending, return_exceptions=True)
+    await _BG.drain()
 
 
 async def _update_job(job_id: int, **fields) -> None:
@@ -47,9 +50,8 @@ async def _update_job(job_id: int, **fields) -> None:
 
 async def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
     """将 WSEvent 行写入 PostgreSQL outbox；PostgreSQL NOTIFY 触发后由 ws_events worker 投递给已连接客户端，确保 REST 离线提交或 WS 中途重连的进度也能送达。"""
-    payload_json = json.dumps(payload, ensure_ascii=False, default=str)
     async with SESSION_LOCAL() as db:
-        db.add(WSEvent(user_id=user_id, event_type=event_type, payload=payload_json))
+        emit_ws_event(db, user_id=user_id, event_type=event_type, payload=payload)
         await db.commit()
 
 
@@ -134,8 +136,7 @@ async def enqueue_video_job(
     await db.commit()
 
     t = asyncio.create_task(_poll_and_finalize(job.id))
-    _BG_TASKS.add(t)
-    t.add_done_callback(_BG_TASKS.discard)
+    _BG.add(t, on_error=_on_video_task_error)
     return job
 
 
@@ -347,7 +348,6 @@ async def resume_pending_video_jobs() -> None:
         logger.warning("marked downloading jobs failed during resume", extra={"count": stuck.rowcount})
     for job_id in job_ids:
         t = asyncio.create_task(_poll_and_finalize(job_id))
-        _BG_TASKS.add(t)
-        t.add_done_callback(_BG_TASKS.discard)
+        _BG.add(t, on_error=_on_video_task_error)
     if job_ids:
         logger.info("Resumed pending video jobs", extra={"count": len(job_ids)})

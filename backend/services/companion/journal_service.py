@@ -3,7 +3,6 @@
 ``memories`` 表不动；moments / diary 是给用户看的展示面，不是检索向量。
 """
 
-import json
 from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -18,7 +17,7 @@ from modules.companion import (
     MomentSource,
     MomentVisibility,
 )
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -470,13 +469,7 @@ async def resolve_user_local_today(db: AsyncSession | None, user_id: int) -> dat
 async def _emit_moment_event(row: CompanionMoment) -> None:
     try:
         async with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=row.user_id,
-                    event_type="companion.moment.created",
-                    payload=json.dumps(response_for_moment(row), ensure_ascii=False, default=str),
-                ),
-            )
+            emit_ws_event(db, user_id=row.user_id, event_type="companion.moment.created", payload=response_for_moment(row))
             await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.moment.created", exc_info=True)
@@ -485,13 +478,7 @@ async def _emit_moment_event(row: CompanionMoment) -> None:
 async def _emit_diary_event(row: CompanionDiaryEntry) -> None:
     try:
         async with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=row.user_id,
-                    event_type="companion.diary.upserted",
-                    payload=json.dumps(response_for_diary(row), ensure_ascii=False, default=str),
-                ),
-            )
+            emit_ws_event(db, user_id=row.user_id, event_type="companion.diary.upserted", payload=response_for_diary(row))
             await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.diary.upserted", exc_info=True)

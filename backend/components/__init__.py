@@ -1,6 +1,6 @@
 from .attachments import attachment_root, path_attach_ref
 from .attachments import gc_session as attachments_gc_session
-from .background import BackgroundTask
+from .background import BackgroundTask, TaskBag
 from .backoff import backoff_for_poll
 from .config import SETTINGS
 from .constants import (
@@ -184,6 +184,7 @@ __all__ = [
     "TTS_MAX_TEXT_CHARS",
     "VIDEO_INLINE_MAX_PER_REQUEST",
     "BackgroundTask",
+    "TaskBag",
     "adopt_inbound",
     "apply_partial",
     "approx_text_tokens",

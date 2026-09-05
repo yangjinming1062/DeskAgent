@@ -3,6 +3,8 @@ from typing import Any
 import httpx
 from components import SETTINGS, download_capped, get_logger, log_paid_call
 
+from ..._http import post_json
+
 logger = get_logger(__name__)
 
 DEFAULT_BASE_URL: str = "https://tokenhub.tencentmaas.com"
@@ -80,9 +82,7 @@ def hunyuan_common_kwargs_from_settings(
 
 async def _submit_job(payload: dict[str, Any], *, paid_label: str) -> str:
     """所有提交模式共享的 POST /v1/api/3d/submit。"""
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{_base_url()}/v1/api/3d/submit", headers=_auth_headers(), json=payload)
+    resp = await post_json(_base_url(), _auth_headers(), "v1/api/3d/submit", payload, timeout=httpx.Timeout(60.0, connect=10.0))
     if resp.status_code != 200:
         raise HunyuanApiError(f"hunyuan submit HTTP {resp.status_code}: {resp.text[:300]}")
     body = resp.json()
@@ -120,9 +120,7 @@ async def create_image_to_model(
 
 async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[str, Any]:
     """通过单次 POST /v1/api/3d/query 检查任务状态。"""
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{_base_url()}/v1/api/3d/query", headers=_auth_headers(), json={"id": job_id, "model": model})
+    resp = await post_json(_base_url(), _auth_headers(), "v1/api/3d/query", {"id": job_id, "model": model}, timeout=httpx.Timeout(60.0, connect=10.0))
     if resp.status_code != 200:
         logger.warning("hunyuan query failed", extra={"task_id": job_id, "status_code": resp.status_code})
         raise HunyuanApiError(f"hunyuan query HTTP {resp.status_code}: {resp.text[:300]}")

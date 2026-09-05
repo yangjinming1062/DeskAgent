@@ -4,7 +4,7 @@ import json
 
 from components import get_logger
 from modules.companion import AvatarAsset, Companion2DModel, Companion2DModelResponse, Persona
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -177,13 +177,7 @@ async def set_render_mode(
     if changed:
         # 多端同步：向所有在线端广播。仅在值实际变化时发——客户端收到后会回 POST 同步，
         # 无条件广播会形成自激回环。
-        db.add(
-            WSEvent(
-                user_id=user_id,
-                event_type="companion.render_mode.changed",
-                payload=json.dumps({"new_mode": render_mode}),
-            ),
-        )
+        emit_ws_event(db, user_id=user_id, event_type="companion.render_mode.changed", payload={"new_mode": render_mode})
     await db.commit()
     await db.refresh(persona)
     logger.info(

@@ -1,5 +1,4 @@
 import asyncio
-import json
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -9,7 +8,7 @@ from components import SETTINGS, get_logger, resolve_prompt_text, session_scope
 from modules.auth import ChatRequestClientContext
 from modules.channels import ChannelBinding, ChannelPeer
 from modules.system import ChatMessageRequest, ChatRequest
-from modules.ws import WSEvent
+from modules.ws import emit_ws_event
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,15 +121,11 @@ async def _get_peer(db: AsyncSession, binding_id: int, peer_id: str) -> ChannelP
 async def _emit_peer_request(user_id: int, channel: str, msg: InboundMessage) -> None:
     """待审批对端事件走 outbox（桌面离线暂存重投），驱动 Hub/通知侧的审批入口。"""
     async with session_scope() as db:
-        db.add(
-            WSEvent(
-                user_id=user_id,
-                event_type="channel.peer_request",
-                payload=json.dumps(
-                    {"channel": channel, "peer_id": msg.peer_id, "peer_name": msg.peer_name, "preview": msg.text[:64]},
-                    ensure_ascii=False,
-                ),
-            ),
+        emit_ws_event(
+            db,
+            user_id=user_id,
+            event_type="channel.peer_request",
+            payload={"channel": channel, "peer_id": msg.peer_id, "peer_name": msg.peer_name, "preview": msg.text[:64]},
         )
         await db.commit()
 
