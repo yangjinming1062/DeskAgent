@@ -665,7 +665,6 @@ async function createSurfaceWindow(id: SurfaceId, payload?: DesktopSurfaceOpenPa
     skipTaskbar: false,
     title: id === 'living' ? 'SpiritAgent · 生活空间' : 'SpiritAgent · 工作台',
     transparent: true,
-    vibrancy: IS_MAC ? 'under-window' : undefined,
     webPreferences: {
       backgroundThrottling: false,
       contextIsolation: true,
