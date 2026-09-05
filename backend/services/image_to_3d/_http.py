@@ -1,5 +1,4 @@
 import httpx
-
 from components import safe_outbound_async_client
 
 DEFAULT_TIMEOUT_SECONDS: float = 60.0
