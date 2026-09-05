@@ -29,7 +29,7 @@ export interface RunnerBridgeDeps {
   fileExists: (path: string) => boolean
   getMainWindow: () => BrowserWindow | null
   getSpriteWindow: () => BrowserWindow | null
-  isQuitting: boolean
+  readonly isQuitting: boolean
   setQuitting: (quitting: boolean) => void
   rebuildTrayMenu: () => void
   rememberLog: (chunk: string) => void
@@ -139,9 +139,6 @@ export function createBridgeDeps(globals: CreateBridgeDepsGlobals): RunnerBridge
     getSpriteWindow: globals.getSpriteWindow || (() => null),
     get isQuitting() {
       return quitting
-    },
-    set isQuitting(value: boolean) {
-      quitting = value
     },
     setQuitting: (value: boolean) => {
       quitting = value

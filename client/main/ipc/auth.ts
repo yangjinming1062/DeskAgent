@@ -8,6 +8,7 @@ import { readStoredBackendUrl, writeStoredBackendUrl } from '../shared/config'
 
 interface AuthIpcDeps {
   app: { getPath: (name: string) => string }
+  autoStopBridge?: () => void
   backendSession?: null | BackendSession
   broadcastAuthChanged?: (session: null | SessionSnapshot) => void
   buildClientContext?: () => { client_context?: unknown }
@@ -90,6 +91,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     deps.resetBackendCache?.()
     deps.rebuildTrayMenu?.()
     deps.broadcastAuthChanged?.(session.getSession())
+    deps.autoStopBridge?.()
 
     return result
   })

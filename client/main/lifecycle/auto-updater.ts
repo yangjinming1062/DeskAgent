@@ -113,5 +113,3 @@ export function createAutoUpdater({ app, appRoot, bridgeDeps, electronNet, spiri
 
   return { getRunnerUpdater, setup }
 }
-
-export type AutoUpdater = ReturnType<typeof createAutoUpdater>
