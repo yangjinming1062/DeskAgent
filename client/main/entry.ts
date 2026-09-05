@@ -39,6 +39,7 @@ import { registerAuthIpc } from './ipc/auth'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerConnectionIpc } from './ipc/connection'
 import { registerFilesIpc } from './ipc/files'
+import { registerGatewayIpc } from './ipc/gateway'
 import { registerLogIpc } from './ipc/log'
 import { registerMediaIpc } from './ipc/media'
 import { createModelDiskCache } from './ipc/model-disk-cache'
@@ -827,6 +828,11 @@ registerConnectionIpc({
       cachedBackend = { ...cachedBackend, wsUrl }
     }
   }
+})
+registerGatewayIpc({
+  getMainWindow: () => mainWindow,
+  ipcMain,
+  rememberLog: chunk => rememberLog(chunk)
 })
 registerMediaIpc({
   spiritagentHome: SPIRITAGENT_HOME,

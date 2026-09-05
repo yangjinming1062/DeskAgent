@@ -265,7 +265,6 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
       onDragOver={onDrop ? e => e.preventDefault() : undefined}
       onDrop={onDrop}
     >
-      {gatewayState !== 'open' && <p className="text-center text-[10px] text-amber-300/80">正在连接…</p>}
       {isReadOnlySession && <p className="text-center text-[10px] text-faint">IM 对话 · 只读</p>}
 
       {pending && (

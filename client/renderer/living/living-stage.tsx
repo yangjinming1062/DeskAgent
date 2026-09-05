@@ -68,16 +68,24 @@ function ChatStage(): React.JSX.Element {
   const currentSession = sessions.find(s => s.id === chatSessionId)
   const isWorkSession = currentSession ? !isCompanionSession(currentSession) : false
 
+  const sessionHydratedRef = useRef(false)
+
   useEffect(() => {
+    if (gatewayState !== 'open' || sessionHydratedRef.current) {
+      return
+    }
+
     const params = new URLSearchParams(window.location.search)
     const sid = params.get('sessionId')
+
+    sessionHydratedRef.current = true
 
     if (sid) {
       void switchSession(sid)
     } else {
       void openMainSession()
     }
-  }, [])
+  }, [gatewayState])
 
   return (
     <div className={styles.chatStage}>

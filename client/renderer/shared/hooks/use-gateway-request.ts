@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import { resolveGatewayWsUrl } from '../lib/gateway-ws-url'
 import type { SpiritAgentGateway } from '../spiritagent'
-import { $gateway, $gatewayState } from '../store/gateway'
+import { $gateway, $gatewayState, type SpiritAgentGatewayLike } from '../store/gateway'
 
 import { useLatestRef } from './use-latest-ref'
 
@@ -17,15 +17,15 @@ export interface UseGatewayRequestResult {
 
 export function useGatewayRequest(): UseGatewayRequestResult {
   const gatewayState = useStore($gatewayState)
-  const gatewayRef = useRef<SpiritAgentGateway | null>(null)
+  const gatewayRef = useRef<SpiritAgentGateway | SpiritAgentGatewayLike | null>(null)
   const gatewayStateRef = useLatestRef(gatewayState)
-  const reconnectingRef = useRef<Promise<SpiritAgentGateway | null> | null>(null)
+  const reconnectingRef = useRef<Promise<SpiritAgentGateway | SpiritAgentGatewayLike | null> | null>(null)
 
   // 跟踪当前活动的 gateway，让出站请求与 overlay props 都打到当前 socket 上。
   useEffect(
     () =>
-      $gateway.subscribe(gateway => {
-        gatewayRef.current = gateway as SpiritAgentGateway | null
+      $gateway.subscribe((gateway: SpiritAgentGateway | SpiritAgentGatewayLike | null) => {
+        gatewayRef.current = gateway
       }),
     []
   )
@@ -59,7 +59,7 @@ export function useGatewayRequest(): UseGatewayRequestResult {
         // resolveGatewayWsUrl() 在 OAuth 模式下会抛 reauth 错误，
         // 而不是拿着过期票据硬连。
         const wsUrl = await resolveGatewayWsUrl(desktop, conn)
-        await existing.connect(wsUrl)
+        await existing.connect?.(wsUrl)
 
         return existing
       } catch {

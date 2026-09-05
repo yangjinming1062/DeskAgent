@@ -251,6 +251,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
     const offState = gateway.onState(st => {
       reportPrimaryGatewayState(st)
+      window.spiritagent?.gatewayBroadcastState?.(st)
 
       if (st === 'open') {
         reconnectAttempt = 0
@@ -358,7 +359,25 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       }
     })
 
-    const offEvent = gateway.onEvent(event => callbacksRef.current.handleGatewayEvent(event))
+    const offEvent = gateway.onEvent(event => {
+      callbacksRef.current.handleGatewayEvent(event)
+
+      if (event.type !== 'tool.call') {
+        window.spiritagent?.gatewayBroadcastEvent?.(event)
+      }
+    })
+
+    const offRpcDispatch = window.spiritagent?.onGatewayRpcDispatch?.(req => {
+      void (async () => {
+        try {
+          const result = await gateway.request(req.method, req.params)
+          window.spiritagent?.gatewayRpcReply?.({ id: req.id, ok: true, result })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          window.spiritagent?.gatewayRpcReply?.({ id: req.id, ok: false, error: message })
+        }
+      })()
+    })
 
     const offPowerResume = desktop.onPowerResume?.(() => reconnectNow())
 
@@ -423,8 +442,10 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)
       offPowerResume?.()
+      offRpcDispatch?.()
       offState()
       offEvent()
+      window.spiritagent?.gatewayBroadcastState?.('closed')
       offRunnerStatus?.()
       offBootProgress()
       stopAutonomyProvision()

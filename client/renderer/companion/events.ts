@@ -210,13 +210,17 @@ export function handleCompanionEvent(event: GatewayEvent): void {
     }
   }
 
+  const gw = $gateway.get()
+  const isProxy = Boolean(gw && 'isProxy' in gw && gw.isProxy)
+  const shouldPlayAudio = isProxy || $surfaceOpen.get() === null
+
   switch (event.type) {
     case 'message.start':
       beginAssistantMessage()
       setTurnHadBubbleBreak(false)
       setSpriteState('thinking')
 
-      if ($responseMode.get() === 'voice' && !$screenLocked.get()) {
+      if (shouldPlayAudio && $responseMode.get() === 'voice' && !$screenLocked.get()) {
         beginAutoVoiceTurn()
       }
 
@@ -227,7 +231,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       if (text) {
         appendAssistantDelta(text)
 
-        if ($responseMode.get() === 'voice' && !$screenLocked.get()) {
+        if (shouldPlayAudio && $responseMode.get() === 'voice' && !$screenLocked.get()) {
           feedAutoVoiceDelta(text)
         }
       }
@@ -240,7 +244,10 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       // 下一条 message.delta 会开一个新气泡（后端已在它们之间插入 0.5–1.5 秒停顿）。
       setTurnHadBubbleBreak(true)
       finalizeAssistantMessage()
-      flushAutoVoiceSegments()
+
+      if (shouldPlayAudio) {
+        flushAutoVoiceSegments()
+      }
 
       break
     }
@@ -310,11 +317,13 @@ export function handleCompanionEvent(event: GatewayEvent): void {
 
       triggerFootGlowPulse('completed', 1200)
 
-      applySpatialCue(locale, target)
+      if (!isProxy) {
+        applySpatialCue(locale, target)
+      }
 
       // 在「始终语音」模式下，流式语音队列在 message.complete 时收尾并排干残句；
       // 若中途切为语音模式或队列未启动且有文本，走 speak() 兜底。非语音模式或锁屏时中止。
-      if ($responseMode.get() === 'voice' && !screenLocked) {
+      if (shouldPlayAudio && $responseMode.get() === 'voice' && !screenLocked) {
         if (isAutoVoiceActive()) {
           endAutoVoiceTurn()
         } else if (text.trim()) {
@@ -325,13 +334,13 @@ export function handleCompanionEvent(event: GatewayEvent): void {
             }
           })
         }
-      } else {
+      } else if (shouldPlayAudio) {
         cancelAutoVoice()
       }
 
       // 每日互动统计——chat_turn 仅在确有文本可统计时计数
       // （与上面的 TTS 门控一致）。fire-and-forget RPC 由 activity.ts 中的公共助手负责。
-      if (text.trim()) {
+      if (!isProxy && text.trim()) {
         reportInteractionStat('chat_turn')
       }
 
@@ -357,7 +366,9 @@ export function handleCompanionEvent(event: GatewayEvent): void {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
 
-      applySpatialCue(locale, target)
+      if (!isProxy) {
+        applySpatialCue(locale, target)
+      }
 
       break
     }
@@ -385,7 +396,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
 
       const runnerInvoke = window.spiritagent?.runnerInvoke
 
-      if (!p.call_id || !runnerInvoke) {
+      if (isProxy || !p.call_id || !runnerInvoke) {
         break
       }
 
@@ -699,7 +710,9 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       const textSuppressed = currentTier === 'still' || $screenLocked.get()
 
       if (text && !textSuppressed) {
-        void speakProactive(text, { affect: affectEmotion })
+        if (shouldPlayAudio) {
+          void speakProactive(text, { affect: affectEmotion })
+        }
 
         // 无论生活空间当前是否在屏，均推入对话消息历史以供回溯查阅
         pushProactiveMessage(text)

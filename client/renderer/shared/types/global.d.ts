@@ -14,6 +14,10 @@ import type {
   DesktopAuthBroadcast,
   DesktopAuthSnapshot,
   DesktopBootProgress,
+  DesktopGatewayEvent,
+  DesktopGatewayRpcRequest,
+  DesktopGatewayRpcResponse,
+  DesktopGatewayState,
   DesktopPrefsHydrated,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
@@ -56,6 +60,14 @@ declare global {
     spiritagent: {
       getConnection: AsyncIpc<IpcInvokeContract['spiritagent:connection']>
       getGatewayWsUrl: AsyncIpc<IpcInvokeContract['spiritagent:gateway:ws-url']>
+      gatewayRequest: <T = unknown>(payload: { method: string; params?: Record<string, unknown> }) => Promise<T>
+      gatewayGetState: AsyncIpc<IpcInvokeContract['spiritagent:gateway:get-state']>
+      gatewayBroadcastState: (state: DesktopGatewayState) => void
+      gatewayBroadcastEvent: (event: DesktopGatewayEvent) => void
+      gatewayRpcReply: (payload: DesktopGatewayRpcResponse) => void
+      onGatewayStateChanged: EventSubscription<'spiritagent:gateway:state-changed'>
+      onGatewayEvent: EventSubscription<'spiritagent:gateway:event'>
+      onGatewayRpcDispatch: EventSubscription<'spiritagent:gateway:rpc-dispatch'>
       getBootProgress: AsyncIpc<IpcInvokeContract['spiritagent:boot-progress:get']>
       activate: AsyncIpc<IpcInvokeContract['spiritagent:auth:activate']>
       refreshSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:refresh']>
@@ -161,6 +173,10 @@ export type {
   DesktopAuthBroadcast,
   DesktopAuthSnapshot,
   DesktopBootProgress,
+  type DesktopGatewayEvent,
+  type DesktopGatewayRpcRequest,
+  type DesktopGatewayRpcResponse,
+  type DesktopGatewayState,
   type DesktopPrefsHydrated,
   type DesktopRunnerState,
   type DesktopRunnerStatusEvent,

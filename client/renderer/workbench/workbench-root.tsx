@@ -66,9 +66,11 @@ export function WorkbenchRoot(): React.JSX.Element {
     return false
   })
 
+  const sessionFromUrlHandledRef = useRef(false)
+
   // 保证工作台处于有效工作会话下（不处于生活空间的「陪伴」会话下，且空会话时自动定位到开发工位）
   useEffect(() => {
-    if (sessions.length === 0) {
+    if (gatewayState !== 'open' || sessions.length === 0) {
       return
     }
 
@@ -82,18 +84,25 @@ export function WorkbenchRoot(): React.JSX.Element {
         void switchSession(workTarget.id)
       }
     }
-  }, [sessions, currentSessionId])
+  }, [sessions, currentSessionId, gatewayState])
 
   useEffect(() => {
+    if (gatewayState !== 'open' || sessionFromUrlHandledRef.current) {
+      return
+    }
+
     if (typeof window !== 'undefined' && window.location.search) {
       const params = new URLSearchParams(window.location.search)
       const sid = params.get('sessionId')
 
       if (sid) {
+        sessionFromUrlHandledRef.current = true
         void switchSession(sid)
       }
     }
+  }, [gatewayState])
 
+  useEffect(() => {
     const onHash = (): void => {
       if (isStationSettingsHash(window.location.hash)) {
         setSettingsOpen(true)

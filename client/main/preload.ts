@@ -3,6 +3,10 @@ import {
   type DesktopActivatePayload,
   type DesktopAuthBroadcast,
   type DesktopBootProgress,
+  type DesktopGatewayEvent,
+  type DesktopGatewayRpcRequest,
+  type DesktopGatewayRpcResponse,
+  type DesktopGatewayState,
   type DesktopPrefsHydrated,
   type DesktopRunnerStatusEvent,
   type DesktopShortcutsSetPayload,
@@ -56,6 +60,17 @@ contextBridge.exposeInMainWorld('spiritagent', {
   getBootProgress: () => ipcRenderer.invoke(IPC.invoke.bootProgressGet),
   getConnection: () => ipcRenderer.invoke(IPC.invoke.connection),
   getGatewayWsUrl: () => ipcRenderer.invoke(IPC.invoke.gatewayWsUrl),
+  gatewayRequest: (payload: { method: string; params?: Record<string, unknown> }) =>
+    ipcRenderer.invoke(IPC.invoke.gatewayRequest, payload),
+  gatewayGetState: () => ipcRenderer.invoke(IPC.invoke.gatewayGetState),
+  gatewayBroadcastState: (state: DesktopGatewayState) => ipcRenderer.send(IPC.send.gatewayBroadcastState, { state }),
+  gatewayBroadcastEvent: (event: DesktopGatewayEvent) => ipcRenderer.send(IPC.send.gatewayBroadcastEvent, { event }),
+  gatewayRpcReply: (payload: DesktopGatewayRpcResponse) => ipcRenderer.send(IPC.send.gatewayRpcReply, payload),
+  onGatewayStateChanged: (cb: (payload: { state: DesktopGatewayState }) => void) =>
+    subscribe(IPC.event.gatewayStateChanged, cb),
+  onGatewayEvent: (cb: (payload: { event: DesktopGatewayEvent }) => void) => subscribe(IPC.event.gatewayEvent, cb),
+  onGatewayRpcDispatch: (cb: (payload: DesktopGatewayRpcRequest) => void) =>
+    subscribe(IPC.event.gatewayRpcDispatch, cb),
   getSession: () => ipcRenderer.invoke(IPC.invoke.authGetSession),
   getVersion: () => ipcRenderer.invoke(IPC.invoke.version),
   log: (payload: { args: unknown[]; level: 'error' | 'info' | 'warn'; scope: string }) =>
