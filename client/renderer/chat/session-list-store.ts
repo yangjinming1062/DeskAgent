@@ -11,7 +11,7 @@ import {
 } from '@/chat/chat-store'
 import { unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
-import { persistString, storedString } from '@/shared/lib/storage'
+import { persistString, registerStorageClearHandler, storedString } from '@/shared/lib/storage'
 import { $gateway } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -37,6 +37,7 @@ export function isCompanionSession(session: null | SessionInfo | undefined): boo
   return session.system_preset_id === 'companion' || session.kind === 'companion'
 }
 
+export const $companionSessionId = atom<string | null>(null)
 export const $sessions = atom<SessionInfo[]>([])
 export const $sessionsLoading = atom(false)
 export const $sessionListOpen = atom(false)
@@ -146,6 +147,11 @@ export async function fetchSessions(): Promise<void> {
 
     if (token === sessionsToken) {
       $sessions.set(res.sessions || [])
+      const companion = (res.sessions || []).find(isCompanionSession)
+
+      if (companion) {
+        $companionSessionId.set(companion.id)
+      }
     }
   } catch (err) {
     log.error('session-list', 'Failed to fetch sessions:', err)
@@ -440,27 +446,47 @@ export async function switchSession(sessionId: string): Promise<void> {
   }
 }
 
+let openMainPromise: Promise<string | null> | null = null
+
 // 挂载主会话并加载其对话流。
 export async function openMainSession(onMounted?: (res: SessionResumeResponse) => void): Promise<string | null> {
+  if (openMainPromise) {
+    return openMainPromise
+  }
+
   const gw = $gateway.get()
 
   if (!gw) {
     return null
   }
 
-  try {
-    const res = await gw.request<SessionResumeResponse>('session.get_main')
-    setChatSession(res.session_id)
-    hydrateChatMessages(res.messages || [], res.info)
-    onMounted?.(res)
+  openMainPromise = (async () => {
+    try {
+      const res = await gw.request<SessionResumeResponse>('session.get_main')
+      $companionSessionId.set(res.session_id)
+      setChatSession(res.session_id)
+      hydrateChatMessages(res.messages || [], res.info)
+      onMounted?.(res)
 
-    return res.session_id
-  } catch (err) {
-    log.error('session-list', 'Failed to open main session:', err)
+      return res.session_id
+    } catch (err) {
+      log.error('session-list', 'Failed to open main session:', err)
 
-    return null
-  }
+      return null
+    } finally {
+      openMainPromise = null
+    }
+  })()
+
+  return openMainPromise
 }
+
+registerStorageClearHandler(() => {
+  $companionSessionId.set(null)
+  $sessions.set([])
+  $archivedSessions.set([])
+  $searchResults.set([])
+})
 
 export async function deleteSession(sessionId: string): Promise<void> {
   try {

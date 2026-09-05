@@ -59,6 +59,7 @@ export {
   IconTrash as Trash2,
   IconUsers as Users,
   IconVideo as Video,
+  IconVolume2 as Volume2,
   IconX as X,
   IconBolt as Zap
 } from '@tabler/icons-react'

@@ -9,20 +9,13 @@
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { ChatPanel } from '@/chat/chat-panel'
 import { $chatSessionId, $chatSessionKind } from '@/chat/chat-store'
-import {
-  $currentSessionKind,
-  $sessions,
-  isCompanionSession,
-  openMainSession,
-  switchSession
-} from '@/chat/session-list-store'
-import { ArrowRight } from '@/shared/lib/icons'
+import { $companionSessionId, $currentSessionKind, openMainSession } from '@/chat/session-list-store'
+import type { ConnectionState } from '@/shared/lib/gateway-protocol'
 import { $gatewayState } from '@/shared/store/gateway'
-import { requestOpenSurface } from '@/shared/store/surfaces'
 
 import { AppearancePage } from './appearance-page'
 import { ChannelsPage } from './channels-page'
@@ -54,68 +47,34 @@ export function LivingStage(): React.JSX.Element {
 }
 
 function ChatStage(): React.JSX.Element {
+  const gatewayState = useStore($gatewayState)
+
+  return <LivingChatView gatewayState={gatewayState} />
+}
+
+function LivingChatView({ gatewayState }: { gatewayState: ConnectionState }): React.JSX.Element {
   const chatSessionId = useStore($chatSessionId)
+  const companionSessionId = useStore($companionSessionId)
   const chatSessionKind = useStore($chatSessionKind)
   const currentSessionKind = useStore($currentSessionKind)
-  const sessions = useStore($sessions)
-  const gatewayState = useStore($gatewayState)
-  const [workBannerDismissed, setWorkBannerDismissed] = useState(false)
 
   const sessionKind = chatSessionKind || currentSessionKind || ''
   const isReadOnlySession = sessionKind === 'im'
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const currentSession = sessions.find(s => s.id === chatSessionId)
-  const isWorkSession = currentSession ? !isCompanionSession(currentSession) : false
-
-  const sessionHydratedRef = useRef(false)
-
+  // 生活空间全生命周期只使用唯一的「陪伴」对话；若尚未加载或当前处于工作会话，自动定位为主陪伴会话
   useEffect(() => {
-    if (gatewayState !== 'open' || sessionHydratedRef.current) {
+    if (gatewayState !== 'open') {
       return
     }
 
-    const params = new URLSearchParams(window.location.search)
-    const sid = params.get('sessionId')
-
-    sessionHydratedRef.current = true
-
-    if (sid) {
-      void switchSession(sid)
-    } else {
+    if (!companionSessionId || chatSessionId !== companionSessionId) {
       void openMainSession()
     }
-  }, [gatewayState])
+  }, [gatewayState, companionSessionId, chatSessionId])
 
   return (
     <div className={styles.chatStage}>
-      {isWorkSession && !workBannerDismissed && (
-        <div className="mx-4 mt-3 flex items-center justify-between rounded-xl border border-line-hairline bg-surface-card/75 px-3 py-2 text-xs text-strong shadow-xs backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-accent" />
-            <span>这是工作会话，要去工作台吗？</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="text-[11px] text-faint transition hover:text-strong"
-              onClick={() => setWorkBannerDismissed(true)}
-              type="button"
-            >
-              仍在这里聊
-            </button>
-            <button
-              className="inline-flex items-center gap-1 rounded-lg bg-accent-soft px-2.5 py-1 text-[11px] font-medium text-strong transition hover:bg-accent-soft/80"
-              onClick={() => {
-                void requestOpenSurface('workbench', chatSessionId ? { sessionId: chatSessionId } : {})
-              }}
-              type="button"
-            >
-              <span>去工作台</span>
-              <ArrowRight className="size-3" />
-            </button>
-          </div>
-        </div>
-      )}
       <ChatPanel
         gatewayState={gatewayState}
         inputWrapperClassName={styles.chatInputWrapper}

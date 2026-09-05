@@ -1,4 +1,4 @@
-﻿import { useStore } from '@nanostores/react'
+import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useState } from 'react'
 
@@ -30,7 +30,7 @@ interface PresetPickerModalProps {
   onClose: () => void
 }
 
-// 用户决策要求「无默认、确认按钮必选中才启用」，避免误选 companion。
+// 用户决策要求：工作台严格排除「陪伴」预设，仅允许从 4 种专业工位预设中创建新会话。
 export function PresetPickerModal({ presets, loading, onConfirm, onClose }: PresetPickerModalProps): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string>('')
   const fetched = useStore($systemPresetsFetched)
@@ -41,7 +41,9 @@ export function PresetPickerModal({ presets, loading, onConfirm, onClose }: Pres
     }
   }, [fetched])
 
-  const canSubmit = selectedId !== '' && !loading && presets.length > 0
+  // 工作台剔除陪伴预设
+  const workPresets = presets.filter(p => p.id !== 'companion')
+  const canSubmit = selectedId !== '' && !loading && workPresets.length > 0
 
   return (
     <WizardModal
@@ -72,12 +74,12 @@ export function PresetPickerModal({ presets, loading, onConfirm, onClose }: Pres
     >
       <p className="mb-3 text-[11px] leading-relaxed text-muted">{strings.chat.presetPicker.intro}</p>
       <div className="space-y-2">
-        {loading || (!fetched && presets.length === 0) ? (
+        {loading || (!fetched && workPresets.length === 0) ? (
           <div className="py-6 text-center text-xs text-faint">{strings.common.loading}</div>
-        ) : presets.length === 0 ? (
+        ) : workPresets.length === 0 ? (
           <div className="py-6 text-center text-xs text-faint">{strings.chat.presetPicker.fetchFailed}</div>
         ) : (
-          presets.map(p => {
+          workPresets.map(p => {
             const selected = selectedId === p.id
 
             return (

@@ -3,15 +3,14 @@ import type React from 'react'
 import { memo, useState } from 'react'
 
 import { $portraitUrl } from '@/companion'
-import { ArrowRight, ChevronDown } from '@/shared/lib/icons'
+import { ChevronDown } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import { requestOpenSurface } from '@/shared/store/surfaces'
 
 import { ChatMediaCard } from './chat-media-card'
 import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
-import { $chatMessageBodies, $chatSessionId, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
+import { $chatMessageBodies, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
 import { ToolChipTimeline } from './tool-chip-timeline'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
@@ -32,25 +31,6 @@ export type ConversationVariant = 'living' | 'workbench'
 interface MessageBubbleProps {
   message: ChatMessageListItem
   variant?: ConversationVariant
-}
-
-// 生活空间在工具回合里的跳转入口
-function GoHandleItBadge({ sessionId }: { sessionId: string | null }): React.JSX.Element {
-  const openWorkbench = (): void => {
-    void requestOpenSurface('workbench', sessionId ? { sessionId } : {})
-  }
-
-  return (
-    <button
-      className="mx-auto my-1.5 inline-flex items-center gap-1.5 rounded-full border border-line-hairline bg-accent-soft px-3 py-1 text-xs text-strong shadow-xs backdrop-blur-glass transition hover:brightness-110"
-      onClick={openWorkbench}
-      type="button"
-    >
-      <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-      <span>我去忙一下</span>
-      <ArrowRight className="size-3" />
-    </button>
-  )
 }
 
 // 戳 / 拖拽追踪：侧对齐但视觉上弱化。
@@ -102,10 +82,6 @@ function MessageBubbleWithBody({
 }): React.JSX.Element {
   const subtype = message.subtype || ''
   const isUser = message.role === 'user'
-
-  // 会话 id：生活空间跳转工作台时附带 sessionId，跳到对应会话。
-  // 必须在所有早返回之前订阅，避免 hooks 顺序错位。
-  const sessionId = useStore($chatSessionId)
   const portraitUrl = useStore($portraitUrl)
 
   // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
@@ -151,6 +127,11 @@ function MessageBubbleWithBody({
   }
 
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
+    // 生活空间弱化工具调用细节，通过 subtype === 'tool_summary' 契约过滤工具摘要胶囊
+    if (variant === 'living' && subtype === 'tool_summary') {
+      return <></>
+    }
+
     return (
       <div className="my-1.5 flex justify-center px-2">
         <div className="max-w-[90%] rounded-full border border-line-standard bg-surface-card/60 px-3 py-1 text-center text-xs leading-relaxed text-muted backdrop-blur-glass shadow-xs">
@@ -188,17 +169,26 @@ function MessageBubbleWithBody({
     )
   }
 
-  // 仅在已完成、非错误、非取消且有文本的助手消息上显示播放按钮。
+  // 仅在生活空间、已完成、非错误、非取消且有文本的助手消息上显示播放按钮。工作台侧重干活直接看文本。
   const showPlayButton =
-    !isUser && !body.streaming && Boolean(body.text) && !body.error && !body.cancelled && !body.toolName
+    variant === 'living' &&
+    !isUser &&
+    !body.streaming &&
+    Boolean(body.text) &&
+    !body.error &&
+    !body.cancelled &&
+    !body.toolName
 
-  // 派生按钮：必须有后端 Message.id 才能回传给 session.fork；流式中/出错/已取消/正在调用工具时禁用避免歧义。
-  const canFork =
+  // 操作按钮通用守卫：必须有后端 Message.id 才能回传；流式中/出错/已取消/正在调用工具时禁用避免歧义。
+  const canOperate =
     Boolean(message.backendMessageId) && !body.streaming && !body.error && !body.cancelled && !body.toolName
 
+  // 派生按钮：工作台专属，生活空间为单一上下文不允许派生新会话。
+  const canFork = variant === 'workbench' && canOperate
+
   // 撤回按钮：限定 user-role，避免误点 assistant 行造成「撤回伙伴上一句回答」的歧义；
-  // 同 canFork 的禁用条件。Fork 与 Undo 共同进 hover-revealed 操作区，视觉一致。
-  const canUndo = canFork && isUser
+  // 用户在生活空间或工作台均可撤回自身消息。
+  const canUndo = isUser && canOperate
 
   // 用户附件渲染为可点击图片卡（data URL 或本地路径，媒体源通道负责取图）；
   // 正文剔除 @file: 指令行，纯图片消息不渲染空气泡。
@@ -207,6 +197,24 @@ function MessageBubbleWithBody({
   const tools = body.tools?.length ? body.tools : body.toolName ? [body.toolName] : []
   const toolOnly = tools.length > 0 && !visibleText.trim() && !body.error && !body.cancelled
   const showToolIndicator = !isUser && tools.length > 0
+
+  // 纯工具中间帧在生活空间不占位渲染
+  if (variant === 'living' && toolOnly) {
+    return <></>
+  }
+
+  // 非流式、非错误且无任何可见文本与媒体的空消息不渲染
+  if (
+    !isUser &&
+    !visibleText.trim() &&
+    !body.streaming &&
+    !body.attachments?.length &&
+    !body.media?.length &&
+    !body.error &&
+    !body.cancelled
+  ) {
+    return <></>
+  }
 
   return (
     <div className={`group/message relative flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -230,7 +238,6 @@ function MessageBubbleWithBody({
           </div>
         ) : null}
         {showToolIndicator && variant === 'workbench' ? <ToolChipTimeline active={toolOnly} tools={tools} /> : null}
-        {showToolIndicator && variant === 'living' ? <GoHandleItBadge sessionId={sessionId} /> : null}
         {!hideTextBubble && !toolOnly ? (
           <div
             className={cn(
@@ -257,6 +264,11 @@ function MessageBubbleWithBody({
               <>
                 {visibleText}
                 {body.streaming && <span className="animate-caret-pulse" />}
+                {showPlayButton && (
+                  <span className="ml-1.5 inline-flex align-middle">
+                    <ChatMessagePlayButton messageId={message.id} text={body.text} />
+                  </span>
+                )}
               </>
             ) : (
               <span className="animate-pulse text-faint">…</span>
@@ -280,11 +292,10 @@ function MessageBubbleWithBody({
             ))}
           </div>
         ) : null}
-        {showPlayButton && <ChatMessagePlayButton className="mt-1" messageId={message.id} text={body.text} />}
       </div>
 
-      {/* hover 区承载 Fork / Undo；Play 属内容播放范畴，保持在气泡下方常驻。pointer-events-auto 防止父级 pointer-events-none 把按钮吃掉。 */}
-      {canFork && (
+      {/* hover 区承载 Fork / Undo；pointer-events-auto 防止父级 pointer-events-none 把按钮吃掉。 */}
+      {(canFork || canUndo) && (
         <div
           className="pointer-events-auto absolute -top-3 right-2 z-10 flex items-center gap-1
                      rounded-md border border-line-standard bg-surface-panel/90 px-1.5 py-1
@@ -292,7 +303,7 @@ function MessageBubbleWithBody({
                      transition-opacity duration-150
                      group-hover/message:opacity-100"
         >
-          <ChatMessageForkButton messageId={message.id} sourceMessageId={message.backendMessageId!} />
+          {canFork && <ChatMessageForkButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
           {canUndo && <ChatMessageUndoButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
         </div>
       )}

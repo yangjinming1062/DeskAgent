@@ -3,18 +3,17 @@ import { atom } from 'nanostores'
 import type React from 'react'
 
 import { $voicePreparing, speakChatMessage, stopSpeaking } from '@/companion'
+import { Loader2, SquareFilled, Volume2 } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 import { notifyError } from '@/shared/store/notifications'
 
-/** TTS 播放按钮，跟随每一条已完成的精灵回复消息展示。点击切换「播放 / 停止」。
+/** TTS 播放按钮，跟随生活空间已完成的精灵回复消息展示。点击切换「朗读 / 停止」。
  *
  *  设计要点：
  *  - 同一条消息的按钮第二次点击 = 停止（而不是"暂停+续播"，见 audio-track.ts 设计）。
  *  - 不同消息的按钮之间通过模块级单例抢占，旧的按钮立刻回到 idle。
  *  - TTS 调用统一走 `speakChatMessage`，永远 `persist: true`，命中磁盘缓存。
- *
- *  当前正在播放的 messageId 用一个 nanostores atom 持有，这样组件能通过
- *  `useStore` 订阅、抢占 / 结束时自动重新渲染——模块级普通变量在 React 看来
- *  是不可见的。
+ *  - 精简紧凑的微型按钮，紧随文本末尾，使用现代矢量图标契合毛玻璃 UI 质感。
  */
 
 interface ChatMessagePlayButtonProps {
@@ -37,7 +36,9 @@ export function ChatMessagePlayButton({
   // 其他消息在加载/播放时，当前按钮整体禁用，避免竞速点击。
   const otherBusy = voicePreparing && !isMinePlaying
 
-  const onClick = async (): Promise<void> => {
+  const onClick = async (e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation()
+
     // 场景 A：当前按钮就是正在播放/准备中的那一条 → 停止（toggle-stop）。
     // stopSpeaking → audio-track.stopAudio → 同步触发旧 onDone 清 atom；但若
     // TTS 合成仍在 IPC 途中（还没有 onDone 可触发），必须在这里直接清。
@@ -77,40 +78,42 @@ export function ChatMessagePlayButton({
     }
   }
 
-  let label = '播放'
-  let icon = '🔊'
+  let label = '朗读'
+  let icon = <Volume2 className="size-3.5 transition-transform group-hover/play:scale-110" />
 
-  let styleClass =
-    'rounded-full border border-line-strong bg-fill-faint px-2 py-1 text-xs text-muted transition hover:bg-fill-hover hover:text-strong'
+  let stateClass =
+    'text-faint hover:text-strong hover:bg-fill-hover/60 border border-transparent hover:border-line-hairline'
 
   if (isMinePlaying) {
-    label = '停止播放'
-    styleClass =
-      'rounded-full border border-line-strong bg-fill-hover px-2 py-1 text-xs text-strong transition hover:bg-fill-hover'
-  } else if (voicePreparing && otherBusy) {
-    icon = '⏳'
-    label = '正在准备语音'
-    styleClass =
-      'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
-  } else if (voicePreparing) {
-    // 自己正在准备（gen 已占但 playDataUrl 还没 resolve）—— 显示 loading。
-    label = '正在准备语音'
-    styleClass =
-      'rounded-full border border-line-strong bg-fill-faint px-2 py-1 text-xs text-faint cursor-progress animate-pulse'
+    if (voicePreparing) {
+      label = '正在准备语音…'
+      icon = <Loader2 className="size-3.5 text-accent animate-spin" />
+      stateClass = 'text-accent border border-transparent cursor-pointer'
+    } else {
+      label = '停止朗读'
+      icon = <SquareFilled className="size-2.5 text-accent animate-pulse" />
+      stateClass = 'bg-accent-soft/90 text-accent border border-accent-line/50 shadow-xs'
+    }
+  } else if (otherBusy) {
+    label = '语音通道忙'
+    icon = <Volume2 className="size-3.5 opacity-30" />
+    stateClass = 'text-faint/40 border border-transparent cursor-not-allowed opacity-50'
   }
 
   return (
     <button
       aria-label={label}
-      className={`${styleClass} ${className}`}
+      className={cn(
+        'group/play inline-flex size-5 shrink-0 items-center justify-center rounded-md backdrop-blur-xs transition select-none',
+        stateClass,
+        className
+      )}
       disabled={Boolean(otherBusy)}
-      onClick={() => {
-        void onClick()
-      }}
+      onClick={onClick}
       title={label}
       type="button"
     >
-      <span aria-hidden="true">{icon}</span>
+      {icon}
     </button>
   )
 }

@@ -180,8 +180,19 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
   let totalChars = 0
 
   for (const m of messages) {
-    const id = nextId()
+    // 过滤底层工具执行结果（role === 'tool'），避免将 raw JSON 结果作为气泡显示
+    if (m.role === 'tool') {
+      continue
+    }
+
     const textContent = extractText(m)
+
+    // 过滤无正文且无媒体的助手行（只调用工具无文字输出的空中间帧，避免气泡省略号 …）
+    if (m.role === 'assistant' && !textContent.trim() && !m.media?.length) {
+      continue
+    }
+
+    const id = nextId()
     totalChars += textContent.length
 
     items.push({
