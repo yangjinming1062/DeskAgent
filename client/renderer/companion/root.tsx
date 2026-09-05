@@ -15,6 +15,7 @@ import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interac
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial, resetToHomePosition } from '@/companion/spatial'
+import { useAuthBridge } from '@/companion/use-auth-bridge'
 import {
   ActivationOverlay,
   BootFailureOverlay,
@@ -24,7 +25,7 @@ import {
   useMainProcessListener
 } from '@/onboarding'
 import { NotificationStack, useGatewayRequest } from '@/shared'
-import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
+import { $auth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
@@ -85,9 +86,7 @@ export function CompanionRoot(): React.JSX.Element {
 
   const validityCheckedRef = useRef(false)
 
-  useEffect(() => {
-    void hydrateAuth()
-  }, [])
+  useAuthBridge()
 
   useEffect(() => initSpatial(), [])
 
@@ -97,10 +96,6 @@ export function CompanionRoot(): React.JSX.Element {
   useEffect(() => {
     void hydrateRunnerStatus()
   }, [])
-
-  useMainProcessListener('onAuthChanged', payload => void applyAuthBroadcast(payload), [])
-
-  useMainProcessListener('onSessionExpired', () => void logout(), [])
 
   // 托盘菜单的「登出」入口会触发这个桥；主进程侧登出也会在下一次会话检查时
   // 触发 `onSessionExpired`，但显式路由能让用户在点托盘项时 UI 更跟手。

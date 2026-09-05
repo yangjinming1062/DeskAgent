@@ -8,12 +8,19 @@ import { HashRouter } from 'react-router-dom'
 import { initCompanionPrefsSync, initPersonaSkin } from '@/companion'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait } from '@/companion/portrait-store'
+import { useAuthBridge } from '@/companion/use-auth-bridge'
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { applyNoBlurIfNeeded } from '@/shared/lib/apply-no-blur'
 import { installClipboardShim } from '@/shared/lib/clipboard'
 import { hydrateSurfaces } from '@/shared/store/surfaces'
 import { initUiThemeSync } from '@/shared/store/theme'
+
+function SurfaceAuthBootstrap(): null {
+  useAuthBridge()
+
+  return null
+}
 
 export function bootstrapSurface(label: string, RootComponent: React.ComponentType): void {
   installClipboardShim()
@@ -36,6 +43,7 @@ export function bootstrapSurface(label: string, RootComponent: React.ComponentTy
       <ErrorBoundary label={label}>
         <HapticsProvider>
           <HashRouter>
+            <SurfaceAuthBootstrap />
             <RootComponent />
           </HashRouter>
         </HapticsProvider>
