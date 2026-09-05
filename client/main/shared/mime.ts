@@ -62,8 +62,6 @@ export function dataUrlFromBuffer(buffer: Buffer | Uint8Array, mimeType: string)
 
 interface ParsedDataUrl {
   data: Buffer
-  isBase64: boolean
-  mediaType: string
   mime: string
 }
 
@@ -92,10 +90,9 @@ export function parseDataUrl(dataUrl: string): ParsedDataUrl {
   }
 
   const mime = (parts[0] || 'application/octet-stream').toLowerCase()
-  const mediaType = parts.join(';') || mime
   const data = isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload), 'utf8')
 
-  return { data, isBase64, mediaType, mime }
+  return { data, mime }
 }
 
 // 将 `data:<mime>[;base64],<payload>` 形式的 URL 解码回原始字节。

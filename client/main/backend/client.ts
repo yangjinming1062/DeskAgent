@@ -1,6 +1,5 @@
+import { resolveTimeoutMs } from '../security/hardening'
 import { errorMessage } from '../shared/utils'
-
-export const DEFAULT_TIMEOUT_MS = 15_000
 
 interface BackendRequestErrorOptions {
   body?: unknown
@@ -25,14 +24,6 @@ export class BackendRequestError extends Error {
     if (cause) {
       this.cause = cause
     }
-  }
-
-  get isAuth(): boolean {
-    return this.status === 401 || this.status === 403
-  }
-
-  get isClientError(): boolean {
-    return Number.isInteger(this.status) && this.status! >= 400 && this.status! < 500
   }
 
   get isNetwork(): boolean {
@@ -78,16 +69,6 @@ function normalizeBaseUrl(raw?: null | string): string {
   parsed.pathname = parsed.pathname.replace(/\/+$/, '')
 
   return parsed.toString().replace(/\/+$/, '')
-}
-
-export function resolveTimeoutMs(timeoutMs?: null | number | string): number {
-  const parsed = Number(timeoutMs)
-
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return Math.round(parsed)
-  }
-
-  return DEFAULT_TIMEOUT_MS
 }
 
 // JSON → 序列化为 JSON 字符串；string → 原样；Buffer/Uint8Array → 字节。
