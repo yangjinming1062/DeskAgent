@@ -90,3 +90,16 @@ export function safeReadJson<T = unknown>(filePath: string): T | null {
     return null
   }
 }
+
+// 精灵是无边框置顶浮层，hide 后必须从 Windows 任务栏摘掉，否则会多出一个按钮。
+export function hideAndSkipTaskbar(win: BrowserWindow | null | undefined): void {
+  if (!win || win.isDestroyed()) {
+    return
+  }
+
+  win.hide()
+
+  if (process.platform === 'win32') {
+    win.setSkipTaskbar(true)
+  }
+}

@@ -20,6 +20,7 @@ import {
 import { BrowserWindow, type IpcMain, type IpcMainInvokeEvent, screen } from 'electron'
 
 import * as runnerConfigStore from '../shared/lib/runner-config-store'
+import { broadcastToAllWindows } from '../shared/utils'
 
 export interface SurfacesManager {
   closeSurface: () => Promise<void>
@@ -42,20 +43,6 @@ interface SurfacesManagerOptions {
 }
 
 const LAST_SURFACE_KEY_PATH = ['ui', 'last_surface'] as const
-
-function broadcast(win: BrowserWindow | null, payload: DesktopSurfaceChangedEvent): void {
-  if (!win || win.isDestroyed()) {
-    return
-  }
-
-  win.webContents.send(IPC.event.surfaceChanged, payload)
-}
-
-function broadcastAll(payload: DesktopSurfaceChangedEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    broadcast(win, payload)
-  }
-}
 
 async function persistLastSurface(id: SurfaceId): Promise<void> {
   await runnerConfigStore.patch(LAST_SURFACE_KEY_PATH, { value: id })
@@ -137,7 +124,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
       }
 
       lastBroadcastBounds = b
-      broadcastAll(snap)
+      broadcastToAllWindows(IPC.event.surfaceChanged, snap)
     }
 
     const onChange = (): void => {
@@ -195,7 +182,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
 
     if (openSurfaceId === id) {
       openSurfaceId = null
-      broadcastAll(snapshot())
+      broadcastToAllWindows(IPC.event.surfaceChanged, snapshot())
     }
   }
 
@@ -212,7 +199,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     }
 
     openSurfaceId = null
-    broadcastAll(snapshot())
+    broadcastToAllWindows(IPC.event.surfaceChanged, snapshot())
   }
 
   const internalOpen = async (payload: DesktopSurfaceOpenPayload): Promise<void> => {
@@ -249,7 +236,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     lastSurface = id
     lastSurfaceHydrated = true
 
-    broadcastAll(snapshot())
+    broadcastToAllWindows(IPC.event.surfaceChanged, snapshot())
     await persistLastSurface(id)
   }
 

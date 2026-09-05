@@ -10,7 +10,7 @@ import {
 } from 'electron'
 
 import type { BackendSessionLike } from '../runner/reverse-rpc'
-import { errorMessage, sendToMain } from '../shared/utils'
+import { errorMessage, hideAndSkipTaskbar, sendToMain } from '../shared/utils'
 
 import type { SurfacesManager } from './surfaces'
 
@@ -137,11 +137,7 @@ export function installCloseInterceptor(win: BrowserWindow): void {
     }
 
     event.preventDefault()
-    win.hide()
-
-    if (process.platform === 'win32') {
-      win.setSkipTaskbar(true)
-    }
+    hideAndSkipTaskbar(win)
 
     rebuildTrayMenu()
   })
@@ -156,11 +152,7 @@ function hideMainWindow(): void {
   const win = trayDeps?.bridgeDeps?.getMainWindow?.()
 
   if (win && !win.isDestroyed()) {
-    win.hide()
-
-    if (process.platform === 'win32') {
-      win.setSkipTaskbar(true)
-    }
+    hideAndSkipTaskbar(win)
 
     rebuildTrayMenu()
   }

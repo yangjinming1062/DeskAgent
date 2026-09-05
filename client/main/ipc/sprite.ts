@@ -3,7 +3,7 @@ import path from 'node:path'
 import { IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain, Screen } from 'electron'
 
-import { atomicWriteFile, safeReadJson } from '../shared/utils'
+import { atomicWriteFile, hideAndSkipTaskbar, safeReadJson } from '../shared/utils'
 
 const POSITION_FILE = 'companion-position.json'
 
@@ -54,13 +54,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
   }
 
   ipcMain.handle(IPC.invoke.spriteHide, async () => {
-    withWindow(win => {
-      win.hide()
-
-      if (process.platform === 'win32') {
-        win.setSkipTaskbar(true)
-      }
-    })
+    withWindow(hideAndSkipTaskbar)
   })
 
   ipcMain.handle(

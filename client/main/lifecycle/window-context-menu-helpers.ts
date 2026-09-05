@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { App, BrowserWindow, Net } from 'electron'
 import { clipboard, dialog, nativeImage } from 'electron'
 
-import { extensionForMimeType, mimeTypeForPath } from '../shared/mime'
+import { extensionForMimeType, mimeTypeForPath, parseDataUrl } from '../shared/mime'
 
 // 解析 `data:` / `file:` / http(s) URL 为字节流 + mime；右键菜单里
 // 复制/保存图片与写 composer 缩略图都依赖这条公共路径。
@@ -16,15 +16,7 @@ async function resourceBufferFromUrl(rawUrl: string, electronNet: Net): Promise<
   }
 
   if (rawUrl.startsWith('data:')) {
-    const match = rawUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s)
-
-    if (!match) {
-      throw new Error('Invalid data URL')
-    }
-
-    const mimeType = match[1] || 'application/octet-stream'
-    const encoded = match[3] || ''
-    const buffer = match[2] ? Buffer.from(encoded, 'base64') : Buffer.from(decodeURIComponent(encoded), 'utf8')
+    const { data: buffer, mime: mimeType } = parseDataUrl(rawUrl)
 
     return { buffer, mimeType }
   }

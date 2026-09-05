@@ -4,8 +4,6 @@ import {
   type DesktopShortcutsSetPayload,
   type DesktopShortcutsState,
   IPC,
-  type IpcEventChannel,
-  type IpcEventContract,
   type ShortcutRegistrationStatus,
   type SurfaceId
 } from '@ipc/contracts'
@@ -13,7 +11,7 @@ import { type BrowserWindow, globalShortcut, type IpcMain } from 'electron'
 
 import type { SurfacesManager } from '../lifecycle/surfaces'
 import * as store from '../shared/lib/runner-config-store'
-import { errorMessage } from '../shared/utils'
+import { errorMessage, sendToMain } from '../shared/utils'
 
 interface ShortcutsIpcDeps {
   getMainWindow: () => BrowserWindow | null | undefined
@@ -33,22 +31,12 @@ const currentStatus: Record<keyof DesktopShortcutsConfig, ShortcutRegistrationSt
   toggleVisibility: { registered: false }
 }
 
-function sendToWindow<C extends IpcEventChannel>(
-  win: BrowserWindow | null | undefined,
-  channel: C,
-  ...payload: IpcEventContract[C]
-): void {
-  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-    win.webContents.send(channel, ...payload)
-  }
-}
-
 function broadcastShortcutsChanged(state: DesktopShortcutsState): void {
   if (!deps) {
     return
   }
 
-  sendToWindow(deps.getMainWindow(), IPC.event.shortcutsChanged, state)
+  sendToMain(deps.getMainWindow(), IPC.event.shortcutsChanged, state)
 }
 
 export function readShortcutsConfig(): DesktopShortcutsConfig {

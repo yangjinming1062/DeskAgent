@@ -95,6 +95,7 @@ import {
   directoryExists,
   errorMessage,
   fileExists,
+  hideAndSkipTaskbar,
   sendToMain
 } from './shared/utils'
 
@@ -775,15 +776,8 @@ surfaces.hydrateLastSurface()
 registerShortcutsIpc({
   getMainWindow: () => mainWindow,
   hideMainWindow: () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide()
-
-      if (process.platform === 'win32') {
-        mainWindow.setSkipTaskbar(true)
-      }
-
-      rebuildTrayMenu()
-    }
+    hideAndSkipTaskbar(mainWindow)
+    rebuildTrayMenu()
   },
   ipcMain,
   rememberLog: chunk => rememberLog(chunk),
