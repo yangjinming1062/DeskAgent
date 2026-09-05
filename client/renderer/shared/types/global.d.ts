@@ -102,6 +102,7 @@ declare global {
         maximize: AsyncIpc<IpcInvokeContract['spiritagent:surface:maximize']>
         minimize: AsyncIpc<IpcInvokeContract['spiritagent:surface:minimize']>
         getState: AsyncIpc<IpcInvokeContract['spiritagent:surface:get-state']>
+        setIgnoreMouseEvents: AsyncIpc<IpcInvokeContract['spiritagent:surface:set-ignore-mouse-events']>
         onChanged: EventSubscription<'spiritagent:surface:changed'>
       }
       runnerConfig: {

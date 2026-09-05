@@ -14,11 +14,15 @@ export interface PuppetCanvasHandle {
 }
 
 interface Props {
+  className?: string
   onRig?: (rig: Rig) => void
   onCanvas?: (canvas: HTMLCanvasElement) => void
 }
 
-export const PuppetCanvas = forwardRef<PuppetCanvasHandle, Props>(function PuppetCanvas({ onRig, onCanvas }, ref) {
+export const PuppetCanvas = forwardRef<PuppetCanvasHandle, Props>(function PuppetCanvas(
+  { className, onRig, onCanvas },
+  ref
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const runtimeRef = useRef<PuppetRuntime | null>(null)
 
@@ -67,5 +71,5 @@ export const PuppetCanvas = forwardRef<PuppetCanvasHandle, Props>(function Puppe
     []
   )
 
-  return <canvas className="max-h-full max-w-full" ref={canvasRef} />
+  return <canvas className={className ?? 'h-full w-auto max-w-none shrink-0'} ref={canvasRef} />
 })

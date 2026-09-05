@@ -114,6 +114,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
     minimize: () => ipcRenderer.invoke(IPC.invoke.surfaceMinimize),
     onChanged: (cb: (payload: DesktopSurfaceChangedEvent) => void) => subscribe(IPC.event.surfaceChanged, cb),
     open: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceOpen, payload),
+    setIgnoreMouseEvents: (payload: { forward?: boolean; ignore: boolean }) =>
+      ipcRenderer.invoke(IPC.invoke.surfaceSetIgnoreMouseEvents, payload),
     toggle: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceToggle, payload)
   },
   skills: {

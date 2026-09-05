@@ -1,13 +1,12 @@
 import { useStore } from '@nanostores/react'
-import React, { lazy, Suspense, useEffect, useMemo, useRef } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 
-import { $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
-import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/3d'
+import { $mesh2dHitmap, $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
+import { $glbLoadFailed, $modelInfo, $sprite3DHitTest, hydrateExpressions, hydrateModel } from '@/3d'
 import {
   $companionLifecycle,
   emitVfx,
   ensureCompanionHydrated,
-  FootGlow,
   handlePetInteraction,
   hydratePersona,
   hydratePortrait,
@@ -16,6 +15,7 @@ import {
   resolveCompanionRenderLayer
 } from '@/companion'
 import { EggStage } from '@/onboarding'
+import { useInteractiveRegion } from '@/shared'
 import { $auth } from '@/shared/store/auth'
 
 import styles from './workbench.module.css'
@@ -32,6 +32,60 @@ export function WorkbenchCompanion(): React.JSX.Element {
   const glbLoadFailed = useStore($glbLoadFailed)
   const pointerStartRef = useRef<{ time: number; x: number; y: number } | null>(null)
   const hasHydratedRef = useRef(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const hit3DRef = useRef<((x: number, y: number) => boolean | null) | null>(null)
+
+  useEffect(
+    () =>
+      $sprite3DHitTest.subscribe(fn => {
+        hit3DRef.current = fn
+      }),
+    []
+  )
+
+  const renderLayer = useMemo<'companion3d' | 'puppet'>(() => {
+    return resolveCompanionRenderLayer({
+      glbLoadFailed,
+      modelStatus: modelInfo.status,
+      puppetReady,
+      renderMode
+    })
+  }, [renderMode, puppetReady, glbLoadFailed, modelInfo.status])
+
+  const stageHitTest = useCallback(
+    (x: number, y: number): boolean => {
+      if (auth.kind !== 'authenticated') {
+        return true
+      }
+
+      if (renderLayer === 'puppet') {
+        const hitmap = $mesh2dHitmap.get()
+
+        if (!hitmap) {
+          return true
+        }
+
+        const rect = wrapperRef.current?.getBoundingClientRect()
+
+        if (!rect || rect.width <= 0 || rect.height <= 0) {
+          return false
+        }
+
+        return hitmap.hit((x - rect.left) / rect.width, (y - rect.top) / rect.height) !== null
+      }
+
+      const probe3d = hit3DRef.current
+
+      if (probe3d) {
+        return probe3d(x, y) ?? true
+      }
+
+      return true
+    },
+    [auth.kind, renderLayer]
+  )
+
+  useInteractiveRegion('workbench-companion', wrapperRef, undefined, stageHitTest, 1)
 
   useEffect(() => {
     if (auth.kind !== 'authenticated' || lifecycle !== 'ready') {
@@ -57,15 +111,6 @@ export function WorkbenchCompanion(): React.JSX.Element {
       hasHydratedRef.current = false
     }
   }, [auth.kind, lifecycle])
-
-  const renderLayer = useMemo<'companion3d' | 'puppet'>(() => {
-    return resolveCompanionRenderLayer({
-      glbLoadFailed,
-      modelStatus: modelInfo.status,
-      puppetReady,
-      renderMode
-    })
-  }, [renderMode, puppetReady, glbLoadFailed, modelInfo.status])
 
   const handleTap = (): void => {
     reportUserActivity()
@@ -113,10 +158,10 @@ export function WorkbenchCompanion(): React.JSX.Element {
       }}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      ref={wrapperRef}
       title="SpiritAgent 伴工精灵（按住可拖动整个工作台，轻点互动）"
     >
       <div className={styles.companionInner}>
-        <FootGlow />
         <Suspense fallback={null}>
           {auth.kind !== 'authenticated' ? (
             <EggStage onTap={handleTap} />

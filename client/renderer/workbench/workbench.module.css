@@ -6,17 +6,20 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: row;
-  gap: 12px;
+  gap: 0;
   height: 100vh;
   overflow: hidden;
-  padding: 16px;
+  padding: 16px 8px;
   position: relative;
   width: 100vw;
 }
 
 html[data-maximized='true'] .windowContainer {
-  gap: 0;
   padding: 0;
+}
+
+html[data-maximized='true'] .companionWrapper {
+  margin-bottom: 0;
 }
 
 .companionSlot {
@@ -24,13 +27,13 @@ html[data-maximized='true'] .windowContainer {
   display: flex;
   flex-shrink: 0;
   height: 100%;
-  justify-content: center;
+  justify-content: flex-end;
+  min-width: 0;
   position: relative;
   user-select: none;
   -webkit-user-select: none;
-  width: 240px;
+  width: calc(58vh * 125 / 275);
   z-index: 10;
-  -webkit-app-region: drag;
 }
 
 .companionWrapper {
@@ -38,12 +41,15 @@ html[data-maximized='true'] .windowContainer {
   cursor: grab;
   display: flex;
   flex-direction: column;
-  height: 420px;
+  height: 58vh;
   justify-content: flex-end;
+  margin-bottom: -16px;
+  min-height: 0;
   position: relative;
   user-select: none;
   -webkit-user-select: none;
-  width: 240px;
+  width: 100%;
+  -webkit-app-region: drag;
 }
 
 .companionWrapper:active {
@@ -52,6 +58,7 @@ html[data-maximized='true'] .windowContainer {
 
 .companionInner {
   height: 100%;
+  overflow: hidden;
   position: relative;
   width: 100%;
 }

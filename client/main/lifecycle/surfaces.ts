@@ -400,6 +400,17 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     ipcMain.handle(IPC.invoke.surfaceIsMaximized, event => {
       return Boolean(resolveWindow(event)?.isMaximized())
     })
+    ipcMain.handle(
+      IPC.invoke.surfaceSetIgnoreMouseEvents,
+      (event, payload?: { forward?: boolean; ignore: boolean }) => {
+        const win = resolveWindow(event)
+
+        if (win && !win.isDestroyed()) {
+          const ignore = Boolean(payload?.ignore)
+          win.setIgnoreMouseEvents(ignore, { forward: ignore && payload?.forward !== false })
+        }
+      }
+    )
     ipcMain.handle(IPC.invoke.surfaceGetState, () => snapshot())
   }
 

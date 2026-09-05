@@ -410,11 +410,17 @@ export class Engine {
     // 配合下颌微收的平视视线，达成最舒适的水平对视感。
     const targetY = box.min.y + height * 0.55
 
-    // 计算覆盖全身包围盒所需的相机距离（保留 15% 视野余量）
+    // 计算覆盖全身包围盒所需的相机距离（保留 15% 视野余量）。
+    // 对于人形双足骨骼（biped），常态站姿躯干与垂臂宽度仅约为身高的 32%~35%，
+    // 但静态绑定姿态（T-pose/A-pose）网格包围盒横展往往达 100% 身高以上。
+    // 在窄画布/竖屏视口下若按绑定姿态 T-pose 横展计算 distW，会导致相机急剧后退、
+    // 角色被严重缩放至微缩尺寸。因此对双足骨骼将有效横展上限约束在常态站姿比例，
+    // 确保角色始终按全身垂直高度基准构图（稳定占画布高约 85%），尺寸恒定。
+    const effectiveWidthSpan = this.character.isBipedRig ? Math.min(widthSpan, height * 0.35) : widthSpan
     const aspect = this.camera.aspect
     const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov * 0.5)
     const distH = (height * 0.5) / (Math.tan(halfFovRad) * 0.85)
-    const distW = (widthSpan * 0.5) / (Math.tan(halfFovRad) * aspect * 0.85)
+    const distW = (effectiveWidthSpan * 0.5) / (Math.tan(halfFovRad) * aspect * 0.85)
     const dist = Math.max(distH, distW, 0.5)
 
     // 水平的正面对视相机（俯仰角 0°，平视水平视线）
@@ -425,7 +431,7 @@ export class Engine {
     // 在 canvas 窗口内居中显示，而无需倾斜相机光轴。
     const canvasWidth = this.canvas.clientWidth || getBaseSpriteWidth()
     const canvasHeight = this.canvas.clientHeight || getBaseSpriteHeight()
-    const visibleWorldHeight = ((height * 0.5) / 0.87) * 2
+    const visibleWorldHeight = ((height * 0.5) / 0.85) * 2
     const deltaY = targetY - centerY
     const yOffset = (deltaY / visibleWorldHeight) * canvasHeight
 

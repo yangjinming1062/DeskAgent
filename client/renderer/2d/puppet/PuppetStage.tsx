@@ -347,9 +347,9 @@ function publishPuppetContentRect(rig: Rig, container: HTMLElement | null): void
     y1 = Math.max(y1, L.y + L.h)
   }
 
-  const fit = Math.min(boxW / rig.canvas.w, boxH / rig.canvas.h)
+  const fit = boxH / rig.canvas.h
   const offX = (boxW - rig.canvas.w * fit) / 2
-  const offY = (boxH - rig.canvas.h * fit) / 2
+  const offY = 0
 
   $spriteContentRect.set({
     left: (offX + x0 * fit) / boxW,
@@ -732,7 +732,7 @@ export function PuppetStage(): React.JSX.Element {
 
   return (
     <div
-      className="flex h-full w-full items-center justify-center"
+      className="flex h-full w-full items-center justify-center overflow-hidden"
       ref={containerRef}
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
     >

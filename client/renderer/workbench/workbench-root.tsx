@@ -16,6 +16,7 @@ import {
   isCompanionSession,
   switchSession
 } from '@/chat/session-list-store'
+import { useInteractiveRegion, useWindowMouseCapture } from '@/shared'
 import { normalizeHashPath } from '@/shared/lib/hash-route'
 import { Home, SlidersHorizontal, Terminal } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
@@ -30,6 +31,10 @@ import { WorkbenchCompanion } from './workbench-companion'
 import styles from './workbench.module.css'
 
 export function WorkbenchRoot(): React.JSX.Element {
+  useWindowMouseCapture(1, { setIgnoreMouseEvents: window.spiritagent?.surface?.setIgnoreMouseEvents })
+  const shellRef = useRef<HTMLDivElement>(null)
+  useInteractiveRegion('workbench-shell', shellRef, undefined, undefined, 1)
+
   const title = useStore($currentSessionTitle)
   const gatewayState = useStore($gatewayState)
   const chatSessionKind = useStore($chatSessionKind)
@@ -135,7 +140,7 @@ export function WorkbenchRoot(): React.JSX.Element {
         <WorkbenchCompanion />
       </aside>
 
-      <div className={styles.shell} data-surface="workbench">
+      <div className={styles.shell} data-surface="workbench" ref={shellRef}>
         <header
           className={styles.titlebar}
           onDoubleClick={() => {

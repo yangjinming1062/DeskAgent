@@ -305,6 +305,10 @@ export interface IpcInvokeContract {
   'spiritagent:surface:maximize': () => Promise<void> | void
   'spiritagent:surface:is-maximized': () => Promise<boolean> | boolean
   'spiritagent:surface:get-state': () => DesktopSurfaceChangedEvent | Promise<DesktopSurfaceChangedEvent>
+  'spiritagent:surface:set-ignore-mouse-events': (payload: {
+    forward?: boolean
+    ignore: boolean
+  }) => Promise<void> | void
 
   // 后端 API 代理
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
@@ -470,6 +474,7 @@ export const IPC = {
     surfaceMaximize: 'spiritagent:surface:maximize',
     surfaceIsMaximized: 'spiritagent:surface:is-maximized',
     surfaceGetState: 'spiritagent:surface:get-state',
+    surfaceSetIgnoreMouseEvents: 'spiritagent:surface:set-ignore-mouse-events',
     skillsList: 'spiritagent:skills:list',
     skillSetEnabled: 'spiritagent:skill:set-enabled',
     toolsetsList: 'spiritagent:toolsets:list',
