@@ -1,4 +1,5 @@
 export { useResolvedMediaSrc } from './chat-media-src'
+export { ChatParamsPanel } from './chat-params-panel'
 export {
   $chatDraftFromUndo,
   $chatMessageBodies,
@@ -34,6 +35,7 @@ export {
   showMediaHint,
   submitPendingBatch
 } from './chat-store'
+export { ChatContextAmbientLine, ChatContextCapsule, ContextProgressBar, formatTokenNumber, useContextStatus } from './context-progress-bar'
 export {
   $currentSessionKind,
   $currentSessionTitle,
