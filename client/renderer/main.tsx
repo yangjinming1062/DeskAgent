@@ -10,7 +10,7 @@ import { applyNoBlurIfNeeded } from '@/shared/lib/apply-no-blur'
 import { installClipboardShim } from '@/shared/lib/clipboard'
 import { installUpdateBridge } from '@/shared/lib/update-bridge'
 
-import App from './app'
+import { CompanionRoot } from './companion/root'
 
 installClipboardShim()
 applyNoBlurIfNeeded()
@@ -27,7 +27,7 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary label="root">
       <HapticsProvider>
         <HashRouter>
-          <App />
+          <CompanionRoot />
         </HashRouter>
       </HapticsProvider>
     </ErrorBoundary>

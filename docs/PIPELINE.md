@@ -135,7 +135,6 @@ fullbody_url → see-through 主用 HF（Gradio：upload → call/inference → 
 - [ ] clip track 引用的 bone name 与 `spec=tripo` 对应 rig 的层级一致
 - [ ] biped 颈段取 `NeckTwist01` 兜底（`spec=tripo` 无 `Neck` 节点）
 - [ ] 客户端兑现按三级降级落空时回退到绑定姿势而非抛错
-- [ ] puppet 链无头断言：`puppet.html?autotest=1`（装配 + 动画八标志）与 `?poses=1`（13 姿态安全 + 缩放阶梯）全绿
 
 ## 9. 参考实现
 
@@ -143,4 +142,4 @@ fullbody_url → see-through 主用 HF（Gradio：upload → call/inference → 
 - 2D see-through 拆分：`backend/services/companion/seethrough/`（client.py 双 provider 传输 / pipeline.py 产物落盘）
 - 2D 行编排（状态机 / 落库 / WS 事件）：`backend/services/companion/mesh2d/pipeline.py::run_mesh2d_pipeline`
 - 3D 客户端兑现：`client/renderer/companion/3d/AnimationMap.ts`
-- 2D puppet 链客户端：`client/renderer/companion/puppet/PuppetStage.tsx`（模块 README 含机制与验证入口）
+- 2D puppet 链客户端：`client/renderer/companion/puppet/PuppetStage.tsx`（模块 README 含机制）

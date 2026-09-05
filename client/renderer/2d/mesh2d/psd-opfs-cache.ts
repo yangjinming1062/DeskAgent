@@ -26,7 +26,7 @@ function isValidPsdBuffer(buffer: ArrayBuffer): boolean {
   return u8[0] === 0x38 && u8[1] === 0x42 && u8[2] === 0x50 && u8[3] === 0x53
 }
 
-/** PSD fetcher：apiAssetBuffer IPC（生产路径），puppet.html 调试页 fallback 到同源 fetch。
+/** PSD fetcher：经主进程 IPC 桥（apiAssetBuffer）拉取签名 PSD 字节。
  *  abort 时返回 null，错误抛给上层走 throwOnError=true 原样抛给调用方（保留旧契约）。 */
 
 async function psdFetcher(
@@ -34,27 +34,16 @@ async function psdFetcher(
   contentHash: string | null | undefined,
   signal: AbortSignal
 ): Promise<ArrayBuffer | null> {
-  if (typeof window.spiritagent?.apiAssetBuffer === 'function') {
-    const u8 = await window.spiritagent.apiAssetBuffer({
-      contentHash: contentHash || undefined,
-      url
-    })
+  const u8 = await window.spiritagent.apiAssetBuffer({
+    contentHash: contentHash || undefined,
+    url
+  })
 
-    if (signal.aborted) {
-      return null
-    }
-
-    return u8.slice().buffer
+  if (signal.aborted) {
+    return null
   }
 
-  // eslint-disable-next-line no-restricted-syntax -- 同源 puppet.html 调试页，URL 来自同源 Vite asset，非后端相对路径
-  const res = await fetch(url, { signal })
-
-  if (!res.ok) {
-    throw new Error(`psd fetch failed: ${res.status}`)
-  }
-
-  return await res.arrayBuffer()
+  return u8.slice().buffer
 }
 
 /** 读取 PSD 字节：优先命中 OPFS 本地缓存；未命中时通过 IPC/网络拉取并异步回写本地缓存。

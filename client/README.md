@@ -61,8 +61,7 @@ client/
 │   ├── living/            # 生活空间模块（生活空间根组件、左栏导航、单文件页 [衣橱/形象/通道/房间/日记/时刻] 与多区段设置页、房间背景 store）
 │   ├── workbench/         # 工作台模块（工作台根组件、会话侧栏、运行轨迹栏、工位设置抽屉 [推理/Runner/技能/工具集]、预设选择器）
 │   ├── onboarding/        # 引导模块（破蛋阶段、问卷流、激活与网关启动流水线）
-│   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
-│   ├── app.tsx            # 角色分发点
+│   ├── main.tsx           # 根组件入口（挂载 CompanionRoot + StrictMode/ErrorBoundary/HapticsProvider/HashRouter）
 │   ├── sprite-entry.tsx   # 精灵窗口入口
 │   ├── living-entry.tsx   # 生活空间窗口入口
 │   └── workbench-entry.tsx# 工作台窗口入口
@@ -82,7 +81,7 @@ client/
 | `chat` → `living` / `workbench`                               | ✗（对话层是两端共用的，不偏向任一表面） |
 | `shared` → 任何                                               | ✗    |
 
-ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/living-entry.tsx`、`renderer/workbench-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/chat`、`@/living`、`@/workbench`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
+ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/main.tsx`、`renderer/sprite-entry.tsx`、`renderer/living-entry.tsx`、`renderer/workbench-entry.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/chat`、`@/living`、`@/workbench`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
 
 ## 4. 关键设计决策
 
@@ -102,15 +101,14 @@ ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`
 - **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../PROTOCOL.md)。
 - **STT/TTS 一律云端**（见 [DESIGN.md §7](../DESIGN.md)）：客户端 IPC 边界直连后端 `POST /api/media/{stt,tts}`，无本地引擎路由；用户在伙伴设置中选的音色仅在云端路径生效。
 - **3D 渲染栈 WebGPU + 四层回退**：引擎异步工厂按 WebGPU → 内置 WebGL2 节点后端（同一 API 面/场景图，零代码）→ 经典 WebGLRenderer → 初始化失败（2D 动画版 / 程序化蛋形兜底，永不空白）逐级降级。**经典回退必须换新 canvas**——曾成功获取过 WebGPU 上下文的 canvas 再也要不到 WebGL2 上下文，所以 canvas 由引擎自建自管（React 只渲染容器），模型加载一律等待引擎就绪而非早退，避免首模型在异步启动窗口被静默丢弃。环境贴图生成按渲染器类型分支——经典版深度依赖 WebGLRenderer 内部结构。
-- **GPU 功耗偏好默认 `low-power`**：`WebGPURenderer` 与经典 `WebGLRenderer` 统一把 `powerPreference` 透传到上下文创建，默认为 `'low-power'`——300×360 精灵窗的渲染负载远低于 iGPU 满载门槛，`high-performance` 会在混合显卡笔记本（Windows Optimus / Apple Silicon 独显机型）持续唤醒 dGPU，平白耗电与发热。调试工具（如 `clip-debugger`）或对帧率有特殊要求的场景经 `EngineOptions.powerPreference` 显式覆盖到 `'high-performance'`。
+- **GPU 功耗偏好默认 `low-power`**：`WebGPURenderer` 与经典 `WebGLRenderer` 统一把 `powerPreference` 透传到上下文创建，默认为 `'low-power'`——300×360 精灵窗的渲染负载远低于 iGPU 满载门槛，`high-performance` 会在混合显卡笔记本（Windows Optimus / Apple Silicon 独显机型）持续唤醒 dGPU，平白耗电与发热。
 - **3D 材质安全回退与拖拽动力学**：加载 GLB 时记录模型内嵌原生基础贴图，自定义 PBR 贴图 404 或网络故障时自动回退原生材质，杜绝模型白板。拖拽时捕获即时速度向量注入物理惯性倾角（横滚/俯仰），结合"悬空摆动"与松手"站稳微沉"动作呈现被"拎起"的交互质感；精灵基准尺寸随屏幕高度自适应，兼容高分辨率屏。
 - **精灵窗口单显示器跟踪 + 跨屏拖拽接力**：透明精灵窗口同一时刻只覆盖一块显示器（贴合当前显示器工作区；分辨率变化原地重贴，显示器被拔掉时自动落回最近屏）。拖拽中指针越出视口即光标已跨入邻屏——渲染层请主进程把窗口挪到光标所在屏；渲染层只把精灵位置平移新旧窗口原点差、拖拽基准不动（切换后指针坐标已在新视口空间，拖拽公式自然产出平移后的值），并按返回的光标点判定最新指针坐标属于旧/新视口空间，避免接力往返期间已到达的新空间事件被二次平移；拖拽结束时窗口原点随位置一并持久化，下次启动先贴回精灵所在显示器再恢复位置。为什么不做覆盖整个虚拟桌面的窗口：全桌面合成层 + 跨屏 DPI 差异的坐标/命中测试复杂度远高于单屏窗口接力，且鼠标穿透范围会被迫覆盖所有屏。
 - **渲染循环自研调度与能耗档位**：引擎自主调度动画循环（不依赖 Three.js 内部循环），支持活跃全速 / 空闲降频 / 休眠低频轮询与彻底停止，解决休眠档位能耗控制。
 - **模型下载失败与生成失败分流**：失败浮层按协议标记区分"重试下载"与重新生成，启动水合保持同一分流，避免误触发付费生成。契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
-- **独立 3D 模型调试套件（`pnpm clip`）**：为解决 3D 产物、面部变形目标与 GLB 质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；按 GLB 内嵌 clip 即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 - **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
-- **生产渲染面禁止裸 fetch（ESLint 强制）**：后端签名 URL 恒为相对路径，渲染进程 origin（dev 的 Vite、打包后的 file://）解析不到——直连只会打到 Vite 拿回 SPA 回退页，在下游解析器里炸出费解的报错。后端数据与资产字节一律经主进程 IPC 桥转发；纯浏览器跑的独立调试页（puppet 调试台 / clip-debugger）不受此约束，豁免处逐行 lint 注释写明 URL 来源。
+- **生产渲染面禁止裸 fetch（ESLint 强制）**：后端签名 URL 恒为相对路径，渲染进程 origin（dev 的 Vite、打包后的 file://）解析不到——直连只会打到 Vite 拿回 SPA 回退页，在下游解析器里炸出费解的报错。后端数据与资产字节一律经主进程 IPC 桥转发；确需直连处逐行 lint 注释写明 URL 来源。
 - **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
 - **dev 放宽 CSP（`unsafe-inline` + `unsafe-eval`），生产仍用严格 CSP**：Vite 的 React Fast Refresh preamble 是内联脚本，严格 CSP 会拦截并触发 `@vitejs/plugin-react can't detect preamble`——白屏 + HMR 重试烧 CPU。`installContentSecurityPolicy` 按 `app.isPackaged` 在 `DEFAULT_CSP_POLICY`（`script-src 'self'`）与 `DEV_CSP_POLICY` 之间切档。dev 只接本地 127.0.0.1:5174 与 OS 协议，无外部 XSS 攻击面需要这层防御；生产不能放松——脚本面收紧是产品级契约的一部分。
 - **未鉴权时激活浮层自动开 + 托盘「激活...」走 IPC**：未鉴权时精灵实体不可见（无模型可渲染，程序化蛋等渲染上下文尚未就绪），用户无从戳起——鉴权状态切到未认证（含首次水化、反激活后）即自动弹出激活浮层。托盘「激活...」入口经 IPC 通知渲染器翻 React 状态：主进程只拉窗口不翻渲染状态，不通知则浮层关掉一次就再也唤不回来。

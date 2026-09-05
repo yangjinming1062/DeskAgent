@@ -1,7 +1,6 @@
 /** PuppetCanvas — Puppet WebGL 运行时的 React 挂载壳。
  *
- * Phase 0c：PSD 驱动的静态/待机展示 + 开发参数面板（puppet.html 调试页使用）。
- * Phase 6 将接入 root.tsx 渲染分支与 drivers 情绪驱动。
+ * 接入 root.tsx 渲染分支与 drivers 情绪驱动。
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'

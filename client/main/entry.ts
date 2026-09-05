@@ -395,10 +395,6 @@ function htmlFileNameForRole(role?: string): string {
     return 'workbench.html'
   }
 
-  if (role === 'clip') {
-    return 'clip-debugger.html'
-  }
-
   return 'index.html'
 }
 

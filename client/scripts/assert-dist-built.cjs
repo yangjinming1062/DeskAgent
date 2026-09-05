@@ -10,7 +10,7 @@ function checkDistBuilt(distDir) {
     return { ok: false, error: `no dist directory at ${distDir}` }
   }
 
-  const requiredHtmlFiles = ['index.html', 'sprite.html', 'clip-debugger.html']
+  const requiredHtmlFiles = ['index.html', 'sprite.html']
   for (const file of requiredHtmlFiles) {
     const htmlPath = path.join(distDir, file)
     if (!fs.existsSync(htmlPath) || !fs.statSync(htmlPath).isFile()) {
@@ -50,7 +50,7 @@ function main() {
     process.exit(1)
   }
 
-  console.log('✓ assert-dist-built: HTML entries (index, sprite, clip-debugger) + assets present')
+  console.log('✓ assert-dist-built: HTML entries (index, sprite) + assets present')
 }
 
 if (require.main === module) {

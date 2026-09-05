@@ -21,9 +21,7 @@ export default defineConfig({
         index: path.resolve(__dirname, 'index.html'),
         sprite: path.resolve(__dirname, 'sprite.html'),
         living: path.resolve(__dirname, 'living.html'),
-        workbench: path.resolve(__dirname, 'workbench.html'),
-        'clip-debugger': path.resolve(__dirname, 'clip-debugger.html'),
-        puppet: path.resolve(__dirname, 'puppet.html')
+        workbench: path.resolve(__dirname, 'workbench.html')
       },
       output: {
         manualChunks(id) {
