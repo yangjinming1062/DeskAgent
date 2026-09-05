@@ -8,9 +8,9 @@ The repo already maintains thorough, authoritative docs in Chinese. Read **[RULE
 
 | Topic | Read |
 |-------|------|
-| Project overview, architecture, module boundaries, invariants | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Companion product design (visuals, animation, lifecycle, onboarding, interaction) | [DESIGN.md](DESIGN.md) |
-| Cross-module protocol contracts (JSON-RPC methods, enums, events, security, credentials) | [PROTOCOL.md](PROTOCOL.md) |
+| Project overview, architecture, module boundaries, invariants | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Companion product design (visuals, animation, lifecycle, onboarding, interaction) | [docs/DESIGN.md](docs/DESIGN.md) |
+| Cross-module protocol contracts (JSON-RPC methods, enums, events, security, credentials) | [docs/PROTOCOL.md](docs/PROTOCOL.md) |
 | Code / doc / commit / testing conventions | [RULES.md](RULES.md) |
 | How to run, build, test, release (quick start, commands) | [README.md](README.md) |
 | Backend module structure & behavior | [backend/README.md](backend/README.md) |

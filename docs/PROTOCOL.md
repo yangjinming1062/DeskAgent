@@ -1,7 +1,7 @@
 # SpiritAgent 跨模块协议契约
 
 > 本文收纳 Backend ↔ Client ↔ Runner 之间**跨模块共享的契约**。核心目的：当你改某个功能时，提醒你同时兼顾多个模块，避免只改一处导致遗漏。
-> 架构动机（为什么这样设计）见 [ARCHITECTURE.md](ARCHITECTURE.md)；产品设计意图见 [DESIGN.md](DESIGN.md)；实现细节、文件路径、错误码、配置项见各模块 [README.md](README.md)。
+> 架构动机（为什么这样设计）见 [ARCHITECTURE.md](ARCHITECTURE.md)；产品设计意图见 [DESIGN.md](DESIGN.md)；实现细节、文件路径、错误码、配置项见各模块 [README.md](../README.md)。
 
 ## 0. 契约总览
 
@@ -56,7 +56,7 @@
 | avatar.regenerate | 重生头像（不使模型失效） | Backend + Client 头像展示 |
 | tts.match_voice / tts.design_voice / tts.list_voices | 音色描述匹配 / 专属音色生成 / 目录枚举 | Backend TTS + Client 音色页 + 工具窗口 REST 镜像 |
 | companion.set_timezone | Client 每次连接上报本地 IANA 时区——系统提示词日期与消息时间戳前缀、夜间批处理与互动统计按用户本地日聚合的唯一时区来源；缺行时回落服务端 UTC，夜间流水线整段跳过 | Backend 持久化 + Client boot 上报 + DESIGN §6.2 |
-| tools.sync | Client boot 与 Runner 重启时把 Runner 工具 schema 推送到后端网关；后端据此决定是否在系统提示词中提供文件工具（`read_file` / `list_directory`）。缺该调用时 LLM 不知有文件工具，对应 WS RPC 注册于 [backend/services/gateway/handlers.py](backend/services/gateway/handlers.py) | Backend handlers + Client boot 上报 |
+| tools.sync | Client boot 与 Runner 重启时把 Runner 工具 schema 推送到后端网关；后端据此决定是否在系统提示词中提供文件工具（`read_file` / `list_directory`）。缺该调用时 LLM 不知有文件工具，对应 WS RPC 注册于 [backend/services/gateway/handlers.py](../backend/services/gateway/handlers.py) | Backend handlers + Client boot 上报 |
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳·摸头·眩晕反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认半身形象（幂等），解开正面全身立绘生成子阶段 | Backend 状态 + Client 流程 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/front-2d | 按默认赛璐珞画风（自然站姿）与微调反馈生成/重绘 2D 正面全身图 | Backend 生成 + Client 正面预览与微调 |
@@ -150,7 +150,7 @@
 
 **inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（仅自主档兑现 + 对话开启抑制）。
 
-**`companion.should_act` 动作枚举**（自主空间决策 RPC，权威源在后端 `ALLOWED_ACTIONS`，与上述 locale 枚举是两套词表）：roam / perch / approach / stay。`approach`（走过去搭话，仅自主档 + 智能驱动开）附带 `params.text`（10–30 字开场白，后端截断至 80 字并设 30 分钟冷却，冷却内或无有效文本整体降级 stay）与可选 `params.emotion`；开场白由后端经 `companion.message` 通道投递（含 status_proactive 持久化与主动外联状态机），RPC 响应只承载走位动作——客户端不消费 params，走位规则见 [client/renderer/companion/README.md §10](client/renderer/companion/README.md)。
+**`companion.should_act` 动作枚举**（自主空间决策 RPC，权威源在后端 `ALLOWED_ACTIONS`，与上述 locale 枚举是两套词表）：roam / perch / approach / stay。`approach`（走过去搭话，仅自主档 + 智能驱动开）附带 `params.text`（10–30 字开场白，后端截断至 80 字并设 30 分钟冷却，冷却内或无有效文本整体降级 stay）与可选 `params.emotion`；开场白由后端经 `companion.message` 通道投递（含 status_proactive 持久化与主动外联状态机），RPC 响应只承载走位动作——客户端不消费 params，走位规则见 [client/renderer/companion/README.md §10](../client/renderer/companion/README.md)。
 
 **动作 tag（[action:NAME]）**：LLM 可另附最多 3 个结构化动作名（snake_case，各占一行、按播放顺序排列），且只能来自后端注入的可请求动作清单——白名单外与超额的 tag 在后端流式解析时丢弃；解析后以 `affect.actions` 数组随对话完成事件下发（2D 依序播放，3D 取首个）。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 
@@ -216,11 +216,11 @@
 
 ### 1.6 错误信封
 
-REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式调用（chat TTS 流）一旦首 chunk 已发，任何供应商失败都不切换 fallback。
+REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](../backend/README.md)；流式调用（chat TTS 流）一旦首 chunk 已发，任何供应商失败都不切换 fallback。
 
 ### 1.7 IM 通道桥接（/api/channels）
 
-外部 IM（微信 iLink）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](backend/README.md)。
+外部 IM（微信 iLink）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](../backend/README.md)。
 
 **会话契约**：所有渠道共用 `im` 这一种 conversation kind；**每用户每渠道一条专属 im 会话**，由 `channel_bindings.conversation_id` 唯一外键锚定（渠道间不混流）。im 会话对桌面端**只读**：出现在会话列表与历史中，但 `prompt.submit` 拒写（后端守卫 + 客户端输入禁用）；人设/长期记忆/情感与桌面回合共享（按 user 加载，无需任何同步动作）。
 
@@ -341,7 +341,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 2.3 runner_ready capabilities 与 health 状态
 
-capabilities 与 capabilities_health 来源于 Runner 的运行时探测（探测设计见 [runner/README.md §2](runner/README.md)）：前者是向后兼容的布尔映射，后者按子能力给出可用性与失败原因。致命探测异常置 probe_failed；客户端按能力缺失做局部降级或给出可操作提示。
+capabilities 与 capabilities_health 来源于 Runner 的运行时探测（探测设计见 [runner/README.md §2](../runner/README.md)）：前者是向后兼容的布尔映射，后者按子能力给出可用性与失败原因。致命探测异常置 probe_failed；客户端按能力缺失做局部降级或给出可操作提示。
 
 `reconnect_streak` 是自上次成功握手以来的连续重连次数（握手成功后重置为 0）。客户端可据此感知连接状态但保持 Runner 存活。生命周期累计重连计数通过 `spiritagent.info.reconnect_count` 上报，不重置。
 

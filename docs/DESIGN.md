@@ -1,7 +1,7 @@
 # 伙伴层交互设计
 
 > 桌面伙伴（companion）的交互设计描述：形象资产体系、动画状态机、伙伴生命周期、onboarding、陪伴交互范式、语音策略、故障态。
-> 这是**描述性文档**——只记产品设计意图与体验原则，不出现字段名、接口方法名、配置键、供应商名等代码相关内容。协议契约见 [PROTOCOL.md](PROTOCOL.md)；架构动机见 [ARCHITECTURE.md](ARCHITECTURE.md)；实现细节见各模块 [README.md](README.md)。
+> 这是**描述性文档**——只记产品设计意图与体验原则，不出现字段名、接口方法名、配置键、供应商名等代码相关内容。协议契约见 [PROTOCOL.md](PROTOCOL.md)；架构动机见 [ARCHITECTURE.md](ARCHITECTURE.md)；实现细节见各模块 [README.md](../README.md)。
 
 ## 设计哲学
 

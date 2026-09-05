@@ -21,7 +21,7 @@
 - **不持有 LLM API 凭证**——所有 LLM 调用经后端（即使是反向 RPC 也是经客户端 → 后端 → LLM）
 - **不解析协议 schema**（affect / 变形目标等）——后端出枚举，客户端按枚举查找，不擅自扩展
 
-架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；产品设计见 [DESIGN.md](../DESIGN.md)。
+架构层定位见 [ARCHITECTURE.md §1 / §2](../docs/ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../docs/PROTOCOL.md)；产品设计见 [DESIGN.md](../docs/DESIGN.md)。
 
 ## 2. 设计意图
 
@@ -31,11 +31,11 @@
 - **生活空间人在画中与无立绘微动感**：全屏铺设含角色房间背景图（`room-backdrop`），窗内严禁挂载 2D/3D 模型，杜绝双重立绘穿帮；由极慢 Ken Burns 微动、玻璃高光位移、左栏头像情绪切换与液态玻璃取色呼吸底营造生机。
 - **工作台三栏工位与窗旁活精灵伴工**：无房间图，采用工位主色与高对比度；三栏工位（会话列表、通用对话流、可折叠 Run Rail）与工位设置抽屉（收纳推理参数、Runner、Skills、Toolsets）。
 - **时刻与日记产品化展示**：轻量消费生活空间时刻时间线与第一人称日记，本地不跑记忆向量检索。
-- **2D / 3D 双渲染与产品兜底**：客户端负责加载形象资产、渲染动画并执行 [DESIGN.md §1.2](../DESIGN.md) 的视觉兜底策略（渲染级联：2D 分层木偶 → 3D → 程序化蛋，任一级装配失败自动落级）；3D 与 2D 产物及动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。资产（3D GLB、2D PSD）采用 OPFS 本地二进制缓存配合 `localStorage` 元数据同步持久化（`da.companion.*`），实现老用户冷启动第 0 帧直接渲染形象，后台静默异步 SWR 校验，登出时统一清除。
-- **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位，经配置同步管道单向推后端（后端闸门的唯一档位来源）；权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../DESIGN.md)。
-- **本地时区随连接上报**：每次网关连接即发即忘上报 IANA 时区——后端夜间批处理与互动统计按用户本地日聚合，缺行时夜间流水线整段跳过；契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
+- **2D / 3D 双渲染与产品兜底**：客户端负责加载形象资产、渲染动画并执行 [DESIGN.md §1.2](../docs/DESIGN.md) 的视觉兜底策略（渲染级联：2D 分层木偶 → 3D → 程序化蛋，任一级装配失败自动落级）；3D 与 2D 产物及动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。资产（3D GLB、2D PSD）采用 OPFS 本地二进制缓存配合 `localStorage` 元数据同步持久化（`da.companion.*`），实现老用户冷启动第 0 帧直接渲染形象，后台静默异步 SWR 校验，登出时统一清除。
+- **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位，经配置同步管道单向推后端（后端闸门的唯一档位来源）；权威边界见 [ARCHITECTURE.md §5.1](../docs/ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../docs/DESIGN.md)。
+- **本地时区随连接上报**：每次网关连接即发即忘上报 IANA 时区——后端夜间批处理与互动统计按用户本地日聚合，缺行时夜间流水线整段跳过；契约见 [PROTOCOL.md §1.2](../docs/PROTOCOL.md)。
 - **透明置顶精灵窗口作为桌面唯一身体**：登录态由托盘管理，精灵窗口透明置顶。生活空间打开时收起精灵舞台，工作台打开时精灵移至窗外侧伴工栖息。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
-- **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../PROTOCOL.md)。
+- **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../docs/PROTOCOL.md)。
 
 ## 3. 架构地图
 
@@ -98,16 +98,16 @@ ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`
 - **设置面板共用同一面板形态**：外壳是同一款面板头（图标 + 标题 + 关闭钮，见 `shared/panel` 的 PanelHeader），不绘制系统原生窗口控件——Win/Linux 不建 WCO、mac 隐藏红绿灯，关闭只走应用侧（关闭钮 / Esc）。面板挂在 sprite 窗口内，常驻置顶（floating 层 / mac screen-saver 层）。
 - **激活码持久 + 会话 JWT 仅内存**：磁盘只持久化加密激活码 + 服务地址 + 用户；每次启动用激活码换取新的会话 JWT（含主动刷新机制）。为什么不持久会话 JWT：一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
 - **用户配置云端真源 + 本地镜像（config-sync 协调器）**：backend `user_settings` 为真源，`desktop-settings.json` 是镜像；`shared/lib/config-sync.ts` 挂在 runner-config-store 的写路径上（`setCloudSync` 委托），每次变更走 镜像原子写 → 推 Runner → 防抖 PUT `/api/config`。为什么按节白名单而不是整文件上云：本地文件含明文机密（terminal 节）与设备路径，白名单 + 节内本机键剔除（browser.profile_dir）把机密钉死在本机（PROTOCOL §5.3）；镜像带 sync.user_id 归属戳，换号残留按不信任处理（清空同步节、不上传），防止把 A 的编辑泄给 B。离线编辑照常写镜像，恢复后由水合的键级播种（本地有而云端无的键回传）自愈补传——多端为按保存 LWW、无合并，另一端的改动下次水合收敛。推理与对话/语音键（language/agent.* 等）无本地消费者，不入镜像、由设置页直连云端读写，与镜像键集天然不相交（PUT 只 upsert 传入键，见 PROTOCOL §2.4）。
-- **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../PROTOCOL.md)。
-- **STT/TTS 一律云端**（见 [DESIGN.md §7](../DESIGN.md)）：客户端 IPC 边界直连后端 `POST /api/media/{stt,tts}`，无本地引擎路由；用户在伙伴设置中选的音色仅在云端路径生效。
+- **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../docs/PROTOCOL.md)。
+- **STT/TTS 一律云端**（见 [DESIGN.md §7](../docs/DESIGN.md)）：客户端 IPC 边界直连后端 `POST /api/media/{stt,tts}`，无本地引擎路由；用户在伙伴设置中选的音色仅在云端路径生效。
 - **3D 渲染栈 WebGPU + 四层回退**：引擎异步工厂按 WebGPU → 内置 WebGL2 节点后端（同一 API 面/场景图，零代码）→ 经典 WebGLRenderer → 初始化失败（2D 动画版 / 程序化蛋形兜底，永不空白）逐级降级。**经典回退必须换新 canvas**——曾成功获取过 WebGPU 上下文的 canvas 再也要不到 WebGL2 上下文，所以 canvas 由引擎自建自管（React 只渲染容器），模型加载一律等待引擎就绪而非早退，避免首模型在异步启动窗口被静默丢弃。环境贴图生成按渲染器类型分支——经典版深度依赖 WebGLRenderer 内部结构。
 - **GPU 功耗偏好默认 `low-power`**：`WebGPURenderer` 与经典 `WebGLRenderer` 统一把 `powerPreference` 透传到上下文创建，默认为 `'low-power'`——300×360 精灵窗的渲染负载远低于 iGPU 满载门槛，`high-performance` 会在混合显卡笔记本（Windows Optimus / Apple Silicon 独显机型）持续唤醒 dGPU，平白耗电与发热。
 - **3D 材质安全回退与拖拽动力学**：加载 GLB 时记录模型内嵌原生基础贴图，自定义 PBR 贴图 404 或网络故障时自动回退原生材质，杜绝模型白板。拖拽时捕获即时速度向量注入物理惯性倾角（横滚/俯仰），结合"悬空摆动"与松手"站稳微沉"动作呈现被"拎起"的交互质感；精灵基准尺寸随屏幕高度自适应，兼容高分辨率屏。
 - **精灵窗口单显示器跟踪 + 跨屏拖拽接力**：透明精灵窗口同一时刻只覆盖一块显示器（贴合当前显示器工作区；分辨率变化原地重贴，显示器被拔掉时自动落回最近屏）。拖拽中指针越出视口即光标已跨入邻屏——渲染层请主进程把窗口挪到光标所在屏；渲染层只把精灵位置平移新旧窗口原点差、拖拽基准不动（切换后指针坐标已在新视口空间，拖拽公式自然产出平移后的值），并按返回的光标点判定最新指针坐标属于旧/新视口空间，避免接力往返期间已到达的新空间事件被二次平移；拖拽结束时窗口原点随位置一并持久化，下次启动先贴回精灵所在显示器再恢复位置。为什么不做覆盖整个虚拟桌面的窗口：全桌面合成层 + 跨屏 DPI 差异的坐标/命中测试复杂度远高于单屏窗口接力，且鼠标穿透范围会被迫覆盖所有屏。
 - **渲染循环自研调度与能耗档位**：引擎自主调度动画循环（不依赖 Three.js 内部循环），支持活跃全速 / 空闲降频 / 休眠低频轮询与彻底停止，解决休眠档位能耗控制。
-- **模型下载失败与生成失败分流**：失败浮层按协议标记区分"重试下载"与重新生成，启动水合保持同一分流，避免误触发付费生成。契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
+- **模型下载失败与生成失败分流**：失败浮层按协议标记区分"重试下载"与重新生成，启动水合保持同一分流，避免误触发付费生成。契约见 [PROTOCOL.md §1.2](../docs/PROTOCOL.md)。
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
-- **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
+- **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../docs/DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
 - **生产渲染面禁止裸 fetch（ESLint 强制）**：后端签名 URL 恒为相对路径，渲染进程 origin（dev 的 Vite、打包后的 file://）解析不到——直连只会打到 Vite 拿回 SPA 回退页，在下游解析器里炸出费解的报错。后端数据与资产字节一律经主进程 IPC 桥转发；确需直连处逐行 lint 注释写明 URL 来源。
 - **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
 - **dev 放宽 CSP（`unsafe-inline` + `unsafe-eval`），生产仍用严格 CSP**：Vite 的 React Fast Refresh preamble 是内联脚本，严格 CSP 会拦截并触发 `@vitejs/plugin-react can't detect preamble`——白屏 + HMR 重试烧 CPU。`installContentSecurityPolicy` 按 `app.isPackaged` 在 `DEFAULT_CSP_POLICY`（`script-src 'self'`）与 `DEV_CSP_POLICY` 之间切档。dev 只接本地 127.0.0.1:5174 与 OS 协议，无外部 XSS 攻击面需要这层防御；生产不能放松——脚本面收紧是产品级契约的一部分。
@@ -120,9 +120,9 @@ ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`
 
 | 契约                                             | 方向            | 在哪定义                                                            |
 | ------------------------------------------------ | --------------- | ------------------------------------------------------------------- |
-| 伙伴生命周期、事件、Affect、资产、错误与凭据契约 | 对后端 / Runner | [PROTOCOL.md](../PROTOCOL.md)                                       |
+| 伙伴生命周期、事件、Affect、资产、错误与凭据契约 | 对后端 / Runner | [PROTOCOL.md](../docs/PROTOCOL.md)                                       |
 | 3D 与 2D 产物契约、动画映射                      | 对后端          | [docs/PIPELINE.md](../docs/PIPELINE.md)                             |
-| 打扰档位权威边界                                 | 对后端          | [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)                          |
+| 打扰档位权威边界                                 | 对后端          | [ARCHITECTURE.md §5.1](../docs/ARCHITECTURE.md)                          |
 | 渲染状态机与空间行为                             | Renderer 内部   | [client/renderer/companion/README.md](renderer/companion/README.md) |
 | IPC 命名空间与 Skills 平台过滤                   | 本模块独有      | IPC 见本 README §3；Skills 双端翻译表对齐见 [installer/README.md §2](../installer/README.md)                                                   |
 

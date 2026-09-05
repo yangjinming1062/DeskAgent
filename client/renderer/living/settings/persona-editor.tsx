@@ -15,7 +15,7 @@ import {
 } from '@/shared/panel'
 
 // 可编辑的 persona 字段：name / relationship / personality。
-// 锁定的视觉锚点字段（species / gender / appearance）刻意不可编辑——见 DESIGN.md §5.4。
+// 锁定的视觉锚点字段（species / gender / appearance）刻意不可编辑——见 docs/DESIGN.md §5.4。
 export function PersonaSection(): React.JSX.Element {
   const persona = useStore($persona)
   const [editing, setEditing] = useState(false)

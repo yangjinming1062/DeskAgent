@@ -43,13 +43,13 @@
 
 ## 3. 三档打扰（Client 实现）
 
-档位产品规则与生效条件见 [DESIGN.md §6.2](../../../DESIGN.md)。Renderer 只消费生效档位：用户偏好保存在伴生设置，活动感知器写入覆盖值，空间策略、主动消息呈现与 TTS 门控读取同一生效值；生效档位经配置管道上云（[PROTOCOL.md §2.4](../../../PROTOCOL.md)），是后端主动闸门的唯一档位来源。
+档位产品规则与生效条件见 [DESIGN.md §6.2](../../../docs/DESIGN.md)。Renderer 只消费生效档位：用户偏好保存在伴生设置，活动感知器写入覆盖值，空间策略、主动消息呈现与 TTS 门控读取同一生效值；生效档位经配置管道上云（[PROTOCOL.md §2.4](../../../docs/PROTOCOL.md)），是后端主动闸门的唯一档位来源。
 
 ## 4. 3D 渲染资源降级与功耗调度
 
 渲染栈是 `three/webgpu` 的 **WebGPURenderer + 四层回退**：WebGPU 后端 → three 内置 WebGL2 后端（同 API 面，零代码）→ 经典 `WebGLRenderer`（仅当 `init()` 整体 reject；必须换新 canvas——webgpu 上下文成功过的 canvas 要不到 webgl2）→ `EngineInitError`（程序化蛋形兜底）。`Engine.create()` 是异步工厂，canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load effects 一律 await 引擎就绪 Promise；实际后端写 dev log。
 
-视觉兜底层级见 [DESIGN.md §1.2](../../../DESIGN.md)。本节只记录 3D 引擎加载行为：模型字节到达并完成解析后才视作可渲染（避免把"模型就绪事件早于字节落地"误当成可渲染状态）；GLB 解析失败回退到程序化蛋兜底，3D 引擎 init 失败亦同。
+视觉兜底层级见 [DESIGN.md §1.2](../../../docs/DESIGN.md)。本节只记录 3D 引擎加载行为：模型字节到达并完成解析后才视作可渲染（避免把"模型就绪事件早于字节落地"误当成可渲染状态）；GLB 解析失败回退到程序化蛋兜底，3D 引擎 init 失败亦同。
 
 **渲染功耗三档**（[3d/PowerProfile.ts](../3d/PowerProfile.ts) 判定 + [3d/power-signals.ts](../3d/power-signals.ts) 订阅，Engine 自门控循环执行）：主进程为后台流式聊天全局禁用了 Chromium 节流，浏览器不会替 7x24 常驻的精灵窗降频，所以循环在 Engine 内按信号自门控——active 60fps（speaking/thinking/listening/working/emotional/interacting）、idle 30fps（idle/disconnected）、dormant 4fps（`$screenLocked`、`document.hidden`、`$focusContext.fullscreen`）。信号全部来自既有渲染端 atom，功耗调度是纯 Client 内部决策（ARCH §7 语义/渲染解耦），无协议与主进程参与。
 
@@ -93,7 +93,7 @@
 
 ## 8. cron 主动陪伴链路
 
-调度 tick 不直接执行自主回合：tick 副本只写一行内部事件，经 outbox 认领路由到持有该用户 WS 的副本执行（静止档在写行前拦截）。机制与派发守卫见 [ARCHITECTURE.md §5](../../../ARCHITECTURE.md) 与 [backend/README.md §6](../../../backend/README.md)；客户端只按 §3 三档规则消费主动消息事件。
+调度 tick 不直接执行自主回合：tick 副本只写一行内部事件，经 outbox 认领路由到持有该用户 WS 的副本执行（静止档在写行前拦截）。机制与派发守卫见 [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md) 与 [backend/README.md §6](../../../backend/README.md)；客户端只按 §3 三档规则消费主动消息事件。
 
 ## 9. 不能从代码结构直接读出的边界
 
@@ -103,25 +103,25 @@
   - `runner:invoke` 60 次/秒 token bucket
 - **Stop 按钮双通道**：`session.interrupt`（停 LLM 流）+ `runnerCancel`（置 Runner 全局中断标记，让在跑的本地工具尽早退出）；两者均为 best-effort，本地 finalize 兜底 UX
 - **持久化键**：伙伴偏好（音色 / 响应模式 / 打扰档位 / 智能反应三开关 / 默认缩放）与各面板位置尺寸均经 localStorage 跨重启保留；`voiceId` 在 ready 后由 [voice-validity.ts](voice-validity.ts) 对云端目录校验（供应商裁剪 / 换源时提示重选，不硬性拒绝）。精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
-- **偏好上云（localStorage 只是窗口缓存）**：偏好 setter 在写 localStorage 的同时经 `prefs:set` 通道上报主进程（点键 `companion.voice_id / response_mode / llm_reactions / llm_affect / llm_autonomy / disturbance_preference / settings_panel`），由主进程合入配置镜像随云端管道上云（[PROTOCOL.md §2.4](../../../PROTOCOL.md)）；水合广播（`prefs-hydrated`，[prefs.ts](prefs.ts) 的 `initCompanionPrefsSync` 订阅）用云端值回写 localStorage 与 atom，跨端收敛、清缓存重装也能恢复。高频源（面板拖拽/缩放）先在渲染侧防抖再上报，且未交互过的挂载首跑不上报（避免本机默认值覆写另一端几何）；面板几何水合只在下次开面板时生效，渲染期仍做视口钳制。打扰档位分两键：生效值（`companion.disturbance_tier`，设备派生）供后端闸门消费；用户偏好（`companion.disturbance_preference`）跨端恢复。水合只回写偏好，不回写生效值。
-- **角色编辑双路径**：`PersonaSection`（表单式直接改 3 个可编辑字段：名字 / 关系定位 / 性格；锁定的视觉锚点字段原样带回，[DESIGN.md §5.4](../../../DESIGN.md)）+ `PersonaRetune`（[living/settings/persona-retune.tsx](../living/settings/persona-retune.tsx) 5 步对话式 wizard＋收尾确认，含说话风格与 user_* 字段），后者单 PUT 收尾、保留 `is_complete=True`。两条路径都是纯 persona 维度调整，不重跑形象流水线——形象确认后头像与模型的重生路径已关闭，两步形象确认 UI 只存在于 onboarding。
-- **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
+- **偏好上云（localStorage 只是窗口缓存）**：偏好 setter 在写 localStorage 的同时经 `prefs:set` 通道上报主进程（点键 `companion.voice_id / response_mode / llm_reactions / llm_affect / llm_autonomy / disturbance_preference / settings_panel`），由主进程合入配置镜像随云端管道上云（[PROTOCOL.md §2.4](../../../docs/PROTOCOL.md)）；水合广播（`prefs-hydrated`，[prefs.ts](prefs.ts) 的 `initCompanionPrefsSync` 订阅）用云端值回写 localStorage 与 atom，跨端收敛、清缓存重装也能恢复。高频源（面板拖拽/缩放）先在渲染侧防抖再上报，且未交互过的挂载首跑不上报（避免本机默认值覆写另一端几何）；面板几何水合只在下次开面板时生效，渲染期仍做视口钳制。打扰档位分两键：生效值（`companion.disturbance_tier`，设备派生）供后端闸门消费；用户偏好（`companion.disturbance_preference`）跨端恢复。水合只回写偏好，不回写生效值。
+- **角色编辑双路径**：`PersonaSection`（表单式直接改 3 个可编辑字段：名字 / 关系定位 / 性格；锁定的视觉锚点字段原样带回，[DESIGN.md §5.4](../../../docs/DESIGN.md)）+ `PersonaRetune`（[living/settings/persona-retune.tsx](../living/settings/persona-retune.tsx) 5 步对话式 wizard＋收尾确认，含说话风格与 user_* 字段），后者单 PUT 收尾、保留 `is_complete=True`。两条路径都是纯 persona 维度调整，不重跑形象流水线——形象确认后头像与模型的重生路径已关闭，两步形象确认 UI 只存在于 onboarding。
+- **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../docs/PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../docs/DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
 - **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层（按新 PSD 重建 puppet），换装期间旧装不断档。
-- **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
+- **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../docs/PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 - **主题（UI 皮肤）**：主题状态在 shared 侧（[shared/store/theme.ts](../shared/store/theme.ts)）——切换入口仅「设置」面板的「外观」tab，本窗经主进程广播实时换肤、启动时从 localStorage 恢复，自身不提供切换入口。主题只作用于 UI 铬面（面板 / 气泡 / 菜单 / toast），不覆盖伙伴形象本体（蛋 / 2D puppet / 3D / VFX）。
-- **对话内媒体展示（气泡轻量化原则）**：精灵气泡只承载轻量文本；伙伴生成的图片/视频统一在对话窗以媒体卡内联预览、点击放大播放（图片与视频同一交互，[chat-media-card](chat-media-card.tsx) + [media-viewer-overlay](media-viewer-overlay.tsx)）。媒体经主进程 IPC 取回（图片 data URL 走 `apiAsset`、视频字节转 blob URL 卸载回收），不直连后端 URL。聊天窗收起时收到媒体，精灵气泡只提示「点击查看」，点击打开对话窗（媒体属于其他会话时先切过去）；正看其他会话时由通知 toast 承载跳转。后台视频完成的送达行与历史水合同形状（协议见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)）。
+- **对话内媒体展示（气泡轻量化原则）**：精灵气泡只承载轻量文本；伙伴生成的图片/视频统一在对话窗以媒体卡内联预览、点击放大播放（图片与视频同一交互，[chat-media-card](chat-media-card.tsx) + [media-viewer-overlay](media-viewer-overlay.tsx)）。媒体经主进程 IPC 取回（图片 data URL 走 `apiAsset`、视频字节转 blob URL 卸载回收），不直连后端 URL。聊天窗收起时收到媒体，精灵气泡只提示「点击查看」，点击打开对话窗（媒体属于其他会话时先切过去）；正看其他会话时由通知 toast 承载跳转。后台视频完成的送达行与历史水合同形状（协议见 [PROTOCOL.md §1.3](../../../docs/PROTOCOL.md)）。
 - **IM 通道事件 toast**：`channel.status`（连接/登录过期/异常）与 `channel.peer_request`（陌生对端配对请求）在精灵窗以通知提醒，屏锁静默；通道绑定与审批的真相源在「设置」面板的「聊天通道」tab（REST），toast 只是提醒入口。
-- **im 会话只读**：外接 IM（微信）桥接的会话（conversation kind `im`）在会话列表与历史中正常可见可读，但输入区整体禁用并显示「IM 对话 · 只读」角标——im 回合由后端通道桥独占写入（外部 IM 消息驱动），桌面不能代伙伴在渠道会话里发言。服务端 `prompt.submit` 侧另有守卫双保险。协议见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
-- **设备指令豁免会话闸门**：`handleCompanionEvent` 用 session_id 闸门挡住非当前会话的回合事件（防 cron/IM 的文本串进可见聊天窗），但 `tool.call` **信封不带 session_id**、天然绕过该闸门——它是用户级设备指令而非会话事件，按 `call_id` 与 `tool.result` 配对（契约 [PROTOCOL.md §1.3](../../../PROTOCOL.md)）。这道豁免是必需的：IM 遥控、cron 自主与子 agent 回合的会话用户都不可能正在查看，挡下来就等于本机工具全部失效。**闸门对 `message.*` / `tool.start` / `tool.complete` 的拦截必须原样保留**，别顺手把它们一起放行。
+- **im 会话只读**：外接 IM（微信）桥接的会话（conversation kind `im`）在会话列表与历史中正常可见可读，但输入区整体禁用并显示「IM 对话 · 只读」角标——im 回合由后端通道桥独占写入（外部 IM 消息驱动），桌面不能代伙伴在渠道会话里发言。服务端 `prompt.submit` 侧另有守卫双保险。协议见 [PROTOCOL.md §1.7](../../../docs/PROTOCOL.md)。
+- **设备指令豁免会话闸门**：`handleCompanionEvent` 用 session_id 闸门挡住非当前会话的回合事件（防 cron/IM 的文本串进可见聊天窗），但 `tool.call` **信封不带 session_id**、天然绕过该闸门——它是用户级设备指令而非会话事件，按 `call_id` 与 `tool.result` 配对（契约 [PROTOCOL.md §1.3](../../../docs/PROTOCOL.md)）。这道豁免是必需的：IM 遥控、cron 自主与子 agent 回合的会话用户都不可能正在查看，挡下来就等于本机工具全部失效。**闸门对 `message.*` / `tool.start` / `tool.complete` 的拦截必须原样保留**，别顺手把它们一起放行。
 - **设备指令按 call_id 去重**：`tool.call` 同样进服务端重放缓冲，断连重连会重发。本机副作用不可撤销，重复执行一次「删文件」无法挽回，因此重复 `call_id` 直接丢弃——后端只会丢弃迟到的结果，拦不住已发生的副作用。去重表上限对齐服务端重放缓冲容量。
 - **遥控回合的精灵工作态由 tool.call 分支自持**：`tool.start`（进 WORKING）与终局 `message.complete`（复位）都带 session_id、都被闸门挡下，因此这类回合期间没有任何帧能驱动或复位精灵。该分支自行进 WORKING 并在工具返回后复位。判据是**载荷里的 session_id 与当前查看会话比对**，不是枚举回合类型——枚举漏一种（子 agent 回合就是 `kind='standard'` 却跑在无头 emitter 上）表现为「机器在动、精灵发呆」，且不会有任何报错。三个约束不可省：并发工具用引用计数（一个先返回不能把仍在跑的复位掉）；进入与复位都必须传 `force`（IDLE 低于 WORKING、WORKING 低于 EMOTIONAL，否则被状态机静默拒绝——不加 force 会卡在工作姿态或压根进不去）；仅在状态仍是 WORKING 或仪式行走留下的 interacting 时才复位（期间桌面自己的回合接管了就不插手）。
-- **新建对话与工作台预设选择**：工作台侧边栏「+ 新建对话」按钮打开预设选择模态框，从 4 套内置职能预设（开发工程师、产品经理、文案秘书、语言老师）中点选并创建工作会话，严格过滤「陪伴」预设（生活空间专属）；选定后 presetId 写入 `session.create` 的 `system_preset_id`；侧边栏据后端下发的 `system_preset_icon_key` 渲染职能图标与徽标。预设元数据由 `system.list_presets` 一次拉取、进程内缓存。协议见 [PROTOCOL.md §1.8 新建对话预设选择](../../../PROTOCOL.md)。
-- **用户侧聊天附件**：入口四条——粘贴（图片位图存盘、视频文件取真实路径）、拖拽到面板/精灵、附件按钮选择器、精灵投喂共用拖拽管线。图片以 data URL 直发多模态；视频附加即经主进程 IPC 上传后端换取会话级 URL，上传完成前发送按钮禁用，失败态可重试可移除。附件只属于上传时的会话，切换会话即丢弃。上传限额、双模式消费与清理降级契约见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)。
+- **新建对话与工作台预设选择**：工作台侧边栏「+ 新建对话」按钮打开预设选择模态框，从 4 套内置职能预设（开发工程师、产品经理、文案秘书、语言老师）中点选并创建工作会话，严格过滤「陪伴」预设（生活空间专属）；选定后 presetId 写入 `session.create` 的 `system_preset_id`；侧边栏据后端下发的 `system_preset_icon_key` 渲染职能图标与徽标。预设元数据由 `system.list_presets` 一次拉取、进程内缓存。协议见 [PROTOCOL.md §1.8 新建对话预设选择](../../../docs/PROTOCOL.md)。
+- **用户侧聊天附件**：入口四条——粘贴（图片位图存盘、视频文件取真实路径）、拖拽到面板/精灵、附件按钮选择器、精灵投喂共用拖拽管线。图片以 data URL 直发多模态；视频附加即经主进程 IPC 上传后端换取会话级 URL，上传完成前发送按钮禁用，失败态可重试可移除。附件只属于上传时的会话，切换会话即丢弃。上传限额、双模式消费与清理降级契约见 [PROTOCOL.md §1.3](../../../docs/PROTOCOL.md)。
 
 ## 10. 空间行为（位置 × 移动 × 缩放）
 
-设计意图见 [DESIGN.md §3](../../../DESIGN.md)。本节记录 Client 侧的实现契约。
+设计意图见 [DESIGN.md §3](../../../docs/DESIGN.md)。本节记录 Client 侧的实现契约。
 
 **单一权威源**：[spatial.ts](spatial.ts) 拥有所有空间状态——`$spatialPos`、`$spatialScale`、`$spatialLocale`、`$spatialLocomotion`。sprite-stage.tsx 是纯消费者（`useStore` + 事件转发到 spatial 函数），只消费位置状态。
 
@@ -135,7 +135,7 @@
 
 **roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走位移积分复合步态）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
 
-**approach（走过去搭话）**：`companion.should_act` 的第三类动作（[autonomy.ts](autonomy.ts) `executeApproach`），仅智能驱动开 + 自主档——本地规则路径不搭话（说什么需要人格）。开场白由后端在同一决策中产出并经 `companion.message` 通道投递（边走边说，气泡随精灵移动），客户端只走位：有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工），用户在桌面时走到屏幕中下部站定（不动 locale，后续空间决策接管）；途中视线锁定目标中心 6s。锁屏 / 聊天开启时不执行（消息侧由各自的既有门控决定）。低频闸在后端（30 分钟冷却，冷却内连同开场白一起降级 stay，不出现"说了话没走过来"）；协议契约见 [PROTOCOL.md §1.4](../../../PROTOCOL.md)。
+**approach（走过去搭话）**：`companion.should_act` 的第三类动作（[autonomy.ts](autonomy.ts) `executeApproach`），仅智能驱动开 + 自主档——本地规则路径不搭话（说什么需要人格）。开场白由后端在同一决策中产出并经 `companion.message` 通道投递（边走边说，气泡随精灵移动），客户端只走位：有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工），用户在桌面时走到屏幕中下部站定（不动 locale，后续空间决策接管）；途中视线锁定目标中心 6s。锁屏 / 聊天开启时不执行（消息侧由各自的既有门控决定）。低频闸在后端（30 分钟冷却，冷却内连同开场白一起降级 stay，不出现"说了话没走过来"）；协议契约见 [PROTOCOL.md §1.4](../../../docs/PROTOCOL.md)。
 
 **缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，静止档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
 

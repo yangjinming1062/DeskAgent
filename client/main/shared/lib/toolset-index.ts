@@ -7,7 +7,7 @@ interface ToolsetDef {
   staticTools?: string[]
 }
 
-// 供主进程生成工具集清单的目录。id 权威枚举见 PROTOCOL.md §2.2；
+// 供主进程生成工具集清单的目录。id 权威枚举见 docs/PROTOCOL.md §2.2；
 // Runner 侧工具集在此按 schema/前缀动态匹配，Backend 侧工具集（memory 等）在此登记静态工具名。
 const TOOLSET_DEFS: ToolsetDef[] = [
   { id: 'browser_automation', prefixes: ['browser_'] },

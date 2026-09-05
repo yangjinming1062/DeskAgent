@@ -13,12 +13,12 @@ Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行�
 - **不装配对话提示词 / 不管理记忆 / 不调度对话**——这些是后端责任。
 - **不持久化伙伴状态**——所有状态都是进程内的。
 
-架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；客户端 ↔ Runner 协议见 [PROTOCOL.md §2](../PROTOCOL.md)；反向 RPC 桥接见 [PROTOCOL.md §3](../PROTOCOL.md)；安全防线见 [ARCHITECTURE.md §7](../ARCHITECTURE.md)。
+架构层定位见 [ARCHITECTURE.md §1 / §2](../docs/ARCHITECTURE.md)；客户端 ↔ Runner 协议见 [PROTOCOL.md §2](../docs/PROTOCOL.md)；反向 RPC 桥接见 [PROTOCOL.md §3](../docs/PROTOCOL.md)；安全防线见 [ARCHITECTURE.md §7](../docs/ARCHITECTURE.md)。
 
 ## 2. 设计意图
 
 - **剥离大脑逻辑**：系统提示词、供应商适配、对话记忆全部由后端承载。Runner 是单纯的"接 JSON-RPC 工具调用 → 执行 → 返回结果"的执行器。
-- **零凭证 / 无网络出站**：Runner 不保存任何用户 Token 或云端地址，无法直接访问后端。所有需 LLM 的工具走反向 RPC 经客户端代为调用（[PROTOCOL.md §3](../PROTOCOL.md)）。**这是不可破坏的不变量**——即便 prompt 注入攻陷 Runner 工具逻辑，最坏情况也只是借客户端调用受限用户账户下的 LLM，不会泄露后端凭证。
+- **零凭证 / 无网络出站**：Runner 不保存任何用户 Token 或云端地址，无法直接访问后端。所有需 LLM 的工具走反向 RPC 经客户端代为调用（[PROTOCOL.md §3](../docs/PROTOCOL.md)）。**这是不可破坏的不变量**——即便 prompt 注入攻陷 Runner 工具逻辑，最坏情况也只是借客户端调用受限用户账户下的 LLM，不会泄露后端凭证。
 - **Responses 输入边界**：Runner 工具可提交原生 Responses 指令与输入项，也可提交旧消息数组；Client 在零凭证代理边界统一成后端契约，供应商选择与兼容性过滤由后端承载。
 - **环境状态与工具解耦**：`envs/` 作为顶层包承载环境执行与共享态（Local / SSH，活跃实例表、工厂、生命周期清理），工具层（`terminal` / `execute_code` / `files` / `process`）统一依赖 `envs`；`envs` 不依赖 `tools`，通过回调钩子（`register_env_cleanup_hook` / `register_active_process_checker`）实现生命周期与缓存解耦。
 - **能力上报尽量运行时探测**：麦克风（枚举 WASAPI/AVFoundation 设备）、屏幕捕获（枚举监视器）、系统活跃度（真实调底层 API）是运行时探测。不用存在性检查——那会欺骗 UI 让用户点不能用按钮。
@@ -49,10 +49,10 @@ runner/
 
 ## 4. 关键设计决策
 
-- **本地 IPC 客户端而非 stdio**：Runner 主动连接客户端下发的本地端点（Windows Named Pipe 重叠 I/O 或 macOS UDS），借用 `websockets` sans-I/O 协议解析器实现轻量安全帧处理，规避 TCP loopback 端口监听暴露面；重连时重读端点信息以跟随客户端重启；链路选型与鉴权见 [ARCHITECTURE.md §4.1B](../ARCHITECTURE.md) 和 [PROTOCOL.md §2.1](../PROTOCOL.md)。
+- **本地 IPC 客户端而非 stdio**：Runner 主动连接客户端下发的本地端点（Windows Named Pipe 重叠 I/O 或 macOS UDS），借用 `websockets` sans-I/O 协议解析器实现轻量安全帧处理，规避 TCP loopback 端口监听暴露面；重连时重读端点信息以跟随客户端重启；链路选型与鉴权见 [ARCHITECTURE.md §4.1B](../docs/ARCHITECTURE.md) 和 [PROTOCOL.md §2.1](../docs/PROTOCOL.md)。
 - **统一 HTTP 客户端栈**：移除 `requests` 与 `aiohttp` 重复依赖，所有同步/异步 HTTP 请求统一收敛到 `httpx[socks]`，减小 wheel 体积与审计面。
 - **SSRF 建连前 + 建连时双重校验**：`SafeHTTPTransport` / `SafeAsyncHTTPTransport` 在 `handle_request` 之前对 URL 字符串做白名单与（hostname + IP 字面量）预检；最终 socket.connect 不再走 httpcore 默认的 `socket.create_connection`，而是被替换为 `_SafeSyncBackend` / `_SafeAsyncBackend`，在每次建连时强制重新调用 `getaddrinfo` 校验所有解析结果，并直接使用已校验 IP 建连，原始 Host / TLS SNI / 证书主机名校验保持不变。重定向后每一跳都重新走同一校验路径，DNS 解析被移到工作线程避免阻塞事件循环，彻底消灭预检到建连之间的 TOCTOU 窗口。
-- **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；`call_llm_sync` 在工作线程安全等待主循环 Future，超时自动取消；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
+- **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；`call_llm_sync` 在工作线程安全等待主循环 Future，超时自动取消；契约见 [PROTOCOL.md §3](../docs/PROTOCOL.md)。
 - **视觉工具图片直注主对话**：`vision_analyze` 与浏览器截图把图片以多模态工具结果信封（computer_use 桌面截图同款）直接附进上下文，由主对话模型亲自看图，超尺寸自动缩图。被否定的替代方案是"经反向 RPC 借 LLM 先把图转成文字分析再塞回"——主模型本身多模态，那样多一次往返、模型只见转述不见原图；反向 RPC 通道仅保留给纯文本工具（如浏览器快照压缩）。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 原生路径规范化**：经 `GetFinalPathNameByHandleW` 回溯解析真实路径，覆盖 8.3 短文件名、符号链接、目录联接点与深层未创建子路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流。
@@ -66,9 +66,9 @@ runner/
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 就绪握手、能力上报与 RPC 方法 | 对客户端 | [PROTOCOL.md §2](../PROTOCOL.md) |
-| 反向 RPC 与速率守卫 | 经客户端到后端 | [PROTOCOL.md §3](../PROTOCOL.md) |
-| 本地执行安全防线 | 对本地工具执行 | [ARCHITECTURE.md §7](../ARCHITECTURE.md) |
+| 就绪握手、能力上报与 RPC 方法 | 对客户端 | [PROTOCOL.md §2](../docs/PROTOCOL.md) |
+| 反向 RPC 与速率守卫 | 经客户端到后端 | [PROTOCOL.md §3](../docs/PROTOCOL.md) |
+| 本地执行安全防线 | 对本地工具执行 | [ARCHITECTURE.md §7](../docs/ARCHITECTURE.md) |
 | Skills 平台过滤 | 本模块独有 | 过滤在 tools/skills；双端翻译表对齐见 [installer/README.md §2](../installer/README.md) |
 
 ## 6. 已知限制

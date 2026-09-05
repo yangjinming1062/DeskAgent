@@ -10,7 +10,7 @@ SpiritAgent 是一个**根据用户描述定制的、具有专属形象的陪伴
 - 产品设计意图（形象、动画、生命周期、onboarding、交互范式）见 [DESIGN.md](DESIGN.md)。
 - 跨模块协议契约（JSON-RPC 方法 / 枚举 / 事件 / 安全 / 凭据）见 [PROTOCOL.md](PROTOCOL.md)。
 - 本文聚焦**系统物理架构**——模块边界、为什么必须这样分离、通信链路的形态与权衡、跨模块不变量。
-- 模块实现细节、文件树、配置项见各模块 [README.md](README.md)（backend / client / runner / installer）。
+- 模块实现细节、文件树、配置项见各模块 [README.md](../README.md)（backend / client / runner / installer）。
 
 **平台支持策略**：
 - **Backend**：通过 Docker 部署，仅在 Docker (Linux 基础镜像) 内运行，**无需维护 Windows / macOS 兼容性**。
@@ -69,7 +69,7 @@ SpiritAgent 是一个**根据用户描述定制的、具有专属形象的陪伴
 | **核心职责** | 接收用户消息、装配角色定义 + 记忆上下文、流式调度 LLM、按需生成/再生形象资产与房间图、持久化时刻与日记、解析工具调用并路由 | 3D/2D 实时渲染桌面伙伴形象、管理生活空间与工作台双入口互斥开窗及表面呈现、承载陪伴式交互、引导 onboarding；维护本地安全防线、中转工具帧、代理 Runner 的反向 LLM 请求 | 纯粹执行底层工具逻辑，上报真实可用的工具 Schema 列表 |
 | **安全准则** | 不可信输入包裹、保留键覆盖保护、脱敏日志、角色定义属用户隐私数据 | 渲染进程隐藏凭证、仅暴露本地文件系统代理拦截 | 危险命令阻断、路径不敏感写限制、SSRF 防护 |
 
-> 模块实现细节（依赖方向、文件树、供应商协议对比、错误分类管道等）见各模块 [README.md](README.md)。
+> 模块实现细节（依赖方向、文件树、供应商协议对比、错误分类管道等）见各模块 [README.md](../README.md)。
 
 ---
 
@@ -136,7 +136,7 @@ Runner 不持有云端凭证；需要模型能力的本地工具经 Client 代�
 2. **数据库触发器**：PostgreSQL STATEMENT 级触发器在 INSERT 时自动发出 NOTIFY。
 3. **副本认领（Atomic Claim）**：每个 Backend 副本独立 LISTEN，收到唤醒后原子认领并消费该行。调度器 tick 只写入事件不 await WS 发射，避免慢客户端拖垮事务。
 
-主动消息、Cron 定时、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发。通道还承载一种**内部事件**（cron.turn.request）：调度器 tick 副本不执行自主回合（回合的流式输出、工具关联、运行时会话都是进程内状态），只写一行 outbox，由认领循环按"持有该用户 WS 的副本"路由执行。实现细节见 [backend/README.md](backend/README.md)。
+主动消息、Cron 定时、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发。通道还承载一种**内部事件**（cron.turn.request）：调度器 tick 副本不执行自主回合（回合的流式输出、工具关联、运行时会话都是进程内状态），只写一行 outbox，由认领循环按"持有该用户 WS 的副本"路由执行。实现细节见 [backend/README.md](../backend/README.md)。
 
 ### 5.1 打扰档位约束
 
@@ -245,7 +245,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度,作�
 2. **错误遮蔽**：抛出到前端的内部错误必须脱敏；错误信封契约见 [PROTOCOL.md §1.6](PROTOCOL.md)。
 3. **两阶段更新强校验**：禁止绕过 Stage 1 的预取逻辑直接覆盖本地 Runner 文件；公钥签名不匹配的升级包在 Staging 阶段直接拦截（签名契约见 [PROTOCOL.md §5.5](PROTOCOL.md)）。
 4. **ID 职责分立**：会话、连接恢复与 RPC Future 使用的标识不得混用或跨生命周期复用；完整语义见 [PROTOCOL.md §6](PROTOCOL.md)。
-5. **平台兼容性防御**：Windows 下进程控制或路径读取必须采用 Windows 原生封装，防止 Windows PTY 进程链悬挂（具体封装见 [runner/README.md](runner/README.md)）。
+5. **平台兼容性防御**：Windows 下进程控制或路径读取必须采用 Windows 原生封装，防止 Windows PTY 进程链悬挂（具体封装见 [runner/README.md](../runner/README.md)）。
 6. **副本边界**：web 进程因运行时 chat 会话与 IPC 关联的进程内状态保持单副本语义（跨副本状态经持久化与 outbox 路由外置）。
 7. **后端不下发窗口开关与工位背景**：生活空间与工作台两个入口的互斥开窗完全由客户端全权裁决，后端零感知窗口状态与像素指令，亦不为工作台单独提供工位背景。
 
@@ -268,8 +268,8 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度,作�
 
 模块级行为契约、文件树、跨文件设计权衡分别记录在各子目录 README 中：
 
-- **Backend（云端大脑）**：角色定义与形象资产的数据模型、生图 prompt 装配、记忆管理、LLM 编排——[backend/README.md](backend/README.md)
-- **Runner（本地手脚）**：执行器与工具库、终端环境后端、浏览器多后端——[runner/README.md](runner/README.md)
-- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎、2D 木偶动画（伪 3D 转头 / 眨眼 / 口型 / 次级物理）、onboarding/孵化流程、自更新——[client/README.md](client/README.md)
-- **Installer（安装器）**：引导协议、Python 运行时分发、首装进入"蛋"阶段——[installer/README.md](installer/README.md)
-- **Scripts（发布与集成）**：构建链与导入规范检查——[scripts/README.md](scripts/README.md)
+- **Backend（云端大脑）**：角色定义与形象资产的数据模型、生图 prompt 装配、记忆管理、LLM 编排——[backend/README.md](../backend/README.md)
+- **Runner（本地手脚）**：执行器与工具库、终端环境后端、浏览器多后端——[runner/README.md](../runner/README.md)
+- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎、2D 木偶动画（伪 3D 转头 / 眨眼 / 口型 / 次级物理）、onboarding/孵化流程、自更新——[client/README.md](../client/README.md)
+- **Installer（安装器）**：引导协议、Python 运行时分发、首装进入"蛋"阶段——[installer/README.md](../installer/README.md)
+- **Scripts（发布与集成）**：构建链与导入规范检查——[scripts/README.md](../scripts/README.md)

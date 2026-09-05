@@ -138,7 +138,7 @@ async def _emit_model_ready(
 
 async def _emit_model_failed(user_id: int, reason: str, *, retry_download: bool = False, model_id: int | None = None) -> None:
     payload: dict[str, object] = {"reason": reason}
-    # retry_download=true 表示只是下载环节失败：付费结果仍在，客户端应提供重试下载而非付费重生成（PROTOCOL.md §1.3）
+    # retry_download=true 表示只是下载环节失败：付费结果仍在，客户端应提供重试下载而非付费重生成（docs/PROTOCOL.md §1.3）
     if retry_download:
         payload["retry_download"] = True
     if model_id is not None:

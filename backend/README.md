@@ -9,10 +9,10 @@
 **不**做:
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner;图像/视频/语音等资产仅在云端生成、客户端拉取后渲染。
 - **不持有终端 / 浏览器会话**——这些都在 Runner 进程内。
-- **不渲染桌面伙伴**——形象与动画完全是客户端责任([DESIGN.md §1](../DESIGN.md))。
-- **不管理桌面窗口与工位背景**——工作台与生活空间窗口的互斥、贴边定位、桌面透明精灵舞台依附及工位无背景完全由客户端自主裁决([DESIGN.md §6.1](../DESIGN.md))。
+- **不渲染桌面伙伴**——形象与动画完全是客户端责任([DESIGN.md §1](../docs/DESIGN.md))。
+- **不管理桌面窗口与工位背景**——工作台与生活空间窗口的互斥、贴边定位、桌面透明精灵舞台依附及工位无背景完全由客户端自主裁决([DESIGN.md §6.1](../docs/DESIGN.md))。
 
-架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
+架构层定位见 [ARCHITECTURE.md §1 / §2](../docs/ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../docs/PROTOCOL.md)；错误分层见 [PROTOCOL.md §1.6](../docs/PROTOCOL.md)。
 
 ## 2. 设计意图
 
@@ -21,7 +21,7 @@
 - **文本 LLM 统一使用 Responses 上下文模型**：系统提示词、角色定义与后台任务指令只进入指令区；历史回复、用户多模态输入、函数调用与工具输出都作为输入项传递，工具定义使用扁平 schema。数据库仍保留按角色建模的消息行，仅在供应商调用边界转换，避免把供应商协议形状泄漏进持久化层。
 - **聊天视频附件走 HTTP 上传 + 会话级 URL，不进 WS 也不落 LLM 载荷形状**（[services/media/chat_videos.py](services/media/chat_videos.py)）：base64 视频远超 WS 单帧上限，故 `POST /api/media/videos` 落盘 `desktop-attachments/{session_id}/`（容器白名单 mp4/mov，供应商侧实测 webm 被拒），`prompt.submit` 只引用 URL。消费分双模式：默认（`public_base_url` 空）在构造供应商请求时把最近 2 个内联为 data URL（单文件 50MB 上限）；配置公网地址后以绝对 URL 直发供应商自拉（单文件上限=会话配额 512MB）。磁盘按 512MB/会话滚动配额：超限从最旧剔除；压缩/夜间摘要检查点前行视频确定性清理——两者都把所属消息行 `input_video` 改写为 `[视频已清理]`，DB、渲染与上下文三方一致无死链。
 - **数据库 schema 由版本化迁移管理**：schema 演进可审查、可回滚，消除建表脚本 + 手写幂等 DDL 时代"只能加列、不可收紧不可回滚"的盲区（启动自动升级的决策见 §4）。
-- **事件经数据库 outbox 状态机推送而非直推 WS**：状态机驱动 At-Least-Once 可靠投递，支持原子锁认领、指数退避重试、死信隔离与上线即时冲刷，独立后台任务定期回收历史数据（机制与不变量见 [ARCHITECTURE.md §5](../ARCHITECTURE.md)）。
+- **事件经数据库 outbox 状态机推送而非直推 WS**：状态机驱动 At-Least-Once 可靠投递，支持原子锁认领、指数退避重试、死信隔离与上线即时冲刷，独立后台任务定期回收历史数据（机制与不变量见 [ARCHITECTURE.md §5](../docs/ARCHITECTURE.md)）。
 - **3D 模型生成走 in-process 能力链长任务**：web 请求路径毫秒级返回，3D 生成作为长任务在同一事件循环里跑（见 §4 能力链决策）。
 - **形象资产生成受频控 + 单用户锁守护**：生成是同步、阻塞 UI 的高成本路径，不并发、不公开供应商原始错误。
 
@@ -46,21 +46,21 @@ backend/
 ## 4. 关键设计决策
 
 - **夜间自主活动批处理，离线而非在线 agentic**：在用户本地休息窗口（0–5 点）跑批处理流水线（画像推断、记忆整理与衰退、主动规划、自我日记），每阶段独立事务、全空可安全回滚。为什么不作为在线循环：批处理在离线状态也可完成认知深化与记忆优化，不强依赖客户端长连接；次日派发的主动回合在触发时才做在线与打扰检查。
-- **夜间批处理消化"刚结束的那个本地日"，参考时刻由调度单点传入**：凌晨窗口里"今天"几乎没有数据，可反思的是昨天；数据日由调度侧统一判定后传入流水线。为什么不让流水线自己算：两处各自推导会漂移——准入门限数昨天、流水线读今天的空窗口，结果是每晚都判定"无消息"提前返回，整个窗口反复重试永不成功。用户本地日依赖客户端每次连接上报的 IANA 时区（[PROTOCOL.md §1.2](../PROTOCOL.md)），缺行时该用户整段跳过。
+- **夜间批处理消化"刚结束的那个本地日"，参考时刻由调度单点传入**：凌晨窗口里"今天"几乎没有数据，可反思的是昨天；数据日由调度侧统一判定后传入流水线。为什么不让流水线自己算：两处各自推导会漂移——准入门限数昨天、流水线读今天的空窗口，结果是每晚都判定"无消息"提前返回，整个窗口反复重试永不成功。用户本地日依赖客户端每次连接上报的 IANA 时区（[PROTOCOL.md §1.2](../docs/PROTOCOL.md)），缺行时该用户整段跳过。
 - **双压缩检查点，所有对话类型统一读路径**：LLM 上下文从最近的检查点起算，之前的完整历史只在库中留存、不进上下文（裁剪只在读路径）。两类检查点地位对等、区别只在触发时机：运行时压缩摘要（所有对话，上下文超限时把最旧一块压成一条摘要）与夜间日总结（仅主对话，从最近检查点读到当前压成一条）。旧压缩摘要融入新日总结，内容不丢失；新日总结自动取代旧检查点成为后续读起点。**跳过工具帧仅限主对话**：只有主对话会落一条工具摘要顶替被跳过的帧，普通对话没有替身，一并跳过等于抹掉工作上下文。
 - **Responses 真实计数权威基线与 CJK 增量 Token 估算**：上下文监控以上一轮助手回复持久化的真实输入与输出 token 总和为基线，仅对新增输入做区分中西文与标点的增量估算（汉字与全角标点约 1.3 token/字，西文约 4 字符/token，图片固定视觉预算）。为什么不引入特定分词库：多供应商分词词表各异，特定库对异构模型计数失真且增加依赖负担；为什么不按固定字符比例粗暴除算：中文会被低估数倍导致上下文压缩滞后、突发超限中断。主会话裁剪工具中间帧或首轮冷启动时自动回退为对实际装配上下文的全量估算，防范基线虚高。
 - **配置模版与本地配置隔离**：Git 只托管模版 `config.toml.example`（代码中不保留重复默认值），本地 `config.toml` 被 `.gitignore` 忽略；按 OS Env > .env > config.toml > 模版 的优先级加载。
 - **供应商自注册而非手动引入**：各供应商模块在包底部导入时注册进注册表，入口显式 import 触发——新增供应商子包即扩展能力，无须改入口。代价：注册顺序敏感、遗漏 import 则该能力静默缺失（fail-open）。三层入口（按服务取供应商 / 取客户端 / 带回退执行）按场景路由，不从 URL host 反推供应商（避免脆弱推断）。
-- **IPC future 按 (user_id, call_id) 二元键寻址 + 断线缓冲期**：并发用户不共享 future；短时断线期间后台生成任务（LLM 流式、形象再生成、Cron 回合）保持存活、产物事件进缓冲待重放，重连经会话恢复增量补发；宽限超时（用户未归）统一回收未决 future、Runner 工具并取消孤儿生成。契约见 [PROTOCOL.md §0 / §4](../PROTOCOL.md)。
+- **IPC future 按 (user_id, call_id) 二元键寻址 + 断线缓冲期**：并发用户不共享 future；短时断线期间后台生成任务（LLM 流式、形象再生成、Cron 回合）保持存活、产物事件进缓冲待重放，重连经会话恢复增量补发；宽限超时（用户未归）统一回收未决 future、Runner 工具并取消孤儿生成。契约见 [PROTOCOL.md §0 / §4](../docs/PROTOCOL.md)。
 - **WS 关闭码 1008(鉴权失效)立即退出重连流程**：凭据问题靠重试无法恢复,不把请求堆到过期账号上。
 - **形象生成失败对用户返回固定友好文案并支持重试**：不透传供应商原始错误——错误体常含 URL / 部分 auth 头,且用户对生图服务错误无处理能力。
-- **形象锁定在服务端强制**（[DESIGN.md §5.4](../DESIGN.md)）：全身立绘确认时种子图由 temp-media 草稿提升为正式资产——激活头像行持有非草稿正面种子即视为锁定态,此后半身/全身一切生成端点（REST 与 WS RPC `avatar.regenerate`）直接拒绝;锁定后 `PUT /persona` 的物种/性别/基础外貌按既有值静默替换且不重置形象确认（微调向导"不重置完成状态"）。为什么不能只靠客户端隐藏入口:形象重生是付费操作且会破坏已确认的视觉身份,协议直连可绕过 UX 层。
+- **形象锁定在服务端强制**（[DESIGN.md §5.4](../docs/DESIGN.md)）：全身立绘确认时种子图由 temp-media 草稿提升为正式资产——激活头像行持有非草稿正面种子即视为锁定态,此后半身/全身一切生成端点（REST 与 WS RPC `avatar.regenerate`）直接拒绝;锁定后 `PUT /persona` 的物种/性别/基础外貌按既有值静默替换且不重置形象确认（微调向导"不重置完成状态"）。为什么不能只靠客户端隐藏入口:形象重生是付费操作且会破坏已确认的视觉身份,协议直连可绕过 UX 层。
 - **错误统一归类为有限分类决定恢复策略**(退避重试 / 凭证轮换 / 压缩上下文 / 不重试)。为什么不暴露原始异常：供应商错误常含 URL / auth 头 / 私有调用栈,必须脱敏。
 - **3D 生成独立于通用 LLM 供应商链**：图生3D 供应商经同一注册表自注册，按能力声明进入能力链；后端只负责编排、持久化与下发，不在通用 LLM 模块中复制供应商逻辑。种子图、绑骨、动画与产物规则见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
 - **3D 长任务与 web 进程同生命周期**：请求路径只创建异步任务，启动时扫描未完成行并交给能力链接续；下载恢复语义见 [docs/PIPELINE.md §3](../docs/PIPELINE.md)。
 - **SSRF 保留段检查默认严格、按部署显式豁免**：fake-ip TUN 代理（Clash 类）把所有域名解析进 198.18.0.0/15 或 IPv6 fake-ip 段（如 `fdfe:dcba:9876::/64`），出站客户端与供应商产物的对象存储下载会被 SSRF 保留段检查拦截。命中豁免网段只跳过保留段拒绝，域名黑名单、协议白名单、HTTPS→HTTP 降级拦截、云元数据/CGNAT 拦截无条件保留。为什么默认不豁免：多租户部署里该段同样可能是真实内网，"本部署跑在 fake-ip 代理后"是部署者的知识，豁免必须显式配置。
 - **全身立绘提示词模板 + 姿态随画风路由**：2D 全身立绘（正面种子、换装）固定采用日系赛璐珞画风（`cel_shading`）与自然站姿——see-through 拆分不要求 A-pose；3D 种子（正面、背面）由物种判定自动路由至二次元游戏CG（`anime_game_cg`，类人物种）或写实风格（`realistic`，非人物种），保持 A-pose（双臂微张、对称站姿）与干净背景以保障绑骨识别与多视角一致性，生图供应商优先使用 Gemini / Grok。风格随模型行持久化：建行时单次解析写入，随模型就绪事件与模型接口下发，供客户端路由 NPR/PBR 渲染。姿态模板与画幅随骨骼类型分桶（`_RIG_FULLBODY_SIZES`）：双足 9:16 竖版（既有主路径零扰动）、四足/鸟/六足方形、蛇形/水生 4:3、八足 16:9，方/横桶分辨率不低于竖版以保住 2D 拆分的主体像素密度；rig 判定单次分类后随头像行 `prompt_json`（`fullbody_rig_type`）持久化，重绘与换装复用同一画幅防漂移。为什么必须持久化：分类是 LLM 判定，逐次重判会在两次重绘间翻转画幅，身份锚定参考图随之失稳。
-- **全身样图草稿可恢复、确认才转正**（断点恢复契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)）：样图与微调正面图以临时媒体草稿生成，草稿路径与已选画风随形象行持久化；确认时才转存正式资产，转存失败返回可重试错误。为什么确认才转正：未确认产物可能被整组丢弃，提前转正会在正式存储堆积孤儿文件。跨模块恢复行为见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
+- **全身样图草稿可恢复、确认才转正**（断点恢复契约见 [PROTOCOL.md §1.2](../docs/PROTOCOL.md)）：样图与微调正面图以临时媒体草稿生成，草稿路径与已选画风随形象行持久化；确认时才转存正式资产，转存失败返回可重试错误。为什么确认才转正：未确认产物可能被整组丢弃，提前转正会在正式存储堆积孤儿文件。跨模块恢复行为见 [PROTOCOL.md §1.2](../docs/PROTOCOL.md)。
 - **2D / 3D 双渲染模式与 see-through 双 provider 拆分**：2D 与 3D 渲染模式并列为一等公民（默认 2D）。2D 拆分只走 see-through——主用 HF ZeroGPU Space，任何失败自动切魔搭 ModelScope API-Inference 备用（`seethrough_fallback_token` 鉴权；主用每日限额确认后进程内 6 小时冷却直连备用；单 provider 不重试），模块见 [services/companion/seethrough/](services/companion/seethrough/)。拆分产物为 22 语义层 PSD（`spiritagent.2d.psd/1` 描述符），客户端 Puppet 渲染层消费；拆分失败落 3D/蛋兜底。2d 行状态机与 WS 事件见 [docs/PIPELINE.md §6](../docs/PIPELINE.md)。
 - **双参考图仅 Gemini 消费**：第二张参考图（身份锚点之外的风格/体态参考）只有 Gemini 的图生图原生支持双参考融合；Grok 与 MiniMax 都是单参考，收到第二张时**静默忽略**。供应商链在双参考请求下把 Gemini 排在单参考家之前、单参考兜底。
 - **对话内生成媒体随终端助手行落库、与正文正交**：工具结果里的图片/视频 URL 在回合收口提取进消息媒体列并随对话完成事件下发；后台视频任务完成另落送达行（系统角色、LLM 可见），实时事件与历史水合看到同一形状。为什么不依赖 LLM 在正文贴 URL：模型可能漏贴、改写或夹带 markdown，渲染端无法稳定解析——结构化提取是唯一可靠通道，系统提示词同时禁止正文粘贴裸 URL。
@@ -73,9 +73,9 @@ backend/
 - **内容风控快速失败**：供应商内容风控拒绝映射为不可重试错误，避免无意义重试白烧配额。
 - **LLM 调用 debug 面包屑集中埋在三个 chokepoint**：聊天包装、回落链调度、embedding 入口；不分散到每个供应商方法——与重试/回落叠加容易漏，集中成本更低、一次抓全。
 - **Outbox 状态机可靠投递与独立周期性回收**：待派发事件入库默认待投递状态；派发循环按在线连接原子加锁认领并下发，成功后置为已投递，异常则递增重试次数并计算指数退避，超限后隔离入失败死信状态并记录错误原因；物理清理完全移出推送主循环，由调度器周期性批量回收过期投递行、死信与孤儿内部事件。
-- **工具集开关在注册表读取口生效、回合起点重读设置**：`toolsets.disabled`（UserSettings 点键，id 权威枚举见 [PROTOCOL.md §2.2](../PROTOCOL.md)）在 `get_all_schemas` 单一 chokepoint 过滤 backend/memory 桶（畸形值 fail-open——清空过滤而非清空工具表）；runner 桶在客户端 `get_tools` 源头已过滤、后端不重复过滤。回合起点重读 user_settings，`PUT /api/config` 后下一回合即生效、无需重连 WS，入口侧连接时缓存的快照因此不再是新鲜度瓶颈。
-- **IM 通道桥：进程内适配器 + 无头回合，不依赖用户 WS**（契约 [PROTOCOL.md §1.7](../PROTOCOL.md)，架构 [ARCHITECTURE.md §5.4](../ARCHITECTURE.md)）：外部 IM 渠道经 `services/channels/` 的适配器注册表接入（镜像供应商自注册模式）；入站消息以无头 emitter 直调 `run_chat_turn`（对比 cron 回合经 outbox 路由到持连副本——桌面离线即死，IM 桥不受此限）；回复去 markdown、按 `weixin_reply_max_chars` 分片后从原渠道送出，渠道能力差异（微信 reply-only）落在适配器能力位上。**每渠道一条专属 im 会话**（`im` kind 统一枚举，`channel_bindings.conversation_id` 唯一外键锚定——binding 的 (user, channel) 唯一性传递为渠道不混流），`prompt.submit` 拒写、桌面只读；人设/长期记忆/情感按 user 加载与桌面回合共享，无需同步动作。对端访问默认拒绝：未知发送者收一次性配对回复 + pending 行（`channel.peer_request` 事件），主人审批放行。绑定任务由守卫循环自愈（非致命错误退避重建），无周期对账——单 web 进程语义下不需要 omp-wechat 的端口单例锁/failover。**绑定状态与对外通知共用单一入口**（`update_binding_status`）：落库 + 状态实际变化时写 `channel.status` outbox 事件，避免事件漏发。微信 iLink reply-only 且需要登录：登录流程由适配器自管 QR 状态机（`get_bot_qrcode` → 3s 轮询 `get_qrcode_status` wait→scaned→confirmed|expired），confirmed 时凭据与游标全量重建（owner 自动加入白名单），Hub 走 REST 轮询展示二维码。**媒体收发走 iLink CDN + AES-128-ECB**（PyCryptodome 依赖 `pycryptodome`）：入站 `image_item`/`voice_item`/`file_item`/`video_item` 三元编码的 aes_key 解密后下载 → 落 `temp-media` 公网 URL → 作为 `ChatRequest` attachment 喂给 LLM（与桌面聊天视频上传复用同一 temp-media 通路）；回合产出 media 列经 `getuploadurl` + AES 加密 + `image_item`/`file_item` 段回送，回合内 attachment 与文字合并为单条消息。
-- **本机工具派发是用户级设备指令，不走回合 emitter**（契约 [PROTOCOL.md §1.3](../PROTOCOL.md)）：runner 工具调用由 `_dispatch_runner_tool` 直接推给该用户的 WS 派发器、信封不带 session_id，而非经当轮 emitter 下发。原因是 emitter 绑定回合语义，而设备派发与"用户在看哪个会话"无关：IM 回合的 emitter 是无头的（帧只进内存缓冲）、cron 与子 agent 回合的 session 用户也不可能在看，三者经 emitter 走都到不了 Runner，白挂满 IPC 超时。带信封 session_id 同样不行——渲染端的会话闸门会丢弃非当前会话的事件。载荷里另带一个**信息性** session_id 供客户端判断该回合是否可见（决定精灵工作态自持），它不参与路由。**注册必须先于派发**：`create_future` 在派发之前调用，且 `wait_future` 接收 future 对象而非按键重查——`resolve_future` 会 pop 条目，毫秒级工具的结果常常早于等待抵达，重查必然落空。**派发用 `enqueue_event` 而非 `push_event`**：后者返回 None 且底层吞掉所有发送异常，WS 掉线或 outbox 满只体现为返回 False，不看返回值就会白等满 300s。
+- **工具集开关在注册表读取口生效、回合起点重读设置**：`toolsets.disabled`（UserSettings 点键，id 权威枚举见 [PROTOCOL.md §2.2](../docs/PROTOCOL.md)）在 `get_all_schemas` 单一 chokepoint 过滤 backend/memory 桶（畸形值 fail-open——清空过滤而非清空工具表）；runner 桶在客户端 `get_tools` 源头已过滤、后端不重复过滤。回合起点重读 user_settings，`PUT /api/config` 后下一回合即生效、无需重连 WS，入口侧连接时缓存的快照因此不再是新鲜度瓶颈。
+- **IM 通道桥：进程内适配器 + 无头回合，不依赖用户 WS**（契约 [PROTOCOL.md §1.7](../docs/PROTOCOL.md)，架构 [ARCHITECTURE.md §5.4](../docs/ARCHITECTURE.md)）：外部 IM 渠道经 `services/channels/` 的适配器注册表接入（镜像供应商自注册模式）；入站消息以无头 emitter 直调 `run_chat_turn`（对比 cron 回合经 outbox 路由到持连副本——桌面离线即死，IM 桥不受此限）；回复去 markdown、按 `weixin_reply_max_chars` 分片后从原渠道送出，渠道能力差异（微信 reply-only）落在适配器能力位上。**每渠道一条专属 im 会话**（`im` kind 统一枚举，`channel_bindings.conversation_id` 唯一外键锚定——binding 的 (user, channel) 唯一性传递为渠道不混流），`prompt.submit` 拒写、桌面只读；人设/长期记忆/情感按 user 加载与桌面回合共享，无需同步动作。对端访问默认拒绝：未知发送者收一次性配对回复 + pending 行（`channel.peer_request` 事件），主人审批放行。绑定任务由守卫循环自愈（非致命错误退避重建），无周期对账——单 web 进程语义下不需要 omp-wechat 的端口单例锁/failover。**绑定状态与对外通知共用单一入口**（`update_binding_status`）：落库 + 状态实际变化时写 `channel.status` outbox 事件，避免事件漏发。微信 iLink reply-only 且需要登录：登录流程由适配器自管 QR 状态机（`get_bot_qrcode` → 3s 轮询 `get_qrcode_status` wait→scaned→confirmed|expired），confirmed 时凭据与游标全量重建（owner 自动加入白名单），Hub 走 REST 轮询展示二维码。**媒体收发走 iLink CDN + AES-128-ECB**（PyCryptodome 依赖 `pycryptodome`）：入站 `image_item`/`voice_item`/`file_item`/`video_item` 三元编码的 aes_key 解密后下载 → 落 `temp-media` 公网 URL → 作为 `ChatRequest` attachment 喂给 LLM（与桌面聊天视频上传复用同一 temp-media 通路）；回合产出 media 列经 `getuploadurl` + AES 加密 + `image_item`/`file_item` 段回送，回合内 attachment 与文字合并为单条消息。
+- **本机工具派发是用户级设备指令，不走回合 emitter**（契约 [PROTOCOL.md §1.3](../docs/PROTOCOL.md)）：runner 工具调用由 `_dispatch_runner_tool` 直接推给该用户的 WS 派发器、信封不带 session_id，而非经当轮 emitter 下发。原因是 emitter 绑定回合语义，而设备派发与"用户在看哪个会话"无关：IM 回合的 emitter 是无头的（帧只进内存缓冲）、cron 与子 agent 回合的 session 用户也不可能在看，三者经 emitter 走都到不了 Runner，白挂满 IPC 超时。带信封 session_id 同样不行——渲染端的会话闸门会丢弃非当前会话的事件。载荷里另带一个**信息性** session_id 供客户端判断该回合是否可见（决定精灵工作态自持），它不参与路由。**注册必须先于派发**：`create_future` 在派发之前调用，且 `wait_future` 接收 future 对象而非按键重查——`resolve_future` 会 pop 条目，毫秒级工具的结果常常早于等待抵达，重查必然落空。**派发用 `enqueue_event` 而非 `push_event`**：后者返回 None 且底层吞掉所有发送异常，WS 掉线或 outbox 满只体现为返回 False，不看返回值就会白等满 300s。
 
 - **桌面消失以错误 resolve 未决 future，而非 cancel**：`discard_user`（宽限期满清理与 admin 清号）对未决 IPC future 写入合成的离线错误。用 `cancel()` 会抛 `CancelledError`——它继承 `BaseException`，穿透 chat 回合与 IM 桥各层的 `except Exception`，回合静默死亡且对端永远等不到回复。改用错误 resolve 后回合正常收尾并能如实告知"电脑掉线了"，同时把 `CancelledError` 语义留给真正的任务取消（IM 侧中止）——两者不再混淆。
 - **生活空间房间图（角色入画、换装联动失效与锁保护）**：生活空间房间背景将角色形象绘制在室内场景中（以已确认半身像为身份锚点、当前服装为着装参照），呈现伙伴在自己房间内的生活画面，工作台则不提供单独工位背景；换装成功且当前着装变化时，服务端自动使旧房间图失效并触发重建，防止视觉穿帮；常规对话生图仅产生会话媒体卡片，绝不触碰激活背景，更换房间必须经由专属房间通道或主动换房工具；主动换房受用户级生成互斥锁、每日频控与打扰档位约束，政策锁定时仅响应用户显式指令或换装联动，角色主动请求一律返回人格化拒绝。
@@ -86,15 +86,15 @@ backend/
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 房间背景图、时刻与日记（生命周期联动、配额、静默推送） | 对客户端 / 调度器 | [PROTOCOL.md §1.0 / §1.2](../PROTOCOL.md) |
-| 伙伴生命周期、事件、枚举、资产与错误契约 | 对客户端 / 管理端 | [PROTOCOL.md §1 / §5](../PROTOCOL.md) |
+| 房间背景图、时刻与日记（生命周期联动、配额、静默推送） | 对客户端 / 调度器 | [PROTOCOL.md §1.0 / §1.2](../docs/PROTOCOL.md) |
+| 伙伴生命周期、事件、枚举、资产与错误契约 | 对客户端 / 管理端 | [PROTOCOL.md §1 / §5](../docs/PROTOCOL.md) |
 | 3D 与 2D 生成输入、能力链与产物契约 | 对客户端 + 供应商 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
-| Outbox、副本边界与主动事件路由 | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| Outbox、副本边界与主动事件路由 | 内部 | [ARCHITECTURE.md §5](../docs/ARCHITECTURE.md) |
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 |
-| 工具集 id 枚举与禁用语义 | 对客户端 / Runner | [PROTOCOL.md §2.2](../PROTOCOL.md) |
-| 系统预设对话（5 套并列、`system_preset_id` 字段、`is_deletable`/`is_renamable` 守卫） | 对客户端 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
-| IM 通道桥（REST、im 会话只读、配对审批、reply-only 语义） | 对客户端 / 外部 IM 渠道 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
+| 工具集 id 枚举与禁用语义 | 对客户端 / Runner | [PROTOCOL.md §2.2](../docs/PROTOCOL.md) |
+| 系统预设对话（5 套并列、`system_preset_id` 字段、`is_deletable`/`is_renamable` 守卫） | 对客户端 | [PROTOCOL.md §1.8](../docs/PROTOCOL.md) |
+| IM 通道桥（REST、im 会话只读、配对审批、reply-only 语义） | 对客户端 / 外部 IM 渠道 | [PROTOCOL.md §1.7](../docs/PROTOCOL.md) |
 
 ## 6. 已知限制
 
@@ -105,9 +105,9 @@ backend/
 | **异步会话关系懒加载不可用** | 关系属性在查询后访问必须显式预加载（selectinload/joinedload），否则运行时抛错；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | 新版轮询直接返回下载 URL，旧版（Hailuo）还有取文件第二跳；两者 URL 都是短时效的，必须**立即下载落临时媒体目录**，不能直接返给前端。 |
 | **Cron 回合派发守卫** | 写行前做静止档守卫（档位已落库）；自主回合行只被持有该用户 WS 的副本认领执行，全副本离线时由 GC 兜底清行——该次触发丢弃（下次调度时间已前移，等下次触发）。 |
-| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（防抖窗口，[DESIGN.md §6.6](../DESIGN.md)）再一次性批量提交——前驱消息先落库、末条作为当轮 user 消息；上一轮生成期间连发的消息在上一轮落库后作为新 turn 批量写入。因此客户端刷新（水合）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。IM 桥同一语义：回合中到达的入站消息排队合并为下一轮前导批（上限 `channels_turn_queue_max`，超出丢最旧）。 |
+| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（防抖窗口，[DESIGN.md §6.6](../docs/DESIGN.md)）再一次性批量提交——前驱消息先落库、末条作为当轮 user 消息；上一轮生成期间连发的消息在上一轮落库后作为新 turn 批量写入。因此客户端刷新（水合）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。IM 桥同一语义：回合中到达的入站消息排队合并为下一轮前导批（上限 `channels_turn_queue_max`，超出丢最旧）。 |
 | **IM 通道桥当前边界** | 微信 iLink 为 reply-only（不能主动发起、回复须回显入站 context_token，过期转 `login_required` 等用户重新扫码）且不支持群聊；入站媒体（图片/语音/文件/视频）经 iLink CDN AES-128-ECB 解密落 temp-media 后作为 `input_image`/`input_video` 喂给回合；回合产出 media（image/video）经 CDN AES 加密 + 签名 aes_key 回送 iLink；im 会话不进夜间日总结（运行时压缩检查点仍生效，全部对话类型统一读路径）；适配器登录/过期切换状态走单一 `update_binding_status` 入口（落库 + `channel.status` outbox 事件），避免事件漏发。 |
-| **IM 遥控本机工具的边界** | 桌面在线时 IM 回合可调用 runner 工具（契约见 [PROTOCOL.md §1.7](../PROTOCOL.md)），三条已知限制：(1) **长任务可能撞上 context_token 过期**——iLink 回复须回显入站 token，任务跑太久时连投递失败兜底提示都发不出去，表现为静默；中间进度追发只能缓解不能根治。(2) **30s 宽限窗内派发不会快速失败**——桌面刚断开时 `is_available` 仍为真，`tool.call` 无人接收，要等满 `ipc_future_timeout_seconds` 才以错误收尾（宽限期满时 `discard_user` 会立即以离线错误 resolve，不再是静默挂死）。(3) 授权边界只有对端白名单，无逐次授权层——审批一个对端即授予其操作本机的能力。 |
+| **IM 遥控本机工具的边界** | 桌面在线时 IM 回合可调用 runner 工具（契约见 [PROTOCOL.md §1.7](../docs/PROTOCOL.md)），三条已知限制：(1) **长任务可能撞上 context_token 过期**——iLink 回复须回显入站 token，任务跑太久时连投递失败兜底提示都发不出去，表现为静默；中间进度追发只能缓解不能根治。(2) **30s 宽限窗内派发不会快速失败**——桌面刚断开时 `is_available` 仍为真，`tool.call` 无人接收，要等满 `ipc_future_timeout_seconds` 才以错误收尾（宽限期满时 `discard_user` 会立即以离线错误 resolve，不再是静默挂死）。(3) 授权边界只有对端白名单，无逐次授权层——审批一个对端即授予其操作本机的能力。 |
 
 ## 7. 部署与监控
 

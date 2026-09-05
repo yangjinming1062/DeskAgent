@@ -478,7 +478,7 @@ def upgrade() -> None:
     op.create_index("ix_memories_content_trgm", "memories", ["content"], unique=False, postgresql_using="gin", postgresql_ops={"content": "gin_trgm_ops"})
     op.create_index("ix_memories_context_trgm", "memories", ["context"], unique=False, postgresql_using="gin", postgresql_ops={"context": "gin_trgm_ops"})
 
-    # Outbox 表的 LISTEN/NOTIFY 唤醒触发器（ARCHITECTURE.md §5）。
+    # Outbox 表的 LISTEN/NOTIFY 唤醒触发器（docs/ARCHITECTURE.md §5）。
     op.execute("""
 CREATE FUNCTION notify_ws_event() RETURNS trigger AS $$
 BEGIN

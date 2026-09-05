@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
-# 附件 URL 前缀；与 api/v1/media.py 的路由保持一致（PROTOCOL.md 契约）。
+# 附件 URL 前缀；与 api/v1/media.py 的路由保持一致（docs/PROTOCOL.md 契约）。
 VIDEO_URL_PREFIX = "/api/media/videos"
 
 # file_id 即磁盘文件名：token_urlsafe 主体 + 白名单扩展名；URL 直接携带它。

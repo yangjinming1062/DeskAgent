@@ -29,7 +29,7 @@ class _DailyCounters:
     hour_buckets: dict[int, int] = field(default_factory=dict)
 
 
-# 进程内聚合：按 ARCHITECTURE.md §5「单实例语义」，本字典即事实源
+# 进程内聚合：按 docs/ARCHITECTURE.md §5「单实例语义」，本字典即事实源
 _counters: dict[int, _DailyCounters] = {}
 
 

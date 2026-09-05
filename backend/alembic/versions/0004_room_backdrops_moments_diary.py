@@ -1,7 +1,7 @@
 """room backdrops + moments + diary entries
 
 生活空间产品化：把房间图（背景必须含角色）、时刻（生活空间时间线）、日记
-（每日第一人称）从原来的 memories 单一通道拆出，对应 PROTOCOL.md §1.x 增补。
+（每日第一人称）从原来的 memories 单一通道拆出，对应 docs/PROTOCOL.md §1.x 增补。
 
 未部署阶段的增量迁移；与基线 migration env 同步通过 models.metadata 校验。
 """

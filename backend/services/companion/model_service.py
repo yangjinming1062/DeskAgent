@@ -150,7 +150,7 @@ async def generate_companion_model(
 
 
 async def request_model_download_retry(db: AsyncSession, *, user_id: int, model_id: int) -> Companion3DModel:
-    """把重试交给 ``pipeline._launch_pipeline_task`` 自驱续跑，不重新计费（PROTOCOL.md §1.2）。"""
+    """把重试交给 ``pipeline._launch_pipeline_task`` 自驱续跑，不重新计费（docs/PROTOCOL.md §1.2）。"""
     model = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id, Companion3DModel.user_id == user_id))).scalar_one_or_none()
     if model is None:
         raise ModelGenerationError("未找到对应的 3D 模型记录")

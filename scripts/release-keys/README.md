@@ -15,5 +15,5 @@ default `$HOME/.spiritagent/update.key`. The release pipeline refuses to build
 without one.
 
 For why the private key lives off-repo, and the current trust model, see
-[SECURITY.md](../../SECURITY.md) (includes the 2026-08-21 signing-key incident
+[SECURITY.md](../../docs/SECURITY.md) (includes the 2026-08-21 signing-key incident
 and rotation history).

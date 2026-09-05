@@ -11,7 +11,7 @@ class ToolsetDef:
     extra_tools: tuple[str, ...] = ()
 
 
-# 工具集 id 的权威枚举见 PROTOCOL.md §2.2；本目录只做 id → runner 侧工具名/前缀的映射。
+# 工具集 id 的权威枚举见 docs/PROTOCOL.md §2.2；本目录只做 id → runner 侧工具名/前缀的映射。
 # 不可控的"侧信道"系统感知能力（焦点窗口 / 工作区 / 屏幕坐标 / 全屏 / 屏幕锁 / 空闲时长）单独归档为
 # ``system_awareness``,  让隐私敏感场景可以一键关掉屏幕坐标与全屏探测而不影响别的 system.* 探测。
 # PROTOCOL §2.2 提到的 Backend-only id（memory / web_tools / image_generation / messaging /

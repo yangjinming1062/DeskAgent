@@ -169,7 +169,7 @@ const ACTION_DEFAULTS: Partial<Record<keyof PuppetRuntime['target'], number>> = 
   eyeOpenR: 1
 }
 
-// 键集与后端 manifest_exporter DEFAULT_ACTIONS 白名单对齐（PROTOCOL.md §3）；
+// 键集与后端 manifest_exporter DEFAULT_ACTIONS 白名单对齐（docs/PROTOCOL.md §3）；
 // 未列出的白名单键按忽略处理（与 mesh2d 忽略未注册 action 同策略）。
 const ACTIONS: Record<string, ActionEnvelope> = {
   wave_right: {

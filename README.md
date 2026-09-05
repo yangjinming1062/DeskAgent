@@ -218,9 +218,9 @@ pnpm dev
 
 | 想了解什么 | 推荐阅读 | 说明 |
 | :--- | :--- | :--- |
-| **系统架构与物理边界** | [ARCHITECTURE.md](ARCHITECTURE.md) | 深入了解三模块物理隔离、通信链路、跨模块不变量 |
-| **伙伴交互与产品设计** | [DESIGN.md](DESIGN.md) | 形象体系、动画状态机、空间行为、Onboarding 生命周期与陪伴范式 |
-| **跨模块协议与安全契约** | [PROTOCOL.md](PROTOCOL.md) | JSON-RPC 2.0 方法规范、事件流、枚举定义、四层安全防御机制 |
+| **系统架构与物理边界** | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 深入了解三模块物理隔离、通信链路、跨模块不变量 |
+| **伙伴交互与产品设计** | [docs/DESIGN.md](docs/DESIGN.md) | 形象体系、动画状态机、空间行为、Onboarding 生命周期与陪伴范式 |
+| **跨模块协议与安全契约** | [docs/PROTOCOL.md](docs/PROTOCOL.md) | JSON-RPC 2.0 方法规范、事件流、枚举定义、四层安全防御机制 |
 | **后端核心实现 (Backend)** | [backend/README.md](backend/README.md) | FastAPI 架构、数据模型、记忆管理、Prompt 装配与 3D 能力链 |
 | **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、动画状态机与表情驱动 |
 | **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化与工具库 |

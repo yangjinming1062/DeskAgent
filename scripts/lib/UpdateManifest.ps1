@@ -23,7 +23,7 @@ function Resolve-OpenSsl {
 # The key MUST live outside the repo: an env var points to it, otherwise the well-known
 # per-user default is used. An earlier revision stored the key under scripts/secrets/
 # in the repo itself, which forced a wholesale keypair rotation and history rewrite
-# (see SECURITY.md).
+# (see docs/SECURITY.md).
 function Resolve-UpdateSigningKey {
     [CmdletBinding()]
     param()

@@ -4,7 +4,7 @@
 
 ## 协作规范
 
-1. **阅读文档优先**：优先阅读[ARCHITECTURE.md](ARCHITECTURE.md)和[DESIGN.md](DESIGN.md)了解项目思路，处理具体模块前**先读**该模块 `README.md`。
+1. **阅读文档优先**：优先阅读[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)和[docs/DESIGN.md](docs/DESIGN.md)了解项目思路，处理具体模块前**先读**该模块 `README.md`。
 2. **同步更新文档**：修改源码/结构/导出/架构后，**同一提交**里同步该模块及所有受影响的文档。
 3. **明确需求**：不懂的要及时问（说清楚为什么提这个问题），直到对目标有明确认知后再开始干活。
 
@@ -61,9 +61,9 @@
 | 文档 | 职责 | 禁止 |
 |------|------|------|
 | [README.md](README.md) | 产品定位 → 核心功能 → 快速开始 | 不写架构机制、安全契约、具体代码逻辑 |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 项目级架构与技术方向（指导类）：模块边界与为何分离、跨模块不变量、重大技术取舍 | 不写具体代码（函数名/配置键/逐字段）、不写产品功能设计、不写协议枚举明细 |
-| [DESIGN.md](DESIGN.md) | 产品功能设计与思考：形象、动画、生命周期、onboarding、陪伴范式、语音、故障态 | **无任何代码相关内容**——字段名、RPC 方法名、配置键、供应商名、类型签名一律不出现（归 PROTOCOL 或模块 README） |
-| [PROTOCOL.md](PROTOCOL.md) | 跨模块契约的**思想层**描述：有哪些契约、改一处需同步哪些模块（防只改一处导致遗漏） | 不复述代码（config schema 表、JSON 示例、逐参数方法签名）、不写实现细节 |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 项目级架构与技术方向（指导类）：模块边界与为何分离、跨模块不变量、重大技术取舍 | 不写具体代码（函数名/配置键/逐字段）、不写产品功能设计、不写协议枚举明细 |
+| [DESIGN.md](docs/DESIGN.md) | 产品功能设计与思考：形象、动画、生命周期、onboarding、陪伴范式、语音、故障态 | **无任何代码相关内容**——字段名、RPC 方法名、配置键、供应商名、类型签名一律不出现（归 PROTOCOL 或模块 README） |
+| [PROTOCOL.md](docs/PROTOCOL.md) | 跨模块契约的**思想层**描述：有哪些契约、改一处需同步哪些模块（防只改一处导致遗漏） | 不复述代码（config schema 表、JSON 示例、逐参数方法签名）、不写实现细节 |
 
 专项事实只由专项文档展开：
 
@@ -84,16 +84,16 @@
 `backend/`、`client/`、`runner/`、`installer/` 各自的 `README.md` 是**模块内开发者的入口文档**，目标读者是"要在该模块内改代码或审查代码的人"。它们必须按下面 6 节固定结构组织，缺哪一节就显式写"无"或合并到上一节，**不能**跳过。
 
 文档分层原则：
-- 架构动机、不变量 → [ARCHITECTURE.md](ARCHITECTURE.md)
-- 跨模块契约（JSON-RPC、枚举、事件、安全、凭据）→ [PROTOCOL.md](PROTOCOL.md)
-- 产品设计意图 → [DESIGN.md](DESIGN.md)
+- 架构动机、不变量 → [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 跨模块契约（JSON-RPC、枚举、事件、安全、凭据）→ [PROTOCOL.md](docs/PROTOCOL.md)
+- 产品设计意图 → [DESIGN.md](docs/DESIGN.md)
 - **模块实现、文件树、配置项、错误码、本模块独有的设计决策 → 该模块 `README.md`**
 
 #### §1 职责与边界（3–8 行）
 
-这个模块是什么、**不是**什么。一句话定位 + 显式排除（它**不**做哪些事）。链接 [ARCHITECTURE.md](ARCHITECTURE.md) 对应锚定读者该先读架构层定位。
+这个模块是什么、**不是**什么。一句话定位 + 显式排除（它**不**做哪些事）。链接 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 对应锚定读者该先读架构层定位。
 
-**不**放：架构图（已在根 ARCHITECTURE.md）、依赖方向、文件树。
+**不**放：架构图（已在根 docs/ARCHITECTURE.md）、依赖方向、文件树。
 
 #### §2 设计意图（核心节，8–20 行）
 
@@ -119,16 +119,16 @@
 
 #### §5 与外部的契约（5–15 行）
 
-本模块对外承诺的契约 + 依赖的外部契约。**本模块独有的**写在这里，跨模块共有的**链**到 [PROTOCOL.md](PROTOCOL.md) / [ARCHITECTURE.md](ARCHITECTURE.md)。表格形式：**契约名 + 方向 + 在哪定义**（`PROTOCOL.md §X` / `本模块独有` / `ARCHITECTURE.md §X`）。
+本模块对外承诺的契约 + 依赖的外部契约。**本模块独有的**写在这里，跨模块共有的**链**到 [PROTOCOL.md](docs/PROTOCOL.md) / [ARCHITECTURE.md](docs/ARCHITECTURE.md)。表格形式：**契约名 + 方向 + 在哪定义**（`PROTOCOL.md §X` / `本模块独有` / `ARCHITECTURE.md §X`）。
 
 #### §6 已知限制
 
-只列**模块内部决定**的限制（不是已写在 [ARCHITECTURE.md §10](ARCHITECTURE.md) 全局不变量的）。表格格式：**限制 + 说明**。
+只列**模块内部决定**的限制（不是已写在 [ARCHITECTURE.md §10](docs/ARCHITECTURE.md) 全局不变量的）。表格格式：**限制 + 说明**。
 
 #### 子模块 README 反模式（不要出现）
 
 - 逐文件列职责、逐函数列调用链、provider 协议对比表（代码 review 时该看的）
-- 复述 [PROTOCOL.md](PROTOCOL.md) / [ARCHITECTURE.md](ARCHITECTURE.md) / [DESIGN.md](DESIGN.md) 已有的契约（链过去即可）
+- 复述 [PROTOCOL.md](docs/PROTOCOL.md) / [ARCHITECTURE.md](docs/ARCHITECTURE.md) / [DESIGN.md](docs/DESIGN.md) 已有的契约（链过去即可）
 - 列版本号、字段长度、配置项默认值（那些是代码）
 - "以前 X，现在 Y"的叙事（git log 负责）
 - "TODO" / "待补"占位段（要么删要么补，不留空的）

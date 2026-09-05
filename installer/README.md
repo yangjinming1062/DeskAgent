@@ -1,6 +1,6 @@
 # Installer
 
-SpiritAgent 安装器产品。本目录容纳 Tauri 2 桌面程序、待释放的安装 payload（skills）、以及 Tauri 进程启动的安装协议脚本。首装完成释放客户端后，客户端以"蛋"形态首次启动，进入 [DESIGN.md §5](../DESIGN.md) 的伙伴生命周期 onboarding；构建入口与产物见 [scripts/README.md](../scripts/README.md)。
+SpiritAgent 安装器产品。本目录容纳 Tauri 2 桌面程序、待释放的安装 payload（skills）、以及 Tauri 进程启动的安装协议脚本。首装完成释放客户端后，客户端以"蛋"形态首次启动，进入 [DESIGN.md §5](../docs/DESIGN.md) 的伙伴生命周期 onboarding；构建入口与产物见 [scripts/README.md](../scripts/README.md)。
 
 ## 1. 职责与边界
 
@@ -13,11 +13,11 @@ SpiritAgent 安装器产品。本目录容纳 Tauri 2 桌面程序、待释放�
 **不**做：
 - **不下载 install 脚本**——脚本由 `bundle.resources` 嵌入，版本 = installer build 版本
 - **不下载 payload**——payload 都在 `bundle.resources` 里
-- **不查更新**——更新流走后端更新端点（[PROTOCOL.md §5.5](../PROTOCOL.md)）
+- **不查更新**——更新流走后端更新端点（[PROTOCOL.md §5.5](../docs/PROTOCOL.md)）
 - **不依赖 `client/`、`backend/`、`runner/` 的资源**——任何"借用"对方样式 / 组件 / 构建产物的做法都会让 Stage 2.x 的边界退化；前端设计 token、按钮变体等**均为本地副本**
-- **不分发蛋形象资产**——蛋形象由客户端内置默认渲染，安装期由矢量蛋组件 + 同心光环提供破壳进度叙事，形象资产完全由后端生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）
+- **不分发蛋形象资产**——蛋形象由客户端内置默认渲染，安装期由矢量蛋组件 + 同心光环提供破壳进度叙事，形象资产完全由后端生成并下发（[ARCHITECTURE.md §6](../docs/ARCHITECTURE.md)）
 
-架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；客户端认证流程见 [client/README.md §5](../client/README.md)（激活码制）。
+架构层定位见 [ARCHITECTURE.md §1 / §2](../docs/ARCHITECTURE.md)；客户端认证流程见 [client/README.md §5](../client/README.md)（激活码制）。
 
 ## 2. 设计意图
 

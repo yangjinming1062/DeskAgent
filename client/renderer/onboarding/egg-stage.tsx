@@ -6,7 +6,7 @@ import { openContextMenu } from '@/companion'
 import { $surfaceOpen } from '@/shared/store/surfaces'
 
 // 桌面常驻「蛋」：透明置顶窗口里呼吸 / 裂纹闪光 / hover 注视，等待用户戳击启动 onboarding。
-// 设计来源：DESIGN.md §4 / §5.1——「蛋破碎后开始对话」意味着蛋必须作为独立桌面存在物，
+// 设计来源：docs/DESIGN.md §4 / §5.1——「蛋破碎后开始对话」意味着蛋必须作为独立桌面存在物，
 // 而非跳过的中间态。Installer 端的 Egg 组件是流程动画，桌面这个是常驻精灵。
 const CRACK_PATHS = [
   'M 160 70 L 148 95 L 155 115 L 140 135',
