@@ -1,7 +1,8 @@
 import './styles.css'
 
+import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 
@@ -13,11 +14,33 @@ import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { applyNoBlurIfNeeded } from '@/shared/lib/apply-no-blur'
 import { installClipboardShim } from '@/shared/lib/clipboard'
+import { $auth } from '@/shared/store/auth'
 import { hydrateSurfaces } from '@/shared/store/surfaces'
 import { initUiThemeSync } from '@/shared/store/theme'
 
 function SurfaceAuthBootstrap(): null {
   useAuthBridge()
+  const auth = useStore($auth)
+
+  useEffect(() => {
+    if (auth.kind !== 'authenticated') {
+      return
+    }
+
+    void hydratePersona()
+    void hydratePortrait()
+
+    const onFocus = (): void => {
+      void hydratePersona({ silent: true })
+      void hydratePortrait()
+    }
+
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [auth.kind])
 
   return null
 }
@@ -28,8 +51,6 @@ export function bootstrapSurface(label: string, RootComponent: React.ComponentTy
   initUiThemeSync()
   initCompanionPrefsSync()
   hydrateSurfaces()
-  void hydratePersona()
-  void hydratePortrait()
   initPersonaSkin()
 
   const container = document.getElementById('root')

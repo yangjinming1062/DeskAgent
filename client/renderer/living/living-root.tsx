@@ -3,12 +3,14 @@
 // 不在右栏挂 PuppetStage / Companion3D；立绘由房间背景图承担。
 // 关掉时主进程互斥会把焦点还给工作台或精灵。
 
+import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 import type React from 'react'
 
 import { hydrateRoomBackdrop } from '@/living/room-backdrop-store'
 import { ArrowRight, Home } from '@/shared/lib/icons'
 import { WindowControls } from '@/shared/panel'
+import { $auth } from '@/shared/store/auth'
 import { requestOpenSurface } from '@/shared/store/surfaces'
 
 import { LivingRail } from './living-rail'
@@ -17,9 +19,13 @@ import styles from './living.module.css'
 import { RoomBackdrop } from './room-backdrop'
 
 export function LivingRoot(): React.JSX.Element {
+  const auth = useStore($auth)
+
   useEffect(() => {
-    void hydrateRoomBackdrop()
-  }, [])
+    if (auth.kind === 'authenticated') {
+      void hydrateRoomBackdrop()
+    }
+  }, [auth.kind])
 
   return (
     <div className={styles.windowFrame}>
