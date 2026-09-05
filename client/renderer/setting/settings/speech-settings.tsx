@@ -27,7 +27,7 @@ const readState = (config: SpiritAgentConfigResponse): SpeechFormState => ({
   maxRecordingSeconds: config.voice?.max_recording_seconds ?? DEFAULTS.maxRecordingSeconds
 })
 
-export function SpeechSettings(): React.JSX.Element {
+export function SpeechSettings({ standalone = true }: { standalone?: boolean } = {}): React.JSX.Element {
   const s = strings.speech
   const configLoader = useAsyncLoader<SpiritAgentConfigResponse>(() => getSpiritAgentConfig())
   const [isSaving, setIsSaving] = useState(false)
@@ -72,43 +72,41 @@ export function SpeechSettings(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return (
-      <SettingsContent>
-        <LoadingBlock label={s.loading} />
-      </SettingsContent>
-    )
+    const loadingView = <LoadingBlock label={s.loading} />
+
+    return standalone ? <SettingsContent>{loadingView}</SettingsContent> : loadingView
   }
 
   // 包含当前值，确保非标准值也能匹配选项
   const recordingOptions = Array.from(new Set([...RECORDING_OPTIONS, state.maxRecordingSeconds])).sort((a, b) => a - b)
 
-  return (
-    <SettingsContent>
-      <SettingsSubsection intro={s.intro} title={s.title}>
-        <ListRow
-          action={<Toggle checked={state.sttEnabled} onChange={v => update({ sttEnabled: v })} />}
-          description={s.sttEnabledDesc}
-          title={s.sttEnabledTitle}
-        />
-        <ListRow
-          action={
-            <PanelSelect
-              onChange={v => update({ maxRecordingSeconds: Number(v) })}
-              options={recordingOptions.map(sec => ({ value: String(sec), label: `${sec}s` }))}
-              value={String(state.maxRecordingSeconds)}
-              widthClass="w-28"
-            />
-          }
-          description={s.recordingDesc}
-          title={s.recordingTitle}
-        />
+  const body = (
+    <SettingsSubsection intro={s.intro} title={s.title}>
+      <ListRow
+        action={<Toggle checked={state.sttEnabled} onChange={v => update({ sttEnabled: v })} />}
+        description={s.sttEnabledDesc}
+        title={s.sttEnabledTitle}
+      />
+      <ListRow
+        action={
+          <PanelSelect
+            onChange={v => update({ maxRecordingSeconds: Number(v) })}
+            options={recordingOptions.map(sec => ({ value: String(sec), label: `${sec}s` }))}
+            value={String(state.maxRecordingSeconds)}
+            widthClass="w-28"
+          />
+        }
+        description={s.recordingDesc}
+        title={s.recordingTitle}
+      />
 
-        <div className="mt-8 flex justify-end">
-          <button className={BTN_PRIMARY} disabled={isSaving || !isDirty} onClick={() => void save()} type="button">
-            {isSaving ? s.saving : s.save}
-          </button>
-        </div>
-      </SettingsSubsection>
-    </SettingsContent>
+      <div className="mt-6 flex justify-end">
+        <button className={BTN_PRIMARY} disabled={isSaving || !isDirty} onClick={() => void save()} type="button">
+          {isSaving ? s.saving : s.save}
+        </button>
+      </div>
+    </SettingsSubsection>
   )
+
+  return standalone ? <SettingsContent>{body}</SettingsContent> : <div>{body}</div>
 }

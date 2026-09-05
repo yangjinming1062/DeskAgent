@@ -18,7 +18,7 @@ import {
   switchSession
 } from '@/chat/session-list-store'
 import { ChatPanel } from '@/conversation/chat-panel'
-import { AppearancePage, AppSettingsPanel, ChannelsSettings, WardrobePage } from '@/setting'
+import { AppearancePage, AppSettingsPanel, ChannelsSettings, RoomSettings, WardrobePage } from '@/setting'
 import { ArrowRight } from '@/shared/lib/icons'
 import { $gatewayState } from '@/shared/store/gateway'
 import { requestOpenSurface } from '@/shared/store/surfaces'
@@ -45,6 +45,10 @@ export function LivingStage(): React.JSX.Element {
 
   if (view === 'channels') {
     return <ChannelsSettings />
+  }
+
+  if (view === 'room') {
+    return <RoomSettings />
   }
 
   if (view === 'settings') {

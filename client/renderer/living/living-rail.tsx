@@ -8,6 +8,7 @@ import { triggerHaptic } from '@/shared/lib/haptics'
 import {
   CalendarPlus,
   Globe,
+  Home,
   type IconComponent,
   MessageSquareText,
   Palette,
@@ -33,6 +34,7 @@ const NAV_ENTRIES: NavEntry[] = [
   { icon: Shirt, id: 'wardrobe', label: '衣橱' },
   { icon: Palette, id: 'appearance', label: '形象' },
   { icon: Globe, id: 'channels', label: '通道' },
+  { icon: Home, id: 'room', label: '房间' },
   { icon: Settings, id: 'settings', label: '设置' }
 ]
 

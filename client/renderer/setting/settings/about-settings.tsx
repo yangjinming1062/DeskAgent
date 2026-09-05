@@ -10,7 +10,7 @@ import { strings } from '@/shared/strings'
 
 import { SettingsContent } from './primitives'
 
-export function AboutSettings(): React.JSX.Element {
+export function AboutSettings({ standalone = true }: { standalone?: boolean } = {}): React.JSX.Element {
   const t = strings
   const a = t.settings.about
   const version = useStore($desktopVersion)
@@ -44,9 +44,9 @@ export function AboutSettings(): React.JSX.Element {
     statusLine = a.updateError(updateStatus.message)
   }
 
-  return (
-    <SettingsContent>
-      <div className="flex flex-col items-center gap-3 pt-10 pb-2 text-center">
+  const body = (
+    <div>
+      <div className="flex flex-col items-center gap-3 pt-4 pb-2 text-center">
         <div className="relative grid place-items-center">
           {/* Static warm halo — echoes the companion's amber glow (egg.tsx).
               Settings is the admin surface, so no breathing; just identity warmth. */}
@@ -77,6 +77,8 @@ export function AboutSettings(): React.JSX.Element {
           {a.checkForUpdates}
         </button>
       </div>
-    </SettingsContent>
+    </div>
   )
+
+  return standalone ? <SettingsContent>{body}</SettingsContent> : body
 }

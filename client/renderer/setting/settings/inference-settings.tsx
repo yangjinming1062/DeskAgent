@@ -54,7 +54,7 @@ const readTemperatureState = (config: SpiritAgentConfigResponse): TemperatureFor
   compression_temperature: config.chat?.compression_temperature ?? EMPTY_TEMPERATURE.compression_temperature
 })
 
-export function InferenceSettings(): React.JSX.Element {
+export function InferenceSettings({ standalone = true }: { standalone?: boolean } = {}): React.JSX.Element {
   const t = strings
   const a = t.settings.inference
 
@@ -134,31 +134,29 @@ export function InferenceSettings(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return (
-      <SettingsContent>
-        <LoadingBlock label={a.loading} />
-      </SettingsContent>
-    )
+    const loadingView = <LoadingBlock label={a.loading} />
+
+    return standalone ? <SettingsContent>{loadingView}</SettingsContent> : loadingView
   }
 
   if (loadError) {
-    return (
-      <SettingsContent>
-        <ListRow
-          description={loadError}
-          title={
-            <div className="flex items-center gap-2 text-rose-300/80">
-              <Brain className="size-4" />
-              <span>{a.heading}</span>
-            </div>
-          }
-        />
-      </SettingsContent>
+    const errorView = (
+      <ListRow
+        description={loadError}
+        title={
+          <div className="flex items-center gap-2 text-rose-300/80">
+            <Brain className="size-4" />
+            <span>{a.heading}</span>
+          </div>
+        }
+      />
     )
+
+    return standalone ? <SettingsContent>{errorView}</SettingsContent> : errorView
   }
 
-  return (
-    <SettingsContent>
+  const body = (
+    <div>
       <SectionHeading title={a.heading} />
 
       <AgentDefaultsSection disabled={isSaving} state={agent.state} t={a.agentDefaults} update={agent.set} />
@@ -177,6 +175,8 @@ export function InferenceSettings(): React.JSX.Element {
           {isSaving ? t.common.saving : t.common.save}
         </button>
       </div>
-    </SettingsContent>
+    </div>
   )
+
+  return standalone ? <SettingsContent>{body}</SettingsContent> : body
 }

@@ -1,4 +1,4 @@
-// 生活空间右栏当前选中页：聊天 / 衣橱 / 形象 / 片刻 / 日记 / 通道 / 设置。
+// 生活空间右栏当前选中页：聊天 / 衣橱 / 形象 / 片刻 / 日记 / 通道 / 房间 / 设置。
 //
 // 视图通过 hash 路由持久化（hash 变化也持久化到 localStorage），
 // 这样工作台切到生活空间时能恢复到上次的视图。
@@ -8,7 +8,7 @@ import { atom } from 'nanostores'
 import type { AppSettingsView } from '@/setting/app-settings/app-settings-view'
 import { $appSettingsView } from '@/setting/app-settings/app-settings-view'
 
-export type LivingView = 'chat' | 'wardrobe' | 'appearance' | 'moments' | 'diary' | 'channels' | 'settings'
+export type LivingView = 'chat' | 'wardrobe' | 'appearance' | 'moments' | 'diary' | 'channels' | 'room' | 'settings'
 
 export const LIVING_VIEWS: ReadonlyArray<LivingView> = [
   'chat',
@@ -17,19 +17,16 @@ export const LIVING_VIEWS: ReadonlyArray<LivingView> = [
   'moments',
   'diary',
   'channels',
+  'room',
   'settings'
 ]
 
 const STORAGE_KEY = 'da.living.view'
 const DEFAULT_VIEW: LivingView = 'chat'
 
-// 'settings' 与 'appearance' 都落到 AppSettingsPanel 的 appearance tab；
-// 'channels' 走 ChannelsSettings（也是 AppSettingsView 的一个分支）。
-// 子面板目标 view 在这里决定，不在 stage render 里写——避免 StrictMode 双触。
 const LIVING_TO_APP_SETTINGS: Partial<Record<LivingView, AppSettingsView>> = {
   appearance: 'appearance',
-  channels: 'channels',
-  settings: 'appearance'
+  channels: 'channels'
 }
 
 function parseHashView(): LivingView | null {

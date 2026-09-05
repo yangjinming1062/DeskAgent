@@ -23,13 +23,13 @@ function ThemePreview({ preview }: { preview: ThemeDefinition['preview'] }): Rea
   )
 }
 
-export function AppearanceSettings(): React.JSX.Element {
+export function AppearanceSettings({ standalone = true }: { standalone?: boolean } = {}): React.JSX.Element {
   const t = strings
   const a = t.settings.appearance
   const active = useStore($theme)
 
-  return (
-    <SettingsContent>
+  const body = (
+    <div>
       <div className="pt-1 pb-4">
         <h2 className="text-sm font-semibold text-strong">{a.heading}</h2>
         <p className="mt-1 text-[11px] leading-relaxed text-faint">{a.hint}</p>
@@ -63,6 +63,8 @@ export function AppearanceSettings(): React.JSX.Element {
           )
         })}
       </SettingCard>
-    </SettingsContent>
+    </div>
   )
+
+  return standalone ? <SettingsContent>{body}</SettingsContent> : body
 }

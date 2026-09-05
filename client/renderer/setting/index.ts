@@ -11,3 +11,4 @@ export { $outfitView, type OutfitView, setOutfitView } from './outfit/outfit-vie
 export { AppearancePage } from './outfit/pages/appearance-page'
 export { WardrobePage } from './outfit/pages/wardrobe-page'
 export { ChannelsSettings } from './settings/channels-settings'
+export { RoomSettings } from './settings/room-settings'

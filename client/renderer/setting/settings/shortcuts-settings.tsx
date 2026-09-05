@@ -16,7 +16,7 @@ const INITIAL_STATE: DesktopShortcutsState = {
   }
 }
 
-export function ShortcutsSettings(): React.JSX.Element {
+export function ShortcutsSettings({ standalone = true }: { standalone?: boolean } = {}): React.JSX.Element {
   const t = strings.settings.shortcuts
   const [state, setState] = useState<DesktopShortcutsState>(INITIAL_STATE)
   const [loading, setLoading] = useState(true)
@@ -59,19 +59,21 @@ export function ShortcutsSettings(): React.JSX.Element {
         setState(res)
       }
     } catch {
-      // 异常已由主进程捕获并通过 status 返回
+      // 保持当前状态；UI 会在下一次推送时对齐
     }
   }
 
   const handleResetAll = async (): Promise<void> => {
     try {
-      const res = await window.spiritagent.shortcuts.reset()
+      const res = await window.spiritagent.shortcuts.set({
+        shortcuts: { ...DEFAULT_SHORTCUTS }
+      })
 
       if (res) {
         setState(res)
       }
     } catch {
-      // 异常已由主进程捕获
+      // 保持当前状态
     }
   }
 
@@ -81,66 +83,78 @@ export function ShortcutsSettings(): React.JSX.Element {
     state.config.openWorkbench === DEFAULT_SHORTCUTS.openWorkbench &&
     state.config.toggleChat === DEFAULT_SHORTCUTS.toggleChat
 
-  return (
-    <SettingsPage hint={t.intro} title={t.heading}>
-      <div className="space-y-6">
-        <SettingCard>
-          <SettingRow description={t.toggleVisibilityDesc} label={t.toggleVisibility}>
-            <ShortcutRecorder
-              defaultValue={DEFAULT_SHORTCUTS.toggleVisibility}
-              disabled={loading}
-              error={state.status.toggleVisibility?.error}
-              onChange={val => void handleChange('toggleVisibility', val)}
-              registered={state.status.toggleVisibility?.registered}
-              value={state.config.toggleVisibility}
-            />
-          </SettingRow>
-          <SettingRow description={t.openLivingDesc} label={t.openLiving}>
-            <ShortcutRecorder
-              defaultValue={DEFAULT_SHORTCUTS.openLiving}
-              disabled={loading}
-              error={state.status.openLiving?.error}
-              onChange={val => void handleChange('openLiving', val)}
-              registered={state.status.openLiving?.registered}
-              value={state.config.openLiving}
-            />
-          </SettingRow>
-          <SettingRow description={t.openWorkbenchDesc} label={t.openWorkbench}>
-            <ShortcutRecorder
-              defaultValue={DEFAULT_SHORTCUTS.openWorkbench}
-              disabled={loading}
-              error={state.status.openWorkbench?.error}
-              onChange={val => void handleChange('openWorkbench', val)}
-              registered={state.status.openWorkbench?.registered}
-              value={state.config.openWorkbench}
-            />
-          </SettingRow>
-          <SettingRow description={t.toggleChatDesc} label={t.toggleChat}>
-            <ShortcutRecorder
-              defaultValue={DEFAULT_SHORTCUTS.toggleChat}
-              disabled={loading}
-              error={state.status.toggleChat?.error}
-              onChange={val => void handleChange('toggleChat', val)}
-              registered={state.status.toggleChat?.registered}
-              value={state.config.toggleChat}
-            />
-          </SettingRow>
-        </SettingCard>
-
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-          <div className="flex items-center gap-1.5 text-faint">
-            <Sparkles className="size-3.5 shrink-0 text-accent" />
-            <p className={HINT_TEXT}>{t.pressKeysHint}</p>
-          </div>
-
-          {!isAllDefault && (
-            <button className={BTN_SUBTLE} disabled={loading} onClick={() => void handleResetAll()} type="button">
-              <RefreshCw className="size-3.5" />
-              <span>{t.resetAll}</span>
-            </button>
-          )}
+  const body = (
+    <div className="space-y-4">
+      {!standalone && (
+        <div className="pt-1 pb-1">
+          <h2 className="text-sm font-semibold text-strong">{t.heading}</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-faint">{t.intro}</p>
         </div>
+      )}
+      <SettingCard>
+        <SettingRow description={t.toggleVisibilityDesc} label={t.toggleVisibility}>
+          <ShortcutRecorder
+            defaultValue={DEFAULT_SHORTCUTS.toggleVisibility}
+            disabled={loading}
+            error={state.status.toggleVisibility?.error}
+            onChange={val => void handleChange('toggleVisibility', val)}
+            registered={state.status.toggleVisibility?.registered}
+            value={state.config.toggleVisibility}
+          />
+        </SettingRow>
+        <SettingRow description={t.openLivingDesc} label={t.openLiving}>
+          <ShortcutRecorder
+            defaultValue={DEFAULT_SHORTCUTS.openLiving}
+            disabled={loading}
+            error={state.status.openLiving?.error}
+            onChange={val => void handleChange('openLiving', val)}
+            registered={state.status.openLiving?.registered}
+            value={state.config.openLiving}
+          />
+        </SettingRow>
+        <SettingRow description={t.openWorkbenchDesc} label={t.openWorkbench}>
+          <ShortcutRecorder
+            defaultValue={DEFAULT_SHORTCUTS.openWorkbench}
+            disabled={loading}
+            error={state.status.openWorkbench?.error}
+            onChange={val => void handleChange('openWorkbench', val)}
+            registered={state.status.openWorkbench?.registered}
+            value={state.config.openWorkbench}
+          />
+        </SettingRow>
+        <SettingRow description={t.toggleChatDesc} label={t.toggleChat}>
+          <ShortcutRecorder
+            defaultValue={DEFAULT_SHORTCUTS.toggleChat}
+            disabled={loading}
+            error={state.status.toggleChat?.error}
+            onChange={val => void handleChange('toggleChat', val)}
+            registered={state.status.toggleChat?.registered}
+            value={state.config.toggleChat}
+          />
+        </SettingRow>
+      </SettingCard>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+        <div className="flex items-center gap-1.5 text-faint">
+          <Sparkles className="size-3.5 shrink-0 text-accent" />
+          <p className={HINT_TEXT}>{t.pressKeysHint}</p>
+        </div>
+
+        {!isAllDefault && (
+          <button className={BTN_SUBTLE} disabled={loading} onClick={() => void handleResetAll()} type="button">
+            <RefreshCw className="size-3.5" />
+            <span>{t.resetAll}</span>
+          </button>
+        )}
       </div>
+    </div>
+  )
+
+  return standalone ? (
+    <SettingsPage hint={t.intro} title={t.heading}>
+      {body}
     </SettingsPage>
+  ) : (
+    body
   )
 }
