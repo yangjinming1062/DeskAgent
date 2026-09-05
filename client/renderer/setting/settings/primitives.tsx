@@ -9,7 +9,7 @@ import { CHIP, CHIP_ACTIVE } from '@/shared/panel'
 
 export function SettingsContent({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <section className="min-h-0 overflow-hidden">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className={cn('h-full min-h-0 overflow-y-auto pb-20', PAGE_INSET_X)}>
         <div className="mx-auto w-full max-w-4xl text-strong">{children}</div>
       </div>

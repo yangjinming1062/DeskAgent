@@ -24,7 +24,7 @@ import { $gatewayState } from '@/shared/store/gateway'
 import { requestOpenSurface } from '@/shared/store/surfaces'
 
 import { DiaryPage } from './diary-page'
-import { $livingView, setLivingView } from './living-store'
+import { $livingView } from './living-store'
 import styles from './living.module.css'
 import { MomentsPage } from './moments-page'
 
@@ -48,7 +48,7 @@ export function LivingStage(): React.JSX.Element {
   }
 
   if (view === 'settings') {
-    return <AppSettingsPanel onClose={() => setLivingView('chat')} />
+    return <AppSettingsPanel />
   }
 
   if (view === 'moments') {

@@ -2,7 +2,6 @@
 //
 // - GET /api/companion/moments（带 cursor 分页）→ $moments
 // - GET /api/companion/diary（带 from/to 区间）→ $diaryByDate
-// - POST /api/companion/diary 创建 / 补写日记
 // - WS `companion.moment.created` / `companion.diary.upserted` 增量 upsert
 
 import { atom } from 'nanostores'
@@ -179,41 +178,6 @@ export async function hydrateDiary(opts: { from?: string; to?: string; reset?: b
   } finally {
     $diaryLoading.set(false)
   }
-}
-
-export async function appendDiary(payload: {
-  body: string
-  date?: string
-  mood?: string
-  title?: string
-}): Promise<boolean> {
-  const result = await authedApi<DiaryWire>({
-    body: {
-      body: payload.body,
-      entry_date: payload.date,
-      mood: payload.mood,
-      title: payload.title
-    },
-    method: 'POST',
-    path: '/api/companion/diary'
-  })
-
-  if (!result.ok) {
-    if (result.reason === 'err') {
-      log.warn('journal', 'appendDiary failed:', result.error)
-    }
-
-    return false
-  }
-
-  if (result.value) {
-    const entry = toDiary(result.value)
-    const map = $diaryByDate.get()
-
-    $diaryByDate.set({ ...map, [entry.date]: entry })
-  }
-
-  return true
 }
 
 // WS 入口：handleCompanionEvent 调用。

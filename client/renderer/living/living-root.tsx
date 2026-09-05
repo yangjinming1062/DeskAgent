@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import type React from 'react'
 
-import { ArrowRight, Home } from '@/shared/lib/icons'
+import { Home } from '@/shared/lib/icons'
 import { WindowControls } from '@/shared/panel'
 import { hydrateRoomBackdrop } from '@/shared/store/room-backdrop-store'
 import { requestOpenSurface } from '@/shared/store/surfaces'
@@ -40,16 +40,6 @@ export function LivingRoot(): React.JSX.Element {
           </div>
         </div>
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <button
-            className={styles.workbenchButton}
-            onClick={() => {
-              void requestOpenSurface('workbench')
-            }}
-            type="button"
-          >
-            <span>前往工作台</span>
-            <ArrowRight size={13} />
-          </button>
           <WindowControls />
         </div>
       </header>

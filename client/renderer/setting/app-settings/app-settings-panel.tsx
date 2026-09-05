@@ -2,8 +2,7 @@ import { useStore } from '@nanostores/react'
 import { IconBrandWechat } from '@tabler/icons-react'
 import type React from 'react'
 
-import { FloatingPanel } from '@/companion'
-import { AudioLines, Brain, Cpu, Home, Info, Keyboard, Palette, Settings, Sparkles } from '@/shared/lib/icons'
+import { AudioLines, Brain, Cpu, Home, Info, Keyboard, Palette, Sparkles } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { type NavItemDescriptor, SettingsNav, SURFACE_CHROME } from '@/shared/panel'
 import { strings } from '@/shared/strings'
@@ -20,8 +19,8 @@ import { SpeechSettings } from '../settings/speech-settings'
 
 import { $appSettingsView, type AppSettingsView } from './app-settings-view'
 
-// 应用设置独立入口面板：八个应用层（原工具窗）+ 房间管理。
-export function AppSettingsPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
+// 应用设置独立入口面板：直接平铺在生活空间右侧舞台展示，包含子导航及对应配置内容。
+export function AppSettingsPanel(): React.JSX.Element {
   const view = useStore($appSettingsView)
   const t = strings
 
@@ -38,46 +37,39 @@ export function AppSettingsPanel({ onClose }: { onClose: () => void }): React.JS
   ]
 
   return (
-    <FloatingPanel
-      defaultSize={{ width: 960, height: 640 }}
-      icon={Settings}
-      onClose={onClose}
-      regionId="companion-app-settings"
-      static
-      storagePrefix="da.companion.appSettingsPanel"
-      title={t.settings.title}
-    >
-      <div className="flex min-h-0 flex-1">
-        <aside
-          className={cn(
-            SURFACE_CHROME,
-            'flex w-52 shrink-0 flex-col overflow-y-auto border-r border-line-standard p-2.5'
-          )}
-        >
-          <SettingsNav activeId={view} items={navItems} onSelect={id => $appSettingsView.set(id as AppSettingsView)} />
-        </aside>
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {view === 'inference' ? (
-            <InferenceSettings />
-          ) : view === 'speech' ? (
-            <SpeechSettings />
-          ) : view === 'channels' ? (
-            <ChannelsSettings />
-          ) : view === 'appearance' ? (
-            <AppearanceSettings />
-          ) : view === 'room' ? (
-            <RoomSettings />
-          ) : view === 'shortcuts' ? (
-            <ShortcutsSettings />
-          ) : view === 'runner' ? (
-            <RunnerSettings />
-          ) : view === 'skills' ? (
-            <SkillsToolsTabs />
-          ) : view === 'about' ? (
-            <AboutSettings />
-          ) : null}
-        </main>
-      </div>
-    </FloatingPanel>
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden">
+      <aside
+        className={cn(
+          SURFACE_CHROME,
+          'flex w-52 shrink-0 flex-col overflow-y-auto border-r border-line-hairline p-2.5'
+        )}
+      >
+        <div className="px-2.5 pt-1.5 pb-2">
+          <h2 className="text-sm font-semibold text-strong">{t.settings.title}</h2>
+        </div>
+        <SettingsNav activeId={view} items={navItems} onSelect={id => $appSettingsView.set(id as AppSettingsView)} />
+      </aside>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {view === 'inference' ? (
+          <InferenceSettings />
+        ) : view === 'speech' ? (
+          <SpeechSettings />
+        ) : view === 'channels' ? (
+          <ChannelsSettings />
+        ) : view === 'appearance' ? (
+          <AppearanceSettings />
+        ) : view === 'room' ? (
+          <RoomSettings />
+        ) : view === 'shortcuts' ? (
+          <ShortcutsSettings />
+        ) : view === 'runner' ? (
+          <RunnerSettings />
+        ) : view === 'skills' ? (
+          <SkillsToolsTabs />
+        ) : view === 'about' ? (
+          <AboutSettings />
+        ) : null}
+      </main>
+    </div>
   )
 }

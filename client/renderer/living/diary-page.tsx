@@ -1,11 +1,14 @@
-// 日记页：左月历（带点）+ 右当天正文 + 心情 + 关联片刻 + 补写入口。
+// 日记页：左月历（带点）+ 右当天日记正文（精灵编写，只读浏览）+ 心情徽标 + 伙伴署名。
 
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 import type React from 'react'
 
+import { $persona } from '@/companion/persona-store'
+import { BookOpen } from '@/shared/lib/icons'
+
 import styles from './diary.module.css'
-import { $diaryByDate, $diaryLoading, appendDiary, hydrateDiary } from './journal-store'
+import { $diaryByDate, $diaryLoading, hydrateDiary } from './journal-store'
 
 function localDateKey(d: Date): string {
   const year = d.getFullYear()
@@ -35,44 +38,45 @@ function cursorMonthStart(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1)
 }
 
+function formatSelectedDate(dateStr: string): string {
+  const parts = dateStr.split('-').map(Number)
+
+  if (parts.length !== 3 || parts.some(isNaN)) {
+    return dateStr
+  }
+
+  const [y, m, d] = parts
+  const date = new Date(y, m - 1, d)
+  const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  const weekDay = weekDays[date.getDay()]
+
+  return weekDay ? `${dateStr} · ${weekDay}` : dateStr
+}
+
 export function DiaryPage(): React.JSX.Element {
+  const persona = useStore($persona)
   const diaryByDate = useStore($diaryByDate)
   const loading = useStore($diaryLoading)
   const [selectedDate, setSelectedDate] = useState<string>(todayKey())
-  const [draft, setDraft] = useState<string>('')
   const [cursor, setCursor] = useState<Date>(new Date())
 
-  useEffect(() => {
-    void hydrateDiary()
-  }, [])
+  const displayName = persona?.name ?? '伙伴'
+  const isToday = selectedDate === todayKey()
 
-  // 月份切换时若 selectedDate 不在新月可见范围里，把它吸到新月第一天。
+  // 月份切换时若选中日期超出当月范围，则吸到该月首日；同时拉取当月数据。
   useEffect(() => {
     const cursorStart = cursorMonthStart(cursor)
     const cursorEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)
     const startKey = localDateKey(cursorStart)
     const endKey = localDateKey(cursorEnd)
 
-    if (selectedDate < startKey || selectedDate > endKey) {
-      setSelectedDate(startKey)
-    }
-  }, [cursor, selectedDate])
+    setSelectedDate(prev => (prev < startKey || prev > endKey ? startKey : prev))
+    void hydrateDiary({ from: startKey, to: endKey })
+  }, [cursor])
 
   const days = useMemo(() => daysInMonth(cursor), [cursor])
   const firstDayOffset = days[0] ? (days[0].getDay() + 6) % 7 : 0
   const entry = diaryByDate[selectedDate]
-
-  const saveDraft = async (): Promise<void> => {
-    const text = draft.trim()
-
-    if (!text) {
-      return
-    }
-
-    // 保留现有 mood，避免补写时把心情字段吞掉。
-    await appendDiary({ body: text, date: selectedDate, mood: entry?.mood ?? undefined })
-    setDraft('')
-  }
 
   return (
     <div className={styles.shell}>
@@ -127,27 +131,28 @@ export function DiaryPage(): React.JSX.Element {
 
       <main className={styles.entry}>
         <header className={styles.entryHeader}>
-          <h2 className={styles.entryDate}>{selectedDate}</h2>
+          <h2 className={styles.entryDate}>{formatSelectedDate(selectedDate)}</h2>
+          {isToday && <span className={styles.todayBadge}>今日</span>}
           {entry?.mood && <span className={styles.mood}>心情 · {entry.mood}</span>}
         </header>
 
         {loading ? (
-          <p className={styles.loading}>翻开中…</p>
+          <p className={styles.loading}>翻开日记本中…</p>
         ) : entry ? (
-          <p className={styles.body}>{entry.body}</p>
+          <div className={styles.contentArea}>
+            {entry.title ? <h3 className={styles.entryTitle}>{entry.title}</h3> : null}
+            <p className={styles.bodyText}>{entry.body}</p>
+            <div className={styles.signature}>—— {displayName} 的日记</div>
+          </div>
         ) : (
-          <p className={styles.empty}>今天还没有日记。要不要写点什么？</p>
+          <div className={styles.emptyContainer}>
+            <BookOpen className={styles.emptyIcon} size={36} />
+            <p className={styles.emptyTitle}>这一天还没有日记</p>
+            <p className={styles.emptyHint}>
+              {isToday ? `${displayName} 会在夜晚记录生活中的点滴，晚点再来看看吧～` : '这一天没有日记记录哦～'}
+            </p>
+          </div>
         )}
-
-        <textarea
-          className={styles.editor}
-          onChange={e => setDraft(e.target.value)}
-          placeholder="补写今天（不会被现有正文覆盖）"
-          value={draft}
-        />
-        <button className={styles.saveButton} disabled={!draft.trim()} onClick={() => void saveDraft()} type="button">
-          保存
-        </button>
       </main>
     </div>
   )

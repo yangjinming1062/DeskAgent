@@ -1,9 +1,8 @@
-﻿export {
+export {
   $diaryByDate,
   $diaryLoading,
   $moments,
   $momentsLoading,
-  appendDiary,
   clearJournal,
   type DiaryEntry,
   hydrateDiary,

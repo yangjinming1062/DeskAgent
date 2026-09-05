@@ -6,6 +6,7 @@ export {
   IconArrowBackUp as ArrowBackUp,
   IconArrowRight as ArrowRight,
   IconWaveSine as AudioLines,
+  IconBook2 as BookOpen,
   IconBrain as Brain,
   IconCalendarPlus as CalendarPlus,
   IconCheck as Check,
