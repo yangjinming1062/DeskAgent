@@ -629,19 +629,35 @@ function createSpriteWindow(): void {
 // 形态按 SpiritAgent-客户端开发计划 §2.5 / §4 默认尺寸落定；具体内容（房间图、Run Rail 等）按阶段接入。
 const SURFACE_DEFAULTS: Record<SurfaceId, { height: number; minHeight: number; minWidth: number; width: number }> = {
   living: { height: 720, minHeight: 560, minWidth: 880, width: 1080 },
-  workbench: { height: 800, minHeight: 640, minWidth: 1024, width: 1280 }
+  workbench: { height: 800, minHeight: 640, minWidth: 1264, width: 1532 }
 }
 
 async function createSurfaceWindow(id: SurfaceId, payload?: DesktopSurfaceOpenPayload): Promise<BrowserWindow> {
   const defaults = SURFACE_DEFAULTS[id]
   const icon = getAppIconPath() || undefined
 
+  let initialX: number | undefined
+  let initialY: number | undefined
+  let initialWidth = defaults.width
+  let initialHeight = defaults.height
+
+  if (id === 'workbench') {
+    const cursor = screen.getCursorScreenPoint()
+    const display = screen.getDisplayNearestPoint(cursor)
+    const wa = display.workArea
+
+    initialWidth = Math.max(defaults.minWidth, Math.min(defaults.width, wa.width - 16))
+    initialHeight = Math.max(defaults.minHeight, Math.min(defaults.height, wa.height - 16))
+    initialX = Math.round(wa.x + Math.max(0, (wa.width - initialWidth) / 2))
+    initialY = Math.round(wa.y + Math.max(0, (wa.height - initialHeight) / 2))
+  }
+
   const win = new BrowserWindow({
     backgroundColor: '#00000000',
     backgroundMaterial: process.platform === 'win32' ? 'acrylic' : undefined,
     frame: false,
     hasShadow: true,
-    height: defaults.height,
+    height: initialHeight,
     minHeight: defaults.minHeight,
     minWidth: defaults.minWidth,
     resizable: true,
@@ -658,7 +674,9 @@ async function createSurfaceWindow(id: SurfaceId, payload?: DesktopSurfaceOpenPa
       preload: path.join(import.meta.dirname, 'preload.cjs'),
       sandbox: true
     },
-    width: defaults.width
+    width: initialWidth,
+    x: initialX,
+    y: initialY
   })
 
   if (IS_MAC && icon) {

@@ -4,7 +4,13 @@ import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'rea
 import { $mesh2dHitmap, $puppetReady, $renderMode, hydrateMesh2D, hydratePuppet } from '@/2d'
 import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/3d'
 import { startActivityMonitor } from '@/companion/activity'
-import { $companionLifecycle, reportUserActivity, setCompanionLifecycle } from '@/companion/companion-store'
+import {
+  $companionLifecycle,
+  ensureCompanionHydrated,
+  reportUserActivity,
+  resolveCompanionRenderLayer,
+  setCompanionLifecycle
+} from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
@@ -206,24 +212,12 @@ export function CompanionRoot(): React.JSX.Element {
   // 抽到 useMemo 避免每次渲染重建闭包。2D = PSD 链（puppet，Phase 6）；puppet 装配失败
   // 写 error 熄灭 $puppetReady 后落 3D（CharacterController 内部有程序化蛋兜底）。
   const renderLayer = useMemo<'puppet' | 'companion3d'>(() => {
-    const modelFailed = glbLoadFailed || modelInfo.status === 'failed'
-    const isModelReady = renderMode === '3d' && !modelFailed && modelInfo.status === 'succeeded'
-
-    if (renderMode === '2d' && puppetReady) {
-      return 'puppet'
-    }
-
-    if (isModelReady) {
-      return 'companion3d'
-    }
-
-    // 3D 偏好但失败 / 尚未就绪时，2D 已就绪就降级到 2D
-    if (puppetReady) {
-      return 'puppet'
-    }
-
-    // 双方都未就绪：选 3D 路径，CharacterController 内部会走程序化蛋兜底
-    return 'companion3d'
+    return resolveCompanionRenderLayer({
+      glbLoadFailed,
+      modelStatus: modelInfo.status,
+      puppetReady,
+      renderMode
+    })
   }, [renderMode, puppetReady, glbLoadFailed, modelInfo.status])
 
   useEffect(() => {
@@ -240,8 +234,6 @@ export function CompanionRoot(): React.JSX.Element {
     const stopActivity = startActivityMonitor()
 
     if (!hasHydratedRef.current) {
-      // 在异步 hydrate 启动 *之前* 标记；StrictMode 第一次 cleanup 会清回 false，
-      // re-mount 时重新跑 hydrate——dev 下 persona/model/mesh2d/puppet 不会被吞。
       hasHydratedRef.current = true
 
       void (async () => {
@@ -249,11 +241,14 @@ export function CompanionRoot(): React.JSX.Element {
           return
         }
 
-        await Promise.all([hydratePersona(), hydrateModel(), hydrateExpressions(), hydrateMesh2D()])
-
-        if (!cancelled && $auth.get().kind === 'authenticated') {
-          await hydratePuppet()
-        }
+        await ensureCompanionHydrated({
+          hydrateExpressions,
+          hydrateMesh2D,
+          hydrateModel,
+          hydratePersona,
+          hydratePortrait,
+          hydratePuppet
+        })
       })()
     }
 
@@ -366,7 +361,7 @@ export function CompanionRoot(): React.JSX.Element {
       {activationOpen && !authed && <ActivationOverlay onClose={() => setActivationOpen(false)} />}
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
-        hidden={showOnboarding || surfaceOpen === 'living'}
+        hidden={showOnboarding || surfaceOpen === 'living' || surfaceOpen === 'workbench'}
         onContextMenu={e => {
           $contextMenuPos.set({ x: e.clientX, y: e.clientY })
         }}

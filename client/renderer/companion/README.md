@@ -127,11 +127,11 @@
 
 **移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。拖拽松手一律就地定居为新 home 并持久化（DESIGN §3.3）。
 
-**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——`$surfaceOpen`（打开生活空间时终止移动保持就地、精灵自动隐藏收起并暂停自主走位；打开工作台时精灵在工作台窗外侧 perch 伴工）、`$spriteState`（自适应缩放）、`$effectiveTier`（空间策略 + 缩放）、`$focusContext`（perch 决策）。返回 cleanup 函数。
+**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——`$surfaceOpen`（打开生活空间或工作台时终止移动保持就地、桌面精灵自动隐藏收起并暂停自主走位；工作台采用复合视窗一体化内嵌伴工精灵）、`$spriteState`（自适应缩放）、`$effectiveTier`（空间策略 + 缩放）、`$focusContext`（perch 决策）。返回 cleanup 函数。
 
-**决策树**（`updateSpatialDecision`）：drag > 生活空间开启（收起精灵舞台，冻结桌面空间移动）> 工作台开启（perch 到工作台窗口外侧伴工跟随）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
+**决策树**（`updateSpatialDecision`）：drag > 生活空间或工作台开启（收起桌面精灵舞台，冻结桌面空间移动）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
 
-**perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。工作台开启时，目标窗口固定为工作台窗口本身，精灵在窗外侧跟随。
+**perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。工作台开启时桌面精灵收起，由工作台复合窗口内置的伴工插槽一体化呈现。
 
 **roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走位移积分复合步态）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
 

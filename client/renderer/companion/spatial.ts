@@ -12,7 +12,7 @@ import {
 } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
-import { $surfaceBounds, $surfaceOpen } from '@/shared/store/surfaces'
+import { $surfaceOpen } from '@/shared/store/surfaces'
 
 export function getBaseSpriteHeight(): number {
   // 默认高度为显示器高度的 1/3，限制在 [260, 960] 区间内
@@ -433,18 +433,13 @@ export function setLocale(
 }
 
 export function updateSpatialDecision(): void {
-  // 贴边趴姿锁定、生活空间在屏、拖拽中均冻结空间决策
-  if ($spatialLocomotion.get() === 'drag' || $surfaceOpen.get() === 'living' || $isEdgeDocked.get()) {
-    return
-  }
-
-  if ($surfaceOpen.get() === 'workbench') {
-    const bounds = $surfaceBounds.get()
-
-    if (bounds) {
-      applyWorkbenchPerch(bounds)
-    }
-
+  // 贴边趴姿锁定、生活空间或工作台在屏、拖拽中均冻结桌面空间决策
+  if (
+    $spatialLocomotion.get() === 'drag' ||
+    $surfaceOpen.get() === 'living' ||
+    $surfaceOpen.get() === 'workbench' ||
+    $isEdgeDocked.get()
+  ) {
     return
   }
 
@@ -518,116 +513,8 @@ function generateRoamWaypoint(): { x: number; y: number } {
   }
 }
 
-const WORKBENCH_SPRITE_MARGIN = 16
-let workbenchSide: 'left' | 'right' = 'left'
-
-export function computeWorkbenchPlacement(
-  bounds: { height: number; width: number; x: number; y: number },
-  scale = $defaultScale.get()
-): { pos: { x: number; y: number }; side: 'left' | 'right'; sideChanged: boolean } {
-  const spriteW = getBaseSpriteWidth() * scale
-  const spriteH = getBaseSpriteHeight() * scale
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-
-  const leftTargetX = bounds.x - spriteW - WORKBENCH_SPRITE_MARGIN
-  const rightTargetX = bounds.x + bounds.width + WORKBENCH_SPRITE_MARGIN
-
-  const leftCanFit = leftTargetX >= REST_MARGIN
-  const rightCanFit = rightTargetX + spriteW <= vw - REST_MARGIN
-
-  let nextSide = workbenchSide
-
-  if (workbenchSide === 'left') {
-    // 默认在左侧；若窗口贴左边导致精灵展示不全（leftTargetX < REST_MARGIN），切换到右侧
-    if (!leftCanFit) {
-      const leftSpace = bounds.x
-      const rightSpace = vw - (bounds.x + bounds.width)
-
-      if (rightCanFit || rightSpace > leftSpace) {
-        nextSide = 'right'
-      }
-    }
-  } else {
-    // 当前在右侧；若窗口贴右边导致精灵展示不全，切换到左侧
-    if (!rightCanFit) {
-      const leftSpace = bounds.x
-      const rightSpace = vw - (bounds.x + bounds.width)
-
-      if (leftCanFit || leftSpace > rightSpace) {
-        nextSide = 'left'
-      }
-    }
-  }
-
-  const sideChanged = nextSide !== workbenchSide
-  workbenchSide = nextSide
-
-  const targetX = nextSide === 'left' ? leftTargetX : rightTargetX
-  // 垂直方向对齐工作台窗口底部，与参考图一致，并在视口内钳制
-  const idealY = bounds.y + bounds.height - spriteH
-  const targetY = clamp(idealY, REST_MARGIN, Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN))
-
-  return {
-    pos: { x: targetX, y: targetY },
-    side: nextSide,
-    sideChanged
-  }
-}
-
-// 工作台窗外侧伴工伴读：左侧默认，贴边展示不全自动切换到右侧，拖拽窗口时严格同步坐标保持恒定距离
-function applyWorkbenchPerch(bounds: { height: number; width: number; x: number; y: number }): void {
-  // 当前正在手动拖拽精灵时不要强行挪动
-  if ($spatialLocomotion.get() === 'drag') {
-    return
-  }
-
-  const scale = $defaultScale.get()
-  const { pos: targetPos, sideChanged } = computeWorkbenchPlacement(bounds, scale)
-
-  // 保证缩放恒定为用户设置，不随移动动态缩放，维持整体感
-  if (Math.abs($spatialScale.get() - scale) > 0.01) {
-    setScaleTarget(scale, true)
-  }
-
-  const isCurrentlyWorkbench = $spatialLocale.get() === 'workbench' || $spatialLocale.get() === 'perch'
-
-  // 触发贴边导致展示不全翻转换侧时，平滑飞向对侧
-  if (sideChanged) {
-    cancelMovement()
-    moveTo(targetPos, 'fly')
-    $spatialLocale.set('workbench')
-
-    return
-  }
-
-  // 正在换侧飞行过程中：动态更新目标点
-  if (rafId !== null) {
-    retargetMove(targetPos)
-
-    return
-  }
-
-  // 处于工作台同一侧平移：坐标即时锁步同步，消除补间延迟，距离恒定如同一体
-  if (isCurrentlyWorkbench) {
-    cancelMovement()
-    $spatialPos.set(targetPos)
-    $homePosition.set(targetPos)
-    $spatialLocomotion.set('still')
-    $spatialLocale.set('workbench')
-
-    return
-  }
-
-  // 首次打开工作台进入栖息：平滑飞到落位
-  setLocale('workbench', {
-    locomotion: 'fly',
-    position: targetPos
-  })
-}
-
 export function startRoam(): void {
-  if (roaming || $isEdgeDocked.get() || $surfaceOpen.get() === 'living') {
+  if (roaming || $isEdgeDocked.get() || $surfaceOpen.get() === 'living' || $surfaceOpen.get() === 'workbench') {
     return
   }
 
@@ -754,8 +641,7 @@ export function endDragAt(pos: { x: number; y: number }): void {
   const c = contentBox()
   const dockMargin = 40
 
-  // 1. 优先判定屏幕左右边缘吸附——只有无入口窗时贴边（生活 / 工作台打开都禁掉）。
-  // 工作台打开时精灵在窗外侧伴工栖息，用户拖到屏边不该把它甩出窗外。
+  // 1. 优先判定屏幕左右边缘吸附——只有无入口窗时贴边（生活 / 工作台打开时桌面精灵均收起）。
   if ($surfaceOpen.get() === null) {
     const leftDist = pos.x + c.left
     const rightDist = vw - (pos.x + c.right)
@@ -780,11 +666,11 @@ export function endDragAt(pos: { x: number; y: number }): void {
   $spatialPos.set(safe)
   $homePosition.set(safe)
   $spatialLocomotion.set('still')
-  $spatialLocale.set('home')
   $dragVelocity.set({ vx: 0, vy: 0 })
   $clipOverride.set('drag_end')
   $spriteAction.set('drag_end')
   setSpriteState('interacting', { durationMs: 500 })
+  $spatialLocale.set('home')
   void window.spiritagent.sprite.setPosition(safe)
 }
 
@@ -908,7 +794,7 @@ export function initSpatial(): () => void {
     })
 
   const unlistenSurface = $surfaceOpen.listen(open => {
-    if (open === 'living') {
+    if (open === 'living' || open === 'workbench') {
       if ($isEdgeDocked.get()) {
         undockFromEdge()
       }
@@ -916,43 +802,17 @@ export function initSpatial(): () => void {
       stopRoam()
       cancelMovement()
       $spatialLocomotion.set('still')
-    } else if (open === 'workbench') {
-      // 工作台窗是伴工栖息的唯一目标（plan §B3）：主进程 show/move/resize 时下发 bounds，
-      // 不依赖焦点碰巧在工作台。bounds 尚未到达时不要触发任何自动移动。
-      const bounds = $surfaceBounds.get()
 
-      if (bounds) {
-        applyWorkbenchPerch(bounds)
+      if (open === 'workbench') {
+        $spatialLocale.set('workbench')
       }
     } else {
-      workbenchSide = 'left'
-
       if ($spatialLocale.get() === 'perch' || $spatialLocale.get() === 'workbench') {
         setLocale('home')
       }
 
       updateSpatialDecision()
     }
-  })
-
-  // 工作台窗移动 / 缩放：精灵平滑跟到新外侧，不能让用户把它甩在身后。
-  // bounds 缺失代表窗口尚未完成 show()——保持上一帧落位，等下一次下发。
-  const unlistenBounds = $surfaceBounds.listen((bounds, prev) => {
-    if ($surfaceOpen.get() !== 'workbench' || !bounds) {
-      return
-    }
-
-    if (
-      prev &&
-      prev.x === bounds.x &&
-      prev.y === bounds.y &&
-      prev.width === bounds.width &&
-      prev.height === bounds.height
-    ) {
-      return
-    }
-
-    applyWorkbenchPerch(bounds)
   })
 
   const unlistenState = $spriteState.listen(() => {
@@ -1033,7 +893,6 @@ export function initSpatial(): () => void {
   return () => {
     settleSavedRectWait()
     unlistenSurface()
-    unlistenBounds()
     unlistenState()
     unlistenEmotion()
     unlistenTier()

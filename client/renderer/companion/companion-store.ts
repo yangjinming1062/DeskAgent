@@ -251,6 +251,74 @@ export function pushEffectiveDisturbanceTier(tier: DisturbanceTier): void {
   window.spiritagent?.prefs?.set({ key: 'companion.disturbance_tier', value: tier })
 }
 
+export function resolveCompanionRenderLayer(opts: {
+  glbLoadFailed: boolean
+  modelStatus?: string
+  puppetReady: boolean
+  renderMode: '2d' | '3d'
+}): 'companion3d' | 'puppet' {
+  const modelFailed = opts.glbLoadFailed || opts.modelStatus === 'failed'
+  const isModelReady = opts.renderMode === '3d' && !modelFailed && opts.modelStatus === 'succeeded'
+
+  if (opts.renderMode === '2d' && opts.puppetReady) {
+    return 'puppet'
+  }
+
+  if (isModelReady) {
+    return 'companion3d'
+  }
+
+  if (opts.puppetReady) {
+    return 'puppet'
+  }
+
+  return 'companion3d'
+}
+
+const inFlightHydrations = new Map<string, Promise<unknown>>()
+
+function runOnce(key: string, fn: () => Promise<unknown>): Promise<unknown> {
+  let task = inFlightHydrations.get(key)
+
+  if (!task) {
+    task = (async () => {
+      return await fn()
+    })().finally(() => {
+      inFlightHydrations.delete(key)
+    })
+    inFlightHydrations.set(key, task)
+  }
+
+  return task
+}
+
+export async function ensureCompanionHydrated(deps: {
+  hydrateExpressions: () => Promise<unknown>
+  hydrateMesh2D: () => Promise<unknown>
+  hydrateModel: () => Promise<unknown>
+  hydratePersona: () => Promise<unknown>
+  hydratePortrait?: () => Promise<unknown>
+  hydratePuppet: () => Promise<unknown>
+}): Promise<void> {
+  const tasks = [
+    runOnce('persona', deps.hydratePersona),
+    runOnce('model', deps.hydrateModel),
+    runOnce('expressions', deps.hydrateExpressions),
+    runOnce('mesh2d', deps.hydrateMesh2D)
+  ]
+
+  if (deps.hydratePortrait) {
+    tasks.push(runOnce('portrait', deps.hydratePortrait))
+  }
+
+  try {
+    await Promise.all(tasks)
+    await runOnce('puppet', deps.hydratePuppet)
+  } catch (err) {
+    log.warn('companion-store', 'ensureCompanionHydrated failed', err)
+  }
+}
+
 // 清掉所有瞬态/活动计时器与排队状态——登出后 orphan 计时器在新会话里会写 $spriteState。
 // 必须在文件末尾：闭包按引用捕获 transientTimer / activityResetTimer / activityCounter / $previousState /
 // $clipOverride / $effectiveTierOverride，提前声明会在 HMR 同步调用时撞 TDZ。
@@ -264,6 +332,8 @@ registerStorageClearHandler(() => {
     clearTimeout(activityResetTimer)
     activityResetTimer = null
   }
+
+  inFlightHydrations.clear()
 
   activityCounter = 0
   $spriteEmotion.set(null)

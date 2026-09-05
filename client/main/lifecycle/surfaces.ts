@@ -113,13 +113,31 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
 
     let reporterRaf: ReturnType<typeof setTimeout> | null = null
     let hasPendingMove = false
+    let lastBroadcastBounds: DesktopSurfaceBounds | null | undefined = undefined
 
     const rebroadcast = (): void => {
       if (openSurfaceId !== id) {
         return
       }
 
-      broadcastAll(snapshot())
+      const snap = snapshot()
+      const b = snap.bounds
+
+      const isBoundsEqual =
+        lastBroadcastBounds === b ||
+        (Boolean(lastBroadcastBounds && b) &&
+          lastBroadcastBounds!.x === b!.x &&
+          lastBroadcastBounds!.y === b!.y &&
+          lastBroadcastBounds!.width === b!.width &&
+          lastBroadcastBounds!.height === b!.height &&
+          lastBroadcastBounds!.displayId === b!.displayId)
+
+      if (lastBroadcastBounds !== undefined && isBoundsEqual) {
+        return
+      }
+
+      lastBroadcastBounds = b
+      broadcastAll(snap)
     }
 
     const onChange = (): void => {
@@ -152,6 +170,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
       }
 
       hasPendingMove = false
+      lastBroadcastBounds = undefined
       win.off('move', onChange)
       win.off('resize', onChange)
       win.off('show', rebroadcast)

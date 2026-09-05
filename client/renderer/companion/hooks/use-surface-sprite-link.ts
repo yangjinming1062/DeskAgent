@@ -1,7 +1,7 @@
 // 监听 surface 状态变化，调整精灵 locale + 显隐：
-// - workbench 打开：locale → 'workbench'，目标位置靠窗右侧
+// - workbench 打开：locale → 'workbench'，桌面独立精灵收起，工作台内嵌一体化伴工
 // - living 打开：locale → 'home' 但隐藏精灵（她在房间里画里）
-// - 都关闭：恢复 locale = 'home'，精灵可见
+// - 都关闭：恢复 locale = 'home'，桌面精灵可见
 
 import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'

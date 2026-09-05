@@ -5,7 +5,7 @@
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ChatPanel } from '@/chat/chat-panel'
 import { $chatSessionId, $chatSessionKind } from '@/chat/chat-store'
@@ -25,6 +25,7 @@ import { requestOpenSurface } from '@/shared/store/surfaces'
 import { RunRail } from './run-rail'
 import { SessionSidebar } from './session-sidebar'
 import { StationSettings } from './station-settings'
+import { WorkbenchCompanion } from './workbench-companion'
 import styles from './workbench.module.css'
 
 export function WorkbenchRoot(): React.JSX.Element {
@@ -98,11 +99,11 @@ export function WorkbenchRoot(): React.JSX.Element {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  const clearSettingsHash = (): void => {
+  const clearSettingsHash = useCallback((): void => {
     if (typeof window !== 'undefined' && isStationSettingsHash(window.location.hash)) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search)
     }
-  }
+  }, [])
 
   const toggleSettings = (): void => {
     setSettingsOpen(open => {
@@ -125,85 +126,91 @@ export function WorkbenchRoot(): React.JSX.Element {
     window.addEventListener('keydown', onKey)
 
     return () => window.removeEventListener('keydown', onKey)
-  }, [settingsOpen])
+  }, [clearSettingsHash, settingsOpen])
 
   return (
-    <div className={styles.shell} data-surface="workbench">
-      <header
-        className={styles.titlebar}
-        onDoubleClick={() => {
-          void window.spiritagent?.surface?.maximize?.()
-        }}
-      >
-        <div className={styles.titleArea}>
-          <Terminal className={styles.titleIcon} size={18} />
-          <h1 className={styles.brandTitle}>SpiritAgent · 工作台</h1>
-          <div className={styles.sessionBadge} title={title}>
-            <span>{title || '工作工位'}</span>
+    <div className={styles.windowContainer}>
+      <aside className={styles.companionSlot}>
+        <WorkbenchCompanion />
+      </aside>
+
+      <div className={styles.shell} data-surface="workbench">
+        <header
+          className={styles.titlebar}
+          onDoubleClick={() => {
+            void window.spiritagent?.surface?.maximize?.()
+          }}
+        >
+          <div className={styles.titleArea}>
+            <Terminal className={styles.titleIcon} size={18} />
+            <h1 className={styles.brandTitle}>SpiritAgent · 工作台</h1>
+            <div className={styles.sessionBadge} title={title}>
+              <span>{title || '工作工位'}</span>
+            </div>
           </div>
-        </div>
 
-        <div className={styles.actionsArea}>
-          <button
-            className={cn(styles.glassButton, settingsOpen && styles.glassButtonActive)}
-            onClick={toggleSettings}
-            title={settingsOpen ? '收起工位环境' : '工位环境配置'}
-            type="button"
-          >
-            <SlidersHorizontal size={13} />
-            <span>{settingsOpen ? '收起工位' : '工位环境'}</span>
-          </button>
-          <button
-            className={styles.glassButton}
-            onClick={() => {
-              void requestOpenSurface('living')
-            }}
-            title="切换到生活空间"
-            type="button"
-          >
-            <Home size={13} />
-            <span>生活空间</span>
-          </button>
-          <WindowControls />
-        </div>
-      </header>
-
-      {settingsOpen && (
-        <div className={styles.drawerOverlay}>
-          <div className="flex items-center justify-between border-b border-line-standard px-5 py-3">
-            <h2 className="text-xs font-semibold text-strong">工位环境配置与执行器</h2>
+          <div className={styles.actionsArea}>
             <button
-              className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-white/10 hover:text-strong"
+              className={cn(styles.glassButton, settingsOpen && styles.glassButtonActive)}
               onClick={toggleSettings}
+              title={settingsOpen ? '收起工位环境' : '工位环境配置'}
               type="button"
             >
-              完成
+              <SlidersHorizontal size={13} />
+              <span>{settingsOpen ? '收起工位' : '工位环境'}</span>
             </button>
+            <button
+              className={styles.glassButton}
+              onClick={() => {
+                void requestOpenSurface('living')
+              }}
+              title="切换到生活空间"
+              type="button"
+            >
+              <Home size={13} />
+              <span>生活空间</span>
+            </button>
+            <WindowControls />
           </div>
-          <div className="p-2">
-            <StationSettings />
+        </header>
+
+        {settingsOpen && (
+          <div className={styles.drawerOverlay}>
+            <div className="flex items-center justify-between border-b border-line-standard px-5 py-3">
+              <h2 className="text-xs font-semibold text-strong">工位环境配置与执行器</h2>
+              <button
+                className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-white/10 hover:text-strong"
+                onClick={toggleSettings}
+                type="button"
+              >
+                完成
+              </button>
+            </div>
+            <div className="p-2">
+              <StationSettings />
+            </div>
           </div>
+        )}
+
+        <div className={styles.body}>
+          <div className={styles.sidebarArea}>
+            <SessionSidebar />
+          </div>
+
+          <main className={styles.center}>
+            <ChatPanel
+              className="flex-1 min-h-0"
+              gatewayState={gatewayState}
+              inputWrapperClassName={styles.chatInputWrapper}
+              isReadOnlySession={isReadOnlySession}
+              scrollRef={scrollRef}
+              surfaceClassName={styles.chatSurface}
+              variant="workbench"
+            />
+          </main>
+
+          <RunRail />
         </div>
-      )}
-
-      <div className={styles.body}>
-        <div className={styles.sidebarArea}>
-          <SessionSidebar />
-        </div>
-
-        <main className={styles.center}>
-          <ChatPanel
-            className="flex-1 min-h-0"
-            gatewayState={gatewayState}
-            inputWrapperClassName={styles.chatInputWrapper}
-            isReadOnlySession={isReadOnlySession}
-            scrollRef={scrollRef}
-            surfaceClassName={styles.chatSurface}
-            variant="workbench"
-          />
-        </main>
-
-        <RunRail />
       </div>
     </div>
   )

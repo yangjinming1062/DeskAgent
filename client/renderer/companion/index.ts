@@ -22,7 +22,10 @@ export {
   $spriteState,
   $userPreferredTier,
   type DisturbanceTier,
+  ensureCompanionHydrated,
   pushEffectiveDisturbanceTier,
+  reportUserActivity,
+  resolveCompanionRenderLayer,
   setDisturbanceTier,
   setSpriteState,
   type SpriteEmotion,
@@ -30,6 +33,7 @@ export {
 } from './companion-store'
 export { DISTURBANCE_TIERS } from './disturbance-tiers'
 export { useVoiceRecorder } from './hooks/use-voice-recorder'
+export { handlePetInteraction } from './interaction'
 export { probeInteractiveRegions, useInteractiveRegion } from './interactive-regions'
 export { openMediaViewer } from './media-viewer-overlay'
 export { $memoryBrowserTab, type MemoryTab, setMemoryBrowserTab } from './memory-browser-store'
@@ -64,6 +68,7 @@ export {
   $regenFeedback,
   applyPortrait,
   clearPortraitHistory,
+  hydratePortrait,
   hydratePortraitHistory,
   type PortraitEntry,
   pushPortraitEntry,
@@ -100,8 +105,9 @@ export {
   setDefaultScale
 } from './spatial'
 export { $contextMenuOpen, openContextMenu } from './sprite/context-menu-store'
+export { FootGlow } from './sprite/foot-glow'
 export { speakChatMessage, speakScripted, stopSpeaking } from './tts'
-export { clearVfx, emitVfx } from './vfx'
+export { clearVfx, emitVfx, Mesh2DVfxOverlay } from './vfx'
 export {
   designVoice,
   fetchVoiceCatalogRaw,
