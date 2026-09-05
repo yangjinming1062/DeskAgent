@@ -92,10 +92,7 @@ export function WardrobePage(): React.JSX.Element {
     <div className="flex min-h-0 flex-1">
       {/* 左：外观列表（方形大图卡——统一方形取景框，任意比例立绘 contain 完整呈现，文字收缩到图下方两行） */}
       <div className="flex w-60 shrink-0 flex-col border-r border-line-hairline">
-        <div className="px-3 pt-3.5 pb-2">
-          <h2 className="text-sm font-semibold text-strong">衣柜</h2>
-        </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 pb-3">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 pt-4 pb-3">
           {outfits.length === 0 ? (
             <p className="px-1 pt-2 text-xs text-muted">还没有就绪的 2D 形象，生成 2D 动画资产后即可换装。</p>
           ) : (

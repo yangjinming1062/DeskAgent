@@ -11,7 +11,6 @@ import {
   ListRow,
   LoadingBlock,
   Pill,
-  SectionHeading,
   SettingsContent,
   SettingsSubsection,
   Spinner
@@ -242,7 +241,7 @@ export function ChannelsPage(): React.JSX.Element {
 
   return (
     <SettingsContent>
-      <SectionHeading meta={t.intro} title={t.heading} />
+      <p className="mb-6 text-[11px] leading-relaxed text-faint">{t.intro}</p>
       <div className="space-y-8">
         <SettingsSubsection intro={t.weixin.intro} title={t.weixin.title}>
           <ListRow

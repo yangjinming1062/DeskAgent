@@ -163,7 +163,7 @@ html[data-theme='day'] .workbenchButton:hover {
   flex: 1;
   gap: 14px;
   min-height: 0;
-  padding: 14px 16px 16px;
+  padding: 22px 18px 18px;
   position: relative;
   z-index: 5;
 }

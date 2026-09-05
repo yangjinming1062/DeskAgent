@@ -165,8 +165,7 @@ export function LivingSettings(): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-panel/20">
-      <header className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line-hairline bg-surface-chrome/80 px-6 py-3 backdrop-blur-md">
-        <h1 className="text-sm font-semibold tracking-tight text-strong">{strings.settings.title}</h1>
+      <header className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-3 border-b border-line-hairline bg-surface-chrome/80 px-6 py-3 backdrop-blur-md">
         <nav aria-label="设置分区导航" className="flex items-center gap-1 overflow-x-auto">
           {NAV_SECTIONS.map(nav => (
             <button

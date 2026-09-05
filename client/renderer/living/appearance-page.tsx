@@ -12,7 +12,7 @@ import {
 } from '@/2d'
 import { $defaultScale, setDefaultScale } from '@/companion'
 import { cn } from '@/shared/lib/utils'
-import { BTN_SUBTLE, HINT_TEXT, Segmented, SettingsPage, Slider } from '@/shared/panel'
+import { BTN_SUBTLE, HINT_TEXT, Segmented, SettingsContent, Slider } from '@/shared/panel'
 
 interface Seed3dWizardState {
   avatarId: number
@@ -56,7 +56,7 @@ export function AppearancePage(): React.ReactElement {
 
   return (
     <>
-      <SettingsPage title="形象">
+      <SettingsContent>
         <section>
           <h3 className="text-xs font-medium text-strong">渲染模式</h3>
           <p className={cn(HINT_TEXT, 'mt-1')}>
@@ -110,7 +110,7 @@ export function AppearancePage(): React.ReactElement {
           </div>
           <p className={cn(HINT_TEXT, 'mt-1.5')}>0.3×–3× 连续可调，1× 为默认。</p>
         </section>
-      </SettingsPage>
+      </SettingsContent>
 
       {seed3dWizard != null && (
         <Seed3dWizard

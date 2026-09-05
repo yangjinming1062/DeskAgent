@@ -54,12 +54,9 @@ export function RoomPage(): React.JSX.Element {
 
   return (
     <SettingsContent>
-      <div className="pt-1 pb-4">
-        <h2 className="text-sm font-semibold text-strong">房间管理</h2>
-        <p className="mt-1 text-[11px] leading-relaxed text-faint">
-          换个心情、回滚到之前的房间、或者锁定房间政策——都在这里。
-        </p>
-      </div>
+      <p className="mb-6 text-[11px] leading-relaxed text-faint">
+        换个心情、回滚到之前的房间、或者锁定房间政策——都在这里。
+      </p>
 
       <SettingCard>
         <div className="flex items-center gap-3 px-3.5 py-3">
