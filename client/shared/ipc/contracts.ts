@@ -91,14 +91,18 @@ export interface SpiritAgentConnection {
   wsUrl: string
 }
 
-export type SpiritAgentUiTheme = 'night' | 'day'
+export type SpiritAgentUiTheme = 'night' | 'day' | 'dynamic'
 
 // 主进程侧校验白名单——契约是跨进程唯一真理源，渲染层 registry 只扩展元数据。
-export const SPIRITAGENT_UI_THEMES = ['night', 'day'] as const satisfies readonly SpiritAgentUiTheme[]
+export const SPIRITAGENT_UI_THEMES = ['night', 'day', 'dynamic'] as const satisfies readonly SpiritAgentUiTheme[]
 
 export function normalizeUiTheme(raw: unknown): SpiritAgentUiTheme {
   if (raw === 'day' || raw === 'classic-light' || raw === 'lilac-glass') {
     return 'day'
+  }
+
+  if (raw === 'dynamic') {
+    return 'dynamic'
   }
 
   return 'night'

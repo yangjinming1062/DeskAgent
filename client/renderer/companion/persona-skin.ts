@@ -278,6 +278,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 function getThemeBaseAccent(): string {
+  // 动态主题共享夜色的底色，强调色混合锚点也用夜色基色，避免切换角色时跳色
   return $theme.get() === 'day' ? '#5c7094' : '#8aa0c8'
 }
 
@@ -299,10 +300,32 @@ function applyToCssVariables(skin: PersonaSkin): void {
   )
 }
 
+// 清除 persona-skin 在 :root.style 上的强调色覆写，让 styles.css 的 html[data-theme] 块重新生效。
+// 仅在切走「动态」主题时调用，避免夜景下强调色仍被角色抽色压住。
+function clearPersonaSkinOverrides(): void {
+  if (typeof document === 'undefined') {
+    return
+  }
+
+  const root = document.documentElement
+  root.style.removeProperty('--ui-accent')
+  root.style.removeProperty('--ui-accent-soft')
+  root.style.removeProperty('--ui-accent-line')
+  root.style.removeProperty('--persona-primary')
+  root.style.removeProperty('--persona-secondary')
+  root.style.removeProperty('--persona-highlight')
+  root.style.removeProperty('--persona-room-overlay')
+  lastAppliedSignature = null
+}
+
 let lastAppliedSignature: string | null = null
 let transitionResetTimer: ReturnType<typeof setTimeout> | null = null
 
 export async function refreshPersonaSkin(): Promise<void> {
+  if ($theme.get() !== 'dynamic') {
+    return
+  }
+
   const url = $portraitUrl.get()
 
   if (!url || (!url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:'))) {
@@ -314,6 +337,11 @@ export async function refreshPersonaSkin(): Promise<void> {
     const palette = extractPalette(image)
 
     if (!palette) {
+      return
+    }
+
+    // 异步抽色期间用户可能切走「动态」主题：再次校验，避免把角色色覆写回已切走的夜色/日色上
+    if ($theme.get() !== 'dynamic') {
       return
     }
 
@@ -361,13 +389,22 @@ export async function refreshPersonaSkin(): Promise<void> {
 }
 
 export function initPersonaSkin(): () => void {
-  const unlistenPortrait = $portraitUrl.listen(() => {
-    void refreshPersonaSkin()
-  })
+  const handleThemeChange = (): void => {
+    if ($theme.get() === 'dynamic') {
+      void refreshPersonaSkin()
+    } else {
+      clearPersonaSkinOverrides()
+    }
+  }
 
-  const unlistenTheme = $theme.listen(() => {
-    void refreshPersonaSkin()
-  })
+  const handlePortraitChange = (): void => {
+    if ($theme.get() === 'dynamic') {
+      void refreshPersonaSkin()
+    }
+  }
+
+  const unlistenPortrait = $portraitUrl.listen(handlePortraitChange)
+  const unlistenTheme = $theme.listen(handleThemeChange)
 
   void refreshPersonaSkin()
 

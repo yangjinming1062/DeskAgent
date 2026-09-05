@@ -58,9 +58,11 @@
 }
 
 @layer base {
-  /* 夜色（默认主题）：液态毛玻璃 + 细描边 + 大圆角 + 低饱和蓝灰强调色 */
+  /* 夜色（默认底色）+ 动态（强调色由角色立绘抽色）：液态毛玻璃 + 细描边 + 大圆角 + 低饱和蓝灰强调色。
+     「动态」主题共享夜色的全部 token，仅在运行时由 companion/persona-skin.ts 覆写强调色变量。 */
   :root,
-  html[data-theme='night'] {
+  html[data-theme='night'],
+  html[data-theme='dynamic'] {
     color-scheme: dark;
 
     --ui-app-bg: #0e0f14;

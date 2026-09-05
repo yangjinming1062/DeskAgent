@@ -155,7 +155,7 @@ export const strings = {
     },
     appearance: {
       heading: '外观',
-      hint: '主题同时应用到聊天与设置两个窗口，伙伴形象不受影响。'
+      hint: '主题同时应用到聊天与设置两个窗口，伙伴形象不受影响；选「动态」时强调色会跟随当前角色立绘。'
     },
     about: {
       heading: 'SpiritAgent Desktop',

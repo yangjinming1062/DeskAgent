@@ -6,7 +6,11 @@ import { normalizeThemeId } from '@/shared/theme/registry'
 
 const THEME_STORAGE_KEY = 'da.ui.theme'
 
-export const $theme = atom<SpiritAgentUiTheme>(normalizeThemeId(storedString(THEME_STORAGE_KEY)))
+// 新装（localStorage 无此 key）默认走「动态」；已有显式选择（night/day/历史别名）保留。
+const stored = storedString(THEME_STORAGE_KEY)
+const initialTheme: SpiritAgentUiTheme = stored === null ? 'dynamic' : normalizeThemeId(stored)
+
+export const $theme = atom<SpiritAgentUiTheme>(initialTheme)
 
 // 模块加载即应用：两个 entry 都先 import styles.css 再 import 本模块，
 // 首帧渲染前 data-theme 已就位，无错误主题闪烁。

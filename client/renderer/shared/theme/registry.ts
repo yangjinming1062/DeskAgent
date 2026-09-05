@@ -2,6 +2,8 @@ import { normalizeUiTheme, type SpiritAgentUiTheme } from '@ipc/contracts'
 
 // 主题元数据注册表——UI 色值的权威在 styles.css 的 html[data-theme] 变量块；
 // 这里只存 CSS 存不了的：展示名与预览色板。
+// 「动态」主题共享夜色的 CSS 变量定义，只在运行时由 companion/persona-skin.ts
+// 覆写强调色（--ui-accent* / --persona-*），底色 token 始终是夜色。
 export interface ThemeDefinition {
   id: SpiritAgentUiTheme
   label: string
@@ -10,6 +12,12 @@ export interface ThemeDefinition {
 }
 
 export const THEMES: readonly ThemeDefinition[] = [
+  {
+    id: 'dynamic',
+    label: '动态',
+    description: '强调色随当前角色立绘自动抽取，日夜底色取自夜色；切换角色或换装后 1.5s 内过渡换皮。',
+    preview: { chrome: '#101014', panel: '#141418', card: '#1c1c22', accent: '#8aa0c8' }
+  },
   {
     id: 'night',
     label: '夜色',
