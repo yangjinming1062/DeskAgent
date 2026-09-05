@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 
 import { cancelAutoVoice, setSpriteState } from '@/companion'
 import { useGatewayRequest } from '@/shared'
+import { log } from '@/shared/lib/log'
 import { parseSlashInput } from '@/shared/lib/slash-commands'
 import { notify } from '@/shared/store/notifications'
 import type { ChatAttachment } from '@/shared/types/spiritagent'
@@ -142,7 +143,8 @@ export function useChatSubmit({
         if (!dataUrl) {
           try {
             dataUrl = await window.spiritagent.readImageForAttach(currentPending.value)
-          } catch {
+          } catch (err) {
+            log.warn('use-chat-submit', 'readImageForAttach failed', err)
             /* 降级路径模式 */
           }
         }
@@ -246,7 +248,9 @@ export function useChatSubmit({
       }
     }
 
-    void window.spiritagent?.runnerCancel?.().catch(() => {})
+    void window.spiritagent?.runnerCancel?.().catch(err => {
+      log.warn('use-chat-submit', 'runnerCancel failed', err)
+    })
 
     const lastItem = $chatMessageList.get().at(-1)
     const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined

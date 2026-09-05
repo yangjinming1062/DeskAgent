@@ -2,6 +2,7 @@ import type React from 'react'
 import { useEffect, useState } from 'react'
 
 import { X } from '@/shared/lib/icons'
+import { log } from '@/shared/lib/log'
 import { cn } from '@/shared/lib/utils'
 
 export interface WindowControlsProps {
@@ -21,8 +22,8 @@ export function WindowControls({ className, onClose }: WindowControlsProps): Rea
       if (typeof document !== 'undefined') {
         document.documentElement.dataset.maximized = flag ? 'true' : 'false'
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn('window-controls', 'checkMaximized failed', err)
     }
   }
 
@@ -41,8 +42,8 @@ export function WindowControls({ className, onClose }: WindowControlsProps): Rea
   const handleMinimize = async (): Promise<void> => {
     try {
       await window.spiritagent?.surface?.minimize?.()
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn('window-controls', 'minimize failed', err)
     }
   }
 
@@ -53,8 +54,8 @@ export function WindowControls({ className, onClose }: WindowControlsProps): Rea
       setTimeout(() => {
         void checkMaximized()
       }, 60)
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn('window-controls', 'maximize failed', err)
     }
   }
 
@@ -67,8 +68,8 @@ export function WindowControls({ className, onClose }: WindowControlsProps): Rea
 
     try {
       await window.spiritagent?.surface?.close?.()
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn('window-controls', 'close failed', err)
     }
   }
 
