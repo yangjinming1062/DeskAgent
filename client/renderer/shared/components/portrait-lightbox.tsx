@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { useLatestRef } from '../hooks/use-latest-ref'
+import { useEscapeKey } from '../hooks/use-escape-key'
 import { useInteractiveRegion } from '../lib/interactive-regions'
 
 export interface HistoryGalleryItem {
@@ -87,27 +87,14 @@ export function PortraitLightbox({
 }): React.ReactPortal | null {
   const overlayRef = useRef<HTMLDivElement>(null)
 
-  // 稳定的 ref：保证 keydown 监听只挂一次，不会在父组件每次重渲染、
-  // 产生新的 onClose 闭包时被反复重挂。
-  const onCloseRef = useLatestRef(onClose)
-
   // 灯箱打开时把整个视口注册为可交互区，避免点击图片或背景时事件穿透到下层窗口。
   // 函数引用稳定下来，useInteractiveRegion 的 effect 不会每次渲染都重新订阅。
   const getLightboxRect = (): DOMRect => new DOMRect(0, 0, window.innerWidth, window.innerHeight)
 
   useInteractiveRegion('portrait-lightbox', overlayRef, getLightboxRect)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseRef.current()
-      }
-    }
-
-    window.addEventListener('keydown', onKey)
-
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCloseRef])
+  // 灯箱挂在 bubble 阶段、不阻断冒泡——让外层的"返回上一层"也能响应 Esc。
+  useEscapeKey(onClose, { capture: false, preventDefault: false, stopPropagation: false })
 
   if (typeof document === 'undefined') {
     return null

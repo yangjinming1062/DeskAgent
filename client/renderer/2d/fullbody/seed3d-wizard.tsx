@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { MAX_APPEARANCE, resolvePortraitUrl } from '@/companion'
 import { HistoryGallery, PortraitLightbox, useNaturalAspectRatio } from '@/shared'
+import { useEscapeKey } from '@/shared/hooks/use-escape-key'
 import { cn } from '@/shared/lib/utils'
 import { BTN_PRIMARY, BTN_SUBTLE, INPUT_CLASS, WizardModal } from '@/shared/panel'
 
@@ -244,19 +245,7 @@ export function Seed3dWizard({
 
   // Esc 关闭向导；灯箱打开时让灯箱自己的 Esc 生效，不连带关掉整个向导。
   // 捕获阶段拦截并阻断冒泡，外层设置面板的 Esc 不连坐。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !zoomUrl) {
-        e.preventDefault()
-        e.stopPropagation()
-        onCancel()
-      }
-    }
-
-    window.addEventListener('keydown', onKey, true)
-
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onCancel, zoomUrl])
+  useEscapeKey(onCancel, { busy: Boolean(zoomUrl) })
 
   const onSelectHistoryEntry = (key: Stage, idx: number): void => {
     const entry = stages[key].entries[idx]

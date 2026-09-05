@@ -48,6 +48,7 @@ import {
   type VoiceOption,
   warmAudioContext
 } from '@/companion'
+import { useGatewayRequest } from '@/shared'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { FolderOpen, Sparkles } from '@/shared/lib/icons'
 import { isClientErrorIpc, unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
@@ -57,7 +58,6 @@ import { INPUT_CLASS } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { computeBackTransition } from './back-transition'
-import { useGatewayRequest } from './boot/use-gateway-request'
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
 import {
   Chip,

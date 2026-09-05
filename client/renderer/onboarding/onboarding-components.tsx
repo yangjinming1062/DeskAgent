@@ -1,28 +1,12 @@
 import { useState } from 'react'
 
 import { HistoryGallery, type HistoryGalleryItem, PortraitLightbox, useNaturalAspectRatio } from '@/shared'
-import { CHIP_FILTER, CHIP_FILTER_ACTIVE } from '@/shared/panel'
 
+export { Chip } from '@/shared/panel'
 export { HistoryGallery, type HistoryGalleryItem, PortraitLightbox, useNaturalAspectRatio }
 
 // 从 onboarding-flow.tsx 中抽离出的四个小 JSX 组件。
 // 所有输入都通过 props 传入——不依赖模块级共享状态——便于单独隔离测试。
-
-export function Chip({
-  active,
-  label,
-  onClick
-}: {
-  active?: boolean
-  label: string
-  onClick: () => void
-}): React.JSX.Element {
-  return (
-    <button className={active ? CHIP_FILTER_ACTIVE : CHIP_FILTER} onClick={onClick} type="button">
-      {label}
-    </button>
-  )
-}
 
 export function PortraitPanel({
   avatarUrl,

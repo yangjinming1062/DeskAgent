@@ -5,6 +5,7 @@
 
 import { atom } from 'nanostores'
 
+import { normalizeHashPath } from '@/shared/lib/hash-route'
 import { definePersistedEnum } from '@/shared/lib/storage'
 
 export type LivingView = 'chat' | 'wardrobe' | 'appearance' | 'moments' | 'diary' | 'channels' | 'room' | 'settings'
@@ -39,8 +40,7 @@ function parseLivingViewFromHash(): LivingView | null {
     return null
   }
 
-  const cleanPath = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim()
-  const topSegment = cleanPath.split('/')[0]
+  const topSegment = normalizeHashPath(window.location.hash).split('/')[0]
 
   return (LIVING_VIEWS as ReadonlyArray<string>).includes(topSegment) ? (topSegment as LivingView) : null
 }
@@ -50,7 +50,7 @@ function parseLivingSettingsSectionFromHash(): LivingSettingsSection | null {
     return null
   }
 
-  const cleanPath = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim()
+  const cleanPath = normalizeHashPath(window.location.hash)
 
   if (!cleanPath.startsWith(SETTINGS_SECTION_PREFIX)) {
     return null

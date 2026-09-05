@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { useMainProcessListener } from '@/onboarding'
+import { useMainProcessListener } from '@/shared/hooks/use-main-process-listener'
 import { applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 
 // 任何 renderer 进程挂载时都得跑一遍：把 $auth 从 { kind: 'pending' } 推进到

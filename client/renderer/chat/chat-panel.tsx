@@ -18,6 +18,7 @@ import { ChatContextAmbientLine, ChatContextCapsule } from '@/chat/context-progr
 import { useChatSubmit } from '@/chat/use-chat-submit'
 import { $persona } from '@/companion'
 import { useVoiceRecorder } from '@/companion/hooks/use-voice-recorder'
+import { useAtomListen } from '@/shared/hooks/use-atom-listen'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
 import { SlidersHorizontal } from '@/shared/lib/icons'
@@ -121,8 +122,9 @@ export function ChatPanel({
   const isGenerating = gatewayState === 'open' && (sending || pendingBatchLen > 0 || turnInFlight || lastStreaming)
 
   // 外部文件投喂与常规附件合并
-  useEffect(() => {
-    return $pendingExternalAttachment.listen(state => {
+  useAtomListen(
+    $pendingExternalAttachment,
+    state => {
       if (!state || state.paths.length === 0) {
         return
       }
@@ -130,20 +132,23 @@ export function ChatPanel({
       setExternalPaths(prev => [...prev, ...state.paths])
       clearExternalAttachment()
       notify({ kind: 'info', message: `收到 ${state.paths.length} 个文件` })
-    })
-  }, [])
+    },
+    []
+  )
 
   // 撤销草稿回填，多窗口按会话过滤
-  useEffect(() => {
-    return $chatDraftFromUndo.listen(draft => {
+  useAtomListen(
+    $chatDraftFromUndo,
+    draft => {
       if (!draft || draft.session_id !== chatSessionId) {
         return
       }
 
       setText(draft.text)
       $chatDraftFromUndo.set(null)
-    })
-  }, [chatSessionId, setText])
+    },
+    [chatSessionId, setText]
+  )
 
   const submitState = useMemo(
     () => ({

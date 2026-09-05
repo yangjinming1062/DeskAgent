@@ -7,6 +7,7 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
 
+import { normalizeHashPath } from '@/shared/lib/hash-route'
 import { Brain, Cpu, Sparkles } from '@/shared/lib/icons'
 import { type NavItemDescriptor, SettingsContent, SettingsNav } from '@/shared/panel'
 
@@ -30,8 +31,7 @@ function readHashTab(allowed: ReadonlyArray<StationSettingsTab>): StationSetting
     return 'inference'
   }
 
-  const raw = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase()
-  const pathOnly = raw.split('?')[0]
+  const pathOnly = normalizeHashPath(window.location.hash)
 
   const segment = pathOnly.startsWith('settings/')
     ? pathOnly.slice('settings/'.length)

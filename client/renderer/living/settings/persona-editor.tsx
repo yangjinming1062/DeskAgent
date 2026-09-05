@@ -3,16 +3,7 @@ import { useState } from 'react'
 
 import { $persona, assemblePersona, hydratePersona, PERSONALITY_PRESETS, RELATIONSHIP_PRESETS } from '@/companion'
 import { cn } from '@/shared/lib/utils'
-import {
-  BTN_PRIMARY,
-  BTN_SUBTLE,
-  CHIP_FILTER,
-  CHIP_FILTER_ACTIVE,
-  FIELD_LABEL,
-  INPUT_CLASS,
-  SECTION_TITLE,
-  TechCard
-} from '@/shared/panel'
+import { BTN_PRIMARY, BTN_SUBTLE, Chip, FIELD_LABEL, INPUT_CLASS, SECTION_TITLE, TechCard } from '@/shared/panel'
 
 // 可编辑的 persona 字段：name / relationship / personality。
 // 锁定的视觉锚点字段（species / gender / appearance）刻意不可编辑——见 docs/DESIGN.md §5.4。
@@ -140,14 +131,7 @@ export function PersonaSection(): React.JSX.Element {
           />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {RELATIONSHIP_PRESETS.map(p => (
-              <button
-                className={relationship === p ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
-                key={p}
-                onClick={() => setRelationship(p)}
-                type="button"
-              >
-                {p}
-              </button>
+              <Chip active={relationship === p} key={p} label={p} onClick={() => setRelationship(p)} />
             ))}
           </div>
         </label>
@@ -161,14 +145,7 @@ export function PersonaSection(): React.JSX.Element {
           />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {PERSONALITY_PRESETS.map(p => (
-              <button
-                className={personality === p ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
-                key={p}
-                onClick={() => setPersonality(p)}
-                type="button"
-              >
-                {p}
-              </button>
+              <Chip active={personality === p} key={p} label={p} onClick={() => setPersonality(p)} />
             ))}
           </div>
         </label>

@@ -1,7 +1,8 @@
 import { useStore } from '@nanostores/react'
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useRef, useState } from 'react'
 
 import { useInteractiveRegion } from '@/companion'
+import { useEscapeKey } from '@/shared/hooks/use-escape-key'
 import { Loader2, Sparkles, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { BTN_ICON, BTN_PRIMARY, BTN_SUBTLE, INPUT_CLASS } from '@/shared/panel'
@@ -23,18 +24,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   // 镜像 BootFailureOverlay 的模式。
   useInteractiveRegion('activation', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) {
-        event.preventDefault()
-        onClose()
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose, busy])
+  useEscapeKey(onClose, { capture: false, stopPropagation: false, busy })
 
   const error = auth.kind === 'unauthenticated' ? auth.error : null
   const trimmed = code.trim()

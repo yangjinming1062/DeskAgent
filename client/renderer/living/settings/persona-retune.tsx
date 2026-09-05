@@ -14,7 +14,7 @@ import {
   type SpeakingStylePreset
 } from '@/companion'
 import { cn } from '@/shared/lib/utils'
-import { BTN_GHOST, BTN_PRIMARY, CHIP_FILTER, CHIP_FILTER_ACTIVE, INPUT_CLASS, WizardModal } from '@/shared/panel'
+import { BTN_GHOST, BTN_PRIMARY, Chip, INPUT_CLASS, WizardModal } from '@/shared/panel'
 
 interface PersonaRetuneProps {
   initial: {
@@ -331,14 +331,12 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
             const active = isClear ? value === '' : value === p
 
             return (
-              <button
-                className={active ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+              <Chip
+                active={active}
                 key={p || 'clear'}
+                label={isClear ? '自动派生' : p}
                 onClick={() => handleChange(p)}
-                type="button"
-              >
-                {isClear ? '自动派生' : p}
-              </button>
+              />
             )
           })}
         </div>

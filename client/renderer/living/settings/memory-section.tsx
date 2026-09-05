@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { $memoryBrowserTab, type MemoryTab, setMemoryBrowserTab } from '@/companion'
 import { useGatewayRequest } from '@/shared'
 import { cn } from '@/shared/lib/utils'
-import { BTN_GHOST, BTN_SUBTLE, CHIP, CHIP_FILTER, CHIP_FILTER_ACTIVE, HINT_TEXT, INPUT_CLASS } from '@/shared/panel'
+import { BTN_GHOST, BTN_SUBTLE, CHIP, Chip, HINT_TEXT, INPUT_CLASS } from '@/shared/panel'
 import { notifyError } from '@/shared/store/notifications'
 
 const MAX_AUTO_INJECT_CONTENT_CHARS = 500
@@ -153,20 +153,16 @@ export function MemorySection(): React.ReactElement {
   return (
     <section>
       <div className="mb-2 flex items-center gap-1.5">
-        <button
-          className={tab === 'recall' ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+        <Chip
+          active={tab === 'recall'}
+          label={`主动召回 · ${counts?.recall ?? '…'}`}
           onClick={() => switchTab('recall')}
-          type="button"
-        >
-          主动召回 · {counts?.recall ?? '…'}
-        </button>
-        <button
-          className={tab === 'auto_inject' ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+        />
+        <Chip
+          active={tab === 'auto_inject'}
+          label={`自动注入 · ${counts?.auto_inject ?? '…'}`}
           onClick={() => switchTab('auto_inject')}
-          type="button"
-        >
-          自动注入 · {counts?.auto_inject ?? '…'}
-        </button>
+        />
         <span className={cn(HINT_TEXT, 'ml-auto')}>{counts?.user_profile ?? '…'} 个 user_profile 由你独占</span>
       </div>
 

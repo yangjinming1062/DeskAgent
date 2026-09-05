@@ -17,6 +17,7 @@ import {
   $pendingPromptBatch
 } from '@/chat/chat-store'
 import { $portraitUrl } from '@/companion'
+import { useAtomListen } from '@/shared/hooks/use-atom-listen'
 import { $gatewayState } from '@/shared/store/gateway'
 
 interface ConversationSurfaceProps {
@@ -46,15 +47,13 @@ export function ConversationSurface({
   useEffect(() => {
     const el = scrollRef.current
 
-    if (!el) {
-      return
-    }
+    el?.scrollTo?.({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [scrollRef])
 
-    el.scrollTo?.({ top: el.scrollHeight, behavior: 'smooth' })
+  useAtomListen($chatStreamingTick, () => {
+    const el = scrollRef.current
 
-    return $chatStreamingTick.listen(() => {
-      el.scrollTo?.({ top: el.scrollHeight, behavior: 'smooth' })
-    })
+    el?.scrollTo?.({ top: el.scrollHeight, behavior: 'smooth' })
   }, [scrollRef])
 
   // 列表长度变化同样需要跟滚。

@@ -16,15 +16,9 @@ import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial, resetToHomePosition } from '@/companion/spatial'
 import { useAuthBridge } from '@/companion/use-auth-bridge'
-import {
-  ActivationOverlay,
-  BootFailureOverlay,
-  EggStage,
-  OnboardingFlow,
-  useGatewayBoot,
-  useMainProcessListener
-} from '@/onboarding'
+import { ActivationOverlay, BootFailureOverlay, EggStage, OnboardingFlow, useGatewayBoot } from '@/onboarding'
 import { NotificationStack, useGatewayRequest } from '@/shared'
+import { useMainProcessListener } from '@/shared/hooks/use-main-process-listener'
 import { $auth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'

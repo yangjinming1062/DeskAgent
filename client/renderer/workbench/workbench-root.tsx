@@ -16,6 +16,7 @@ import {
   isCompanionSession,
   switchSession
 } from '@/chat/session-list-store'
+import { normalizeHashPath } from '@/shared/lib/hash-route'
 import { Home, SlidersHorizontal, Terminal } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { WindowControls } from '@/shared/panel'
@@ -41,7 +42,7 @@ export function WorkbenchRoot(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const isStationSettingsHash = (rawHash: string): boolean => {
-    const clean = rawHash.replace(/^#\/?/, '').split('?')[0].toLowerCase()
+    const clean = normalizeHashPath(rawHash)
 
     return (
       clean.includes('settings') ||

@@ -5,6 +5,8 @@ import type { IconComponent } from '@/shared/lib/icons'
 import { ChevronDown, Loader2, Search, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
+import { useEscapeKey } from '../hooks/use-escape-key'
+
 import {
   BTN_DANGER,
   BTN_ICON,
@@ -539,23 +541,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps): React.JSX.Element {
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !busy) {
-        e.preventDefault()
-        e.stopPropagation()
-        onOpenChange(false)
-      }
-    }
-
-    window.addEventListener('keydown', onKey, true)
-
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, busy, onOpenChange])
+  useEscapeKey(() => onOpenChange(false), { enabled: open, busy })
 
   if (!open) {
     return <></>

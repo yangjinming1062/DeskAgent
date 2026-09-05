@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 
+import { useEscapeKey } from '@/shared/hooks/use-escape-key'
 import { useInteractiveRegion } from '@/shared/lib/interactive-regions'
 
 import { PanelHeader } from './components'
@@ -35,23 +36,7 @@ export function WizardModal({
 
   useInteractiveRegion(regionId, overlayRef, fullscreenRect)
 
-  useEffect(() => {
-    if (!escClose) {
-      return
-    }
-
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        onClose()
-      }
-    }
-
-    window.addEventListener('keydown', onKey, true)
-
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [escClose, onClose])
+  useEscapeKey(onClose, { enabled: escClose })
 
   return (
     <div

@@ -19,15 +19,7 @@ import {
 import { useGatewayRequest } from '@/shared'
 import { Check } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import {
-  BTN_PRIMARY,
-  BTN_SUBTLE,
-  CHIP_FILTER,
-  CHIP_FILTER_ACTIVE,
-  HINT_TEXT,
-  INPUT_CLASS,
-  SECTION_TITLE
-} from '@/shared/panel'
+import { BTN_PRIMARY, BTN_SUBTLE, Chip, HINT_TEXT, INPUT_CLASS, SECTION_TITLE } from '@/shared/panel'
 
 // 音色页：目录筛选 / 试听 / 切换 + 专属音色设计。长页（living-settings）内嵌段。
 export function VoicePage(): React.ReactElement {
@@ -115,25 +107,16 @@ export function VoicePage(): React.ReactElement {
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {langOptions.map(lang => (
-          <button
-            className={langFilter === lang ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+          <Chip
+            active={langFilter === lang}
             key={lang}
+            label={lang ? (LANGUAGE_LABELS[lang] ?? lang) : '全部'}
             onClick={() => setLangFilter(lang)}
-            type="button"
-          >
-            {lang ? (LANGUAGE_LABELS[lang] ?? lang) : '全部'}
-          </button>
+          />
         ))}
         <span className="mx-1 text-faint">|</span>
         {GENDER_OPTIONS.map(g => (
-          <button
-            className={genderFilter === g.id ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
-            key={g.id}
-            onClick={() => setGenderFilter(g.id)}
-            type="button"
-          >
-            {g.label}
-          </button>
+          <Chip active={genderFilter === g.id} key={g.id} label={g.label} onClick={() => setGenderFilter(g.id)} />
         ))}
       </div>
 

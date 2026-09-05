@@ -1,3 +1,4 @@
+export * from './chip'
 export * from './components'
 export * from './palette'
 export * from './primitives'
