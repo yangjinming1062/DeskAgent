@@ -31,6 +31,7 @@ export interface SurfacesManager {
   onWindowClosed: (id: SurfaceId, win: BrowserWindow) => void
   openSurface: (payload: DesktopSurfaceOpenPayload) => Promise<void>
   registerIpcHandlers: (deps: { ipcMain: IpcMain }) => void
+  toggleSurface: (payload: DesktopSurfaceOpenPayload) => Promise<void>
 }
 
 interface SurfacesManagerOptions {
@@ -179,62 +180,87 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     }
   }
 
+  const internalClose = (): void => {
+    if (!openSurfaceId) {
+      return
+    }
+
+    const id = openSurfaceId
+    const win = windows.get(id)
+
+    if (win && !win.isDestroyed()) {
+      win.hide()
+    }
+
+    openSurfaceId = null
+    broadcastAll(snapshot())
+  }
+
+  const internalOpen = async (payload: DesktopSurfaceOpenPayload): Promise<void> => {
+    const id = normalizeSurfaceId(payload.surface)
+    const previous = openSurfaceId
+
+    if (previous && previous !== id) {
+      const prevWin = windows.get(previous)
+
+      if (prevWin && !prevWin.isDestroyed()) {
+        prevWin.hide()
+      }
+
+      openSurfaceId = null
+    }
+
+    let win = windows.get(id)
+
+    if (!win || win.isDestroyed()) {
+      win = await options.createWindow(id, payload)
+      windows.set(id, win)
+      bindBoundsReporting(id, win)
+    } else if (payload.view || payload.sessionId) {
+      await options.navigateWindow?.(win, id, payload)
+    }
+
+    if (win.isMinimized()) {
+      win.restore()
+    }
+
+    win.show()
+    win.focus()
+    openSurfaceId = id
+    lastSurface = id
+    lastSurfaceHydrated = true
+
+    broadcastAll(snapshot())
+    await persistLastSurface(id)
+  }
+
   const openSurface = async (payload: DesktopSurfaceOpenPayload): Promise<void> => {
+    await withMutex(async () => {
+      await internalOpen(payload)
+    })
+  }
+
+  const toggleSurface = async (payload: DesktopSurfaceOpenPayload): Promise<void> => {
     const id = normalizeSurfaceId(payload.surface)
 
     await withMutex(async () => {
-      const previous = openSurfaceId
+      if (openSurfaceId === id) {
+        const win = windows.get(id)
 
-      if (previous && previous !== id) {
-        const prevWin = windows.get(previous)
+        if (win && !win.isDestroyed() && win.isVisible() && !win.isMinimized()) {
+          internalClose()
 
-        if (prevWin && !prevWin.isDestroyed()) {
-          prevWin.hide()
+          return
         }
-
-        openSurfaceId = null
       }
 
-      let win = windows.get(id)
-
-      if (!win || win.isDestroyed()) {
-        win = await options.createWindow(id, payload)
-        windows.set(id, win)
-        bindBoundsReporting(id, win)
-      } else if (payload.view || payload.sessionId) {
-        await options.navigateWindow?.(win, id, payload)
-      }
-
-      if (win.isMinimized()) {
-        win.restore()
-      }
-
-      win.show()
-      win.focus()
-      openSurfaceId = id
-      lastSurface = id
-      lastSurfaceHydrated = true
-
-      broadcastAll(snapshot())
-      await persistLastSurface(id)
+      await internalOpen(payload)
     })
   }
 
   const closeSurface = async (): Promise<void> => {
     await withMutex(async () => {
-      if (!openSurfaceId) {
-        return
-      }
-
-      const id = openSurfaceId
-      const win = windows.get(id)
-
-      if (win && !win.isDestroyed()) {
-        win.hide()
-      }
-
-      openSurfaceId = null
-      broadcastAll(snapshot())
+      internalClose()
     })
   }
 
@@ -298,6 +324,18 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
       const sessionId = (payload as { sessionId?: unknown } | null)?.sessionId
 
       return openSurface({
+        sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+        surface: normalizeSurfaceId(surface),
+        view: typeof view === 'string' ? view : undefined
+      })
+    })
+
+    ipcMain.handle(IPC.invoke.surfaceToggle, (_event, payload: unknown) => {
+      const surface = (payload as { surface?: unknown } | null)?.surface
+      const view = (payload as { view?: unknown } | null)?.view
+      const sessionId = (payload as { sessionId?: unknown } | null)?.sessionId
+
+      return toggleSurface({
         sessionId: typeof sessionId === 'string' ? sessionId : undefined,
         surface: normalizeSurfaceId(surface),
         view: typeof view === 'string' ? view : undefined
@@ -370,6 +408,7 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     minimizeSurface,
     onWindowClosed,
     openSurface,
-    registerIpcHandlers
+    registerIpcHandlers,
+    toggleSurface
   }
 }

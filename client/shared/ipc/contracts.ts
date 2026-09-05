@@ -155,14 +155,12 @@ export interface SpiritAgentPrefsSet {
 export interface DesktopShortcutsConfig {
   openLiving: string
   openWorkbench: string
-  toggleChat: string
   toggleVisibility: string
 }
 
 export const DEFAULT_SHORTCUTS: Readonly<DesktopShortcutsConfig> = {
   openLiving: 'Alt+Shift+L',
   openWorkbench: 'Alt+Shift+W',
-  toggleChat: 'Alt+Shift+C',
   toggleVisibility: 'Alt+Shift+H'
 } as const
 
@@ -300,6 +298,7 @@ export interface IpcInvokeContract {
 
   // 入口面（互斥 living / workbench）
   'spiritagent:surface:open': (payload: DesktopSurfaceOpenPayload) => Promise<void> | void
+  'spiritagent:surface:toggle': (payload: DesktopSurfaceOpenPayload) => Promise<void> | void
   'spiritagent:surface:close': () => Promise<void> | void
   'spiritagent:surface:focus': () => Promise<void> | void
   'spiritagent:surface:minimize': () => Promise<void> | void
@@ -410,7 +409,6 @@ export interface IpcEventContract {
   'spiritagent:power-resume': []
   'spiritagent:prefs-hydrated': [payload: DesktopPrefsHydrated]
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
-  'spiritagent:shortcut:toggle-chat': []
   'spiritagent:shortcuts:changed': [payload: DesktopShortcutsState]
   'spiritagent:surface:changed': [payload: DesktopSurfaceChangedEvent]
   'spiritagent:tray:activate': []
@@ -465,6 +463,7 @@ export const IPC = {
     shortcutsSet: 'spiritagent:shortcuts:set',
     shortcutsReset: 'spiritagent:shortcuts:reset',
     surfaceOpen: 'spiritagent:surface:open',
+    surfaceToggle: 'spiritagent:surface:toggle',
     surfaceClose: 'spiritagent:surface:close',
     surfaceFocus: 'spiritagent:surface:focus',
     surfaceMinimize: 'spiritagent:surface:minimize',
@@ -493,7 +492,6 @@ export const IPC = {
     powerResume: 'spiritagent:power-resume',
     prefsHydrated: 'spiritagent:prefs-hydrated',
     runnerStatus: 'spiritagent:runner:status',
-    shortcutToggleChat: 'spiritagent:shortcut:toggle-chat',
     shortcutsChanged: 'spiritagent:shortcuts:changed',
     surfaceChanged: 'spiritagent:surface:changed',
     trayActivate: 'spiritagent:tray:activate',

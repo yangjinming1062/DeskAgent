@@ -102,7 +102,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
   shortcuts: {
     get: () => ipcRenderer.invoke(IPC.invoke.shortcutsGet),
     onChanged: (cb: (payload: DesktopShortcutsState) => void) => subscribe(IPC.event.shortcutsChanged, cb),
-    onToggleChat: (cb: () => void) => subscribe(IPC.event.shortcutToggleChat, cb),
     reset: () => ipcRenderer.invoke(IPC.invoke.shortcutsReset),
     set: (payload: DesktopShortcutsSetPayload) => ipcRenderer.invoke(IPC.invoke.shortcutsSet, payload)
   },
@@ -114,7 +113,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
     maximize: () => ipcRenderer.invoke(IPC.invoke.surfaceMaximize),
     minimize: () => ipcRenderer.invoke(IPC.invoke.surfaceMinimize),
     onChanged: (cb: (payload: DesktopSurfaceChangedEvent) => void) => subscribe(IPC.event.surfaceChanged, cb),
-    open: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceOpen, payload)
+    open: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceOpen, payload),
+    toggle: (payload: DesktopSurfaceOpenPayload) => ipcRenderer.invoke(IPC.invoke.surfaceToggle, payload)
   },
   skills: {
     list: () => ipcRenderer.invoke(IPC.invoke.skillsList),

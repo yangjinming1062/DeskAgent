@@ -30,7 +30,6 @@ const currentRegistered = new Map<keyof DesktopShortcutsConfig, string>()
 const currentStatus: Record<keyof DesktopShortcutsConfig, ShortcutRegistrationStatus> = {
   openLiving: { registered: false },
   openWorkbench: { registered: false },
-  toggleChat: { registered: false },
   toggleVisibility: { registered: false }
 }
 
@@ -52,14 +51,6 @@ function broadcastShortcutsChanged(state: DesktopShortcutsState): void {
   sendToWindow(deps.getMainWindow(), IPC.event.shortcutsChanged, state)
 }
 
-function sendToMainWindow<C extends IpcEventChannel>(channel: C, ...payload: IpcEventContract[C]): void {
-  if (!deps) {
-    return
-  }
-
-  sendToWindow(deps.getMainWindow(), channel, ...payload)
-}
-
 export function readShortcutsConfig(): DesktopShortcutsConfig {
   const root = store.read()
   const raw = root.shortcuts as Record<string, unknown> | undefined
@@ -67,7 +58,6 @@ export function readShortcutsConfig(): DesktopShortcutsConfig {
   return {
     openLiving: typeof raw?.openLiving === 'string' ? raw.openLiving : DEFAULT_SHORTCUTS.openLiving,
     openWorkbench: typeof raw?.openWorkbench === 'string' ? raw.openWorkbench : DEFAULT_SHORTCUTS.openWorkbench,
-    toggleChat: typeof raw?.toggleChat === 'string' ? raw.toggleChat : DEFAULT_SHORTCUTS.toggleChat,
     toggleVisibility:
       typeof raw?.toggleVisibility === 'string' ? raw.toggleVisibility : DEFAULT_SHORTCUTS.toggleVisibility
   }
@@ -87,24 +77,10 @@ function handleToggleVisibility(): void {
   }
 }
 
-function handleToggleChat(): void {
-  if (!deps) {
-    return
-  }
-
-  const win = deps.getMainWindow()
-
-  if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) {
-    deps.showMainWindow()
-  }
-
-  sendToMainWindow(IPC.event.shortcutToggleChat)
-}
-
-function handleOpenSurface(surface: SurfaceId): () => void {
+function handleToggleSurface(surface: SurfaceId): () => void {
   return () => {
-    deps?.surfaces?.openSurface({ surface }).catch(err => {
-      deps?.rememberLog?.(`[shortcuts] openSurface(${surface}) failed: ${errorMessage(err)}`)
+    deps?.surfaces?.toggleSurface({ surface }).catch(err => {
+      deps?.rememberLog?.(`[shortcuts] toggleSurface(${surface}) failed: ${errorMessage(err)}`)
     })
   }
 }
@@ -115,14 +91,10 @@ function getActionHandler(action: keyof DesktopShortcutsConfig): () => void {
   }
 
   if (action === 'openLiving') {
-    return handleOpenSurface('living')
+    return handleToggleSurface('living')
   }
 
-  if (action === 'openWorkbench') {
-    return handleOpenSurface('workbench')
-  }
-
-  return handleToggleChat
+  return handleToggleSurface('workbench')
 }
 
 function registerSingleShortcut(action: keyof DesktopShortcutsConfig, accelerator: string): void {
@@ -174,7 +146,6 @@ function registerSingleShortcut(action: keyof DesktopShortcutsConfig, accelerato
 
 export function applyShortcuts(config: DesktopShortcutsConfig): DesktopShortcutsState {
   registerSingleShortcut('toggleVisibility', config.toggleVisibility)
-  registerSingleShortcut('toggleChat', config.toggleChat)
   registerSingleShortcut('openLiving', config.openLiving)
   registerSingleShortcut('openWorkbench', config.openWorkbench)
 
@@ -200,7 +171,6 @@ export function cleanupShortcuts(): void {
   }
 
   currentRegistered.clear()
-  currentStatus.toggleChat = { registered: false }
   currentStatus.toggleVisibility = { registered: false }
   currentStatus.openLiving = { registered: false }
   currentStatus.openWorkbench = { registered: false }
@@ -232,8 +202,6 @@ export function registerShortcutsIpc(options: ShortcutsIpcDeps): void {
           typeof payload?.shortcuts?.openWorkbench === 'string'
             ? payload.shortcuts.openWorkbench
             : current.openWorkbench,
-        toggleChat:
-          typeof payload?.shortcuts?.toggleChat === 'string' ? payload.shortcuts.toggleChat : current.toggleChat,
         toggleVisibility:
           typeof payload?.shortcuts?.toggleVisibility === 'string'
             ? payload.shortcuts.toggleVisibility

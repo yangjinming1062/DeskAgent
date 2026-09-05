@@ -90,12 +90,12 @@ declare global {
       shortcuts: {
         get: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:get']>
         onChanged: EventSubscription<'spiritagent:shortcuts:changed'>
-        onToggleChat: EventSubscription<'spiritagent:shortcut:toggle-chat'>
         reset: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:reset']>
         set: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:set']>
       }
       surface: {
         open: AsyncIpc<IpcInvokeContract['spiritagent:surface:open']>
+        toggle: AsyncIpc<IpcInvokeContract['spiritagent:surface:toggle']>
         close: AsyncIpc<IpcInvokeContract['spiritagent:surface:close']>
         focus: AsyncIpc<IpcInvokeContract['spiritagent:surface:focus']>
         isMaximized: AsyncIpc<IpcInvokeContract['spiritagent:surface:is-maximized']>

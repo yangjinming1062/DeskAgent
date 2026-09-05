@@ -11,7 +11,6 @@ const INITIAL_STATE: DesktopShortcutsState = {
   status: {
     openLiving: { registered: false },
     openWorkbench: { registered: false },
-    toggleChat: { registered: false },
     toggleVisibility: { registered: false }
   }
 }
@@ -80,8 +79,7 @@ export function ShortcutsPage(): React.JSX.Element {
   const isAllDefault =
     state.config.toggleVisibility === DEFAULT_SHORTCUTS.toggleVisibility &&
     state.config.openLiving === DEFAULT_SHORTCUTS.openLiving &&
-    state.config.openWorkbench === DEFAULT_SHORTCUTS.openWorkbench &&
-    state.config.toggleChat === DEFAULT_SHORTCUTS.toggleChat
+    state.config.openWorkbench === DEFAULT_SHORTCUTS.openWorkbench
 
   return (
     <div className="space-y-4">
@@ -118,16 +116,6 @@ export function ShortcutsPage(): React.JSX.Element {
             onChange={val => void handleChange('openWorkbench', val)}
             registered={state.status.openWorkbench?.registered}
             value={state.config.openWorkbench}
-          />
-        </SettingRow>
-        <SettingRow description={t.toggleChatDesc} label={t.toggleChat}>
-          <ShortcutRecorder
-            defaultValue={DEFAULT_SHORTCUTS.toggleChat}
-            disabled={loading}
-            error={state.status.toggleChat?.error}
-            onChange={val => void handleChange('toggleChat', val)}
-            registered={state.status.toggleChat?.registered}
-            value={state.config.toggleChat}
           />
         </SettingRow>
       </SettingCard>

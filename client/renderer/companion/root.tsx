@@ -22,7 +22,7 @@ import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/a
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
-import { $lastSurface, $surfaceOpen, requestCloseSurface, requestOpenSurface } from '@/shared/store/surfaces'
+import { $lastSurface, $surfaceOpen, requestOpenSurface } from '@/shared/store/surfaces'
 import { strings } from '@/shared/strings'
 
 import { DeveloperOverlay } from './developer-overlay'
@@ -103,26 +103,6 @@ export function CompanionRoot(): React.JSX.Element {
   // 托盘「激活...」入口的对偶：主进程只调 showMainWindow() 不够——
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
   useMainProcessListener('onTrayActivate', () => setActivationOpen(true), [])
-
-  // 全局快捷键「打开/关闭对话」：已登录时切换生活空间显示；未登录时显示激活浮层。
-  // 严格互斥（plan §2.3）：生活空间开着就关，开着工作台就关工作台再开生活空间。
-  useEffect(() => {
-    const off = window.spiritagent.shortcuts?.onToggleChat?.(() => {
-      if (auth.kind !== 'authenticated') {
-        setActivationOpen(true)
-
-        return
-      }
-
-      if ($surfaceOpen.get() === 'living') {
-        void requestCloseSurface()
-      } else {
-        void requestOpenSurface('living')
-      }
-    })
-
-    return () => off?.()
-  }, [auth.kind])
 
   // 托盘「一键归位」：将精灵落位与状态重置回默认 Home 位置
   useMainProcessListener(
