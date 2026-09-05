@@ -111,12 +111,12 @@ async function toHistoryEntry(w: RoomBackdropWire): Promise<RoomHistoryEntry | n
 }
 
 function deriveStatus(state: RoomStateWire): BackdropStatus {
-  if (state.active && state.active.status === 'ready') {
-    return 'ready'
-  }
-
   if (state.pending && state.pending.status === 'pending') {
     return 'pending'
+  }
+
+  if (state.active && state.active.status === 'ready') {
+    return 'ready'
   }
 
   if (state.active && state.active.status === 'failed') {
@@ -124,6 +124,65 @@ function deriveStatus(state: RoomStateWire): BackdropStatus {
   }
 
   return 'none'
+}
+
+let pendingPollTimer: ReturnType<typeof setInterval> | null = null
+let pendingPollCount = 0
+const MAX_PENDING_POLL_COUNT = 20
+
+function stopPendingPoll(): void {
+  if (pendingPollTimer !== null) {
+    clearInterval(pendingPollTimer)
+    pendingPollTimer = null
+    pendingPollCount = 0
+  }
+}
+
+function startPendingPoll(): void {
+  if (pendingPollTimer !== null) {
+    return
+  }
+
+  pendingPollCount = 0
+  pendingPollTimer = setInterval(() => {
+    pendingPollCount++
+
+    if (pendingPollCount > MAX_PENDING_POLL_COUNT) {
+      stopPendingPoll()
+
+      if ($backdropStatus.get() === 'pending') {
+        $backdropStatus.set('failed')
+        notify({ kind: 'warning', message: '房间生成耗时较长，请稍后重试' })
+      }
+
+      return
+    }
+
+    void authedApi<RoomStateWire>({ path: '/api/companion/room' }).then(result => {
+      if (!result.ok) {
+        if (result.reason === 'unauth') {
+          stopPendingPoll()
+        }
+
+        return
+      }
+
+      if (!result.value) {
+        return
+      }
+
+      const val = result.value
+
+      if (!val.pending || val.pending.status !== 'pending') {
+        stopPendingPoll()
+        void applyRoomState(val)
+
+        if (val.active && val.active.status === 'ready') {
+          notify({ kind: 'success', message: '新房间已就绪！' })
+        }
+      }
+    })
+  }, 3500)
 }
 
 function normalizePolicy(raw: unknown): RoomPolicy {
@@ -137,6 +196,7 @@ export const $roomHistory = atom<RoomHistoryEntry[]>([])
 export const $roomPolicy = atom<RoomPolicy>('llm_may_replace')
 
 function resetRoomBackdrop(): void {
+  stopPendingPoll()
   $backdropStatus.set('none')
   $activeBackdrop.set(null)
   $pendingBackdrop.set(null)
@@ -147,7 +207,14 @@ function resetRoomBackdrop(): void {
 registerStorageClearHandler(resetRoomBackdrop)
 
 async function applyRoomState(state: Partial<RoomStateWire> & Pick<RoomStateWire, 'active'>): Promise<void> {
-  $backdropStatus.set(deriveStatus(state as RoomStateWire))
+  const nextStatus = deriveStatus(state as RoomStateWire)
+  $backdropStatus.set(nextStatus)
+
+  if (nextStatus === 'pending') {
+    startPendingPoll()
+  } else {
+    stopPendingPoll()
+  }
 
   // policy / history 只在水合（GET）或用户主动操作后才回写；WS 单事件没带就不覆盖，
   // 否则会静默清掉用户已经设置过的回滚历史或锁定政策。
@@ -211,7 +278,11 @@ export function hydrateRoomBackdrop(): void {
   })
 }
 
-export async function regenerateRoom(): Promise<void> {
+export async function regenerateRoom(): Promise<boolean> {
+  const prevStatus = $backdropStatus.get()
+  $backdropStatus.set('pending')
+  startPendingPoll()
+
   const result = await authedApi({
     body: { intent: 'rebuild' },
     method: 'POST',
@@ -219,14 +290,17 @@ export async function regenerateRoom(): Promise<void> {
   })
 
   if (!result.ok) {
+    stopPendingPoll()
+    $backdropStatus.set(prevStatus)
+
     if (result.reason === 'err') {
       notify({ kind: 'warning', message: '换个房间失败了…过会儿再试试' })
     }
 
-    return
+    return false
   }
 
-  $backdropStatus.set('pending')
+  return true
 }
 
 export async function rollbackRoom(backdropId: string): Promise<void> {
@@ -283,16 +357,20 @@ export function onBackdropEvent(event: { payload?: unknown; type: string }): voi
   }
 
   if (event.type === 'companion.room.ready') {
-    if (!p.id || !p.url) {
+    const backdropId = p.backdrop_id ?? p.id
+
+    if (!backdropId || !p.url) {
       return
     }
 
-    // WS payload 不带 history / policy：保持已水合的回滚历史与锁定政策，
-    // 只更新 active backdrop。下次 hydrateRoomBackdrop() 会把 history 与 policy 重新对账。
+    stopPendingPoll()
+
+    // WS payload 不带 history / policy：先立即切 active backdrop，
+    // 再触发 hydrateRoomBackdrop() 把 history 与 policy 重新对账。
     void applyRoomState({
       active: {
         brief: p.brief,
-        id: p.id,
+        id: String(backdropId),
         origin: p.origin,
         outfit_fingerprint: p.outfit_fingerprint,
         prompt: p.prompt,
@@ -302,23 +380,33 @@ export function onBackdropEvent(event: { payload?: unknown; type: string }): voi
       pending: null
     })
 
+    void hydrateRoomBackdrop()
+    notify({ kind: 'success', message: '新房间收拾好啦！' })
+
     return
   }
 
   if (event.type === 'companion.room.invalidated') {
     // 换装或回滚：active 保留到新图 ready；这里只切到 pending 占位。
     $backdropStatus.set('pending')
+    startPendingPoll()
 
     return
   }
 
   if (event.type === 'companion.room.progress') {
     $backdropStatus.set('pending')
+    startPendingPoll()
 
     return
   }
 
   if (event.type === 'companion.room.failed') {
+    stopPendingPoll()
     $backdropStatus.set('failed')
+    notify({
+      kind: 'warning',
+      message: p.utterance || '房间生成失败了，请稍后重试'
+    })
   }
 }

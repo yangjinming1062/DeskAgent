@@ -150,6 +150,7 @@ class UserGatewaySession:
 
 
 _USER_SESSIONS: dict[int, UserGatewaySession] = {}
+_GRACE_TIMER_TASKS: set[asyncio.Task] = set()
 
 
 def discard_user_session(user_id: int) -> list[asyncio.Task]:
@@ -158,17 +159,21 @@ def discard_user_session(user_id: int) -> list[asyncio.Task]:
     if sess is None:
         return []
     pending: list[asyncio.Task] = []
-    if sess.grace_timer_task and not sess.grace_timer_task.done():
+    current_task = asyncio.current_task()
+    if sess.grace_timer_task and not sess.grace_timer_task.done() and sess.grace_timer_task is not current_task:
         sess.grace_timer_task.cancel()
         pending.append(sess.grace_timer_task)
     for t in list(sess.background_tasks):
-        if not t.done():
+        if not t.done() and t is not current_task:
             t.cancel()
             pending.append(t)
     for runtime in list(sess.runtime_sessions.values()):
-        if runtime.chat_task and not runtime.chat_task.done():
+        if runtime.chat_task and not runtime.chat_task.done() and runtime.chat_task is not current_task:
             runtime.chat_task.cancel()
             pending.append(runtime.chat_task)
+    if sess.dispatcher._writer_task and not sess.dispatcher._writer_task.done() and sess.dispatcher._writer_task is not current_task:
+        sess.dispatcher._writer_task.cancel()
+        pending.append(sess.dispatcher._writer_task)
     sess.runtime_sessions.clear()
     return pending
 
@@ -178,6 +183,7 @@ async def drain() -> None:
     pending: list[asyncio.Task] = []
     for sess in _USER_SESSIONS.values():
         pending.extend(sess.background_tasks)
+    pending.extend(_GRACE_TIMER_TASKS)
     if not pending:
         return
     for t in pending:
@@ -359,28 +365,32 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                         await asyncio.sleep(DISCONNECT_GRACE_SECONDS)
                         if not MANAGER.is_connected(uid):
                             logger.info("Grace period expired for disconnected user, performing full cleanup", extra={"user_id": uid})
-                            pending = discard_user_session(uid)
-                            if pending:
-                                await asyncio.gather(*pending, return_exceptions=True)
-
-                            cancel_user_cron_turns(uid)
-                            await MANAGER.aunregister_dispatcher(uid)
-                            _HANDSHAKE_LOCKS.pop(uid, None)
-                            discard_user(uid)
-                            REGISTRY.clear_runner_tools(uid)
-                            # 完整清理时清掉 per-user 进程本地状态，避免长跑部署下 dict 单调膨胀，防止 stale 的 _inflight_prompt 用 user_busy 锁掉下次 prompt.submit。
-                            _inflight_prompt.discard(uid)
-                            _inflight_interact.difference_update({(u, k) for u, k in _inflight_interact if u == uid})
-                            _last_interact_ts.pop(uid, None)
-                            _llm_cooldown_until.pop(uid, None)
-                            _last_check_affect_ts.pop(uid, None)
-                            _last_should_act_ts.pop(uid, None)
-                            AVATAR_JOB_LOCKS.pop(uid, None)
-                            MODEL_JOB_LOCKS.pop(uid, None)
+                            try:
+                                pending = discard_user_session(uid)
+                                if pending:
+                                    await asyncio.gather(*pending, return_exceptions=True)
+                            finally:
+                                cancel_user_cron_turns(uid)
+                                await MANAGER.aunregister_dispatcher(uid)
+                                _HANDSHAKE_LOCKS.pop(uid, None)
+                                discard_user(uid)
+                                REGISTRY.clear_runner_tools(uid)
+                                # 完整清理时清掉 per-user 进程本地状态，避免长跑部署下 dict 单调膨胀，防止 stale 的 _inflight_prompt 用 user_busy 锁掉下次 prompt.submit。
+                                _inflight_prompt.discard(uid)
+                                _inflight_interact.difference_update({(u, k) for u, k in _inflight_interact if u == uid})
+                                _last_interact_ts.pop(uid, None)
+                                _llm_cooldown_until.pop(uid, None)
+                                _last_check_affect_ts.pop(uid, None)
+                                _last_should_act_ts.pop(uid, None)
+                                AVATAR_JOB_LOCKS.pop(uid, None)
+                                MODEL_JOB_LOCKS.pop(uid, None)
                     except asyncio.CancelledError:
                         pass
 
-                sess.grace_timer_task = asyncio.create_task(_grace_cleanup(user_id))
+                task = asyncio.create_task(_grace_cleanup(user_id))
+                _GRACE_TIMER_TASKS.add(task)
+                task.add_done_callback(_GRACE_TIMER_TASKS.discard)
+                sess.grace_timer_task = task
 
 
 async def _find_owned_conv(db: AsyncSession, user_id: int, session_id: str) -> Conversation | None:

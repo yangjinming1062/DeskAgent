@@ -594,6 +594,7 @@ def _event_payload(row: CompanionRoomBackdrop, persona: Persona | None) -> dict[
     if row.media_path and row.media_path.startswith("companion-assets/"):
         url = asset_store.signed_companion_asset_url(row.media_path) or url
     return {
+        "id": row.id,
         "backdrop_id": row.id,
         "url": url,
         "brief": row.brief,
