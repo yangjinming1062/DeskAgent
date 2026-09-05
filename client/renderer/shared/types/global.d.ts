@@ -61,7 +61,6 @@ declare global {
       refreshSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:refresh']>
       logout: AsyncIpc<IpcInvokeContract['spiritagent:auth:logout']>
       getSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:get-session']>
-      setCompanionWindowExpanded: (expanded: boolean) => Promise<void>
       api: <T = unknown>(request: SpiritAgentApiRequest) => Promise<T>
       /** 把后端服务的二进制资产以 data URL 的形式取回(见 connection.cjs)。 */
       apiAsset: AsyncIpc<IpcInvokeContract['spiritagent:api:asset']>
@@ -139,7 +138,6 @@ declare global {
       onRunnerStatus: EventSubscription<'spiritagent:runner:status'>
       onTrayLogout: EventSubscription<'spiritagent:tray:logout'>
       onTrayActivate: EventSubscription<'spiritagent:tray:activate'>
-      onTrayOpenChat: EventSubscription<'spiritagent:tray:open-chat'>
       onTrayResetPosition: EventSubscription<'spiritagent:tray:reset-position'>
       onUiThemeChanged: EventSubscription<'spiritagent:ui-theme-changed'>
       onPrefsHydrated: EventSubscription<'spiritagent:prefs-hydrated'>

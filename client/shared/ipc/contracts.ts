@@ -298,9 +298,6 @@ export interface IpcInvokeContract {
     | Promise<{ backendUnreachable?: boolean; error?: string; ok: boolean }>
   'spiritagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
 
-  // 窗口与界面
-  'spiritagent:window:set-companion-size': (payload: { expanded: boolean }) => Promise<void> | void
-
   // 入口面（互斥 living / workbench）
   'spiritagent:surface:open': (payload: DesktopSurfaceOpenPayload) => Promise<void> | void
   'spiritagent:surface:close': () => Promise<void> | void
@@ -418,7 +415,6 @@ export interface IpcEventContract {
   'spiritagent:surface:changed': [payload: DesktopSurfaceChangedEvent]
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
-  'spiritagent:tray:open-chat': []
   'spiritagent:tray:reset-position': []
   'spiritagent:ui-theme-changed': [payload: DesktopUiThemeBroadcast]
   'spiritagent:update-event': [payload: DesktopUpdateEvent]
@@ -451,7 +447,6 @@ export const IPC = {
     apiAsset: 'spiritagent:api:asset',
     apiAssetBuffer: 'spiritagent:api:asset-buffer',
     apiAssetModelUrl: 'spiritagent:api:asset-model-url',
-    windowSetCompanionSize: 'spiritagent:window:set-companion-size',
     readFileDataUrl: 'spiritagent:readFileDataUrl',
     readImageForAttach: 'spiritagent:readImageForAttach',
     selectPaths: 'spiritagent:selectPaths',
@@ -502,7 +497,6 @@ export const IPC = {
     surfaceChanged: 'spiritagent:surface:changed',
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
-    trayOpenChat: 'spiritagent:tray:open-chat',
     trayResetPosition: 'spiritagent:tray:reset-position',
     uiThemeChanged: 'spiritagent:ui-theme-changed',
     updateEvent: 'spiritagent:update-event'

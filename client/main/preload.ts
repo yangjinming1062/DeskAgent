@@ -75,7 +75,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
   onSessionExpired: (cb: () => void) => subscribe(IPC.event.authSessionExpired, cb),
   onTrayActivate: (cb: () => void) => subscribe(IPC.event.trayActivate, cb),
   onTrayLogout: (cb: () => void) => subscribe(IPC.event.trayLogout, cb),
-  onTrayOpenChat: (cb: () => void) => subscribe(IPC.event.trayOpenChat, cb),
   onTrayResetPosition: (cb: () => void) => subscribe(IPC.event.trayResetPosition, cb),
   onPrefsHydrated: (cb: (payload: DesktopPrefsHydrated) => void) => subscribe(IPC.event.prefsHydrated, cb),
   onUiThemeChanged: (cb: (payload: DesktopUiThemeBroadcast) => void) => subscribe(IPC.event.uiThemeChanged, cb),
@@ -100,8 +99,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
     set: (payload: SpiritAgentPrefsSet) => ipcRenderer.send(IPC.send.prefsSet, payload)
   },
   setUiTheme: (payload: SpiritAgentUiTheme) => ipcRenderer.send(IPC.send.uiTheme, payload),
-  setCompanionWindowExpanded: (expanded: boolean) =>
-    ipcRenderer.invoke(IPC.invoke.windowSetCompanionSize, { expanded }),
   shortcuts: {
     get: () => ipcRenderer.invoke(IPC.invoke.shortcutsGet),
     onChanged: (cb: (payload: DesktopShortcutsState) => void) => subscribe(IPC.event.shortcutsChanged, cb),
@@ -111,6 +108,7 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   surface: {
     close: () => ipcRenderer.invoke(IPC.invoke.surfaceClose),
+    focus: () => ipcRenderer.invoke(IPC.invoke.surfaceFocus),
     getState: () => ipcRenderer.invoke(IPC.invoke.surfaceGetState),
     isMaximized: () => ipcRenderer.invoke(IPC.invoke.surfaceIsMaximized),
     maximize: () => ipcRenderer.invoke(IPC.invoke.surfaceMaximize),

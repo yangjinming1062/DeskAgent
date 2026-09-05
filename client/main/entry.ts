@@ -562,12 +562,6 @@ function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
   mainWindow.setBounds(screen.getDisplayMatching(base).workArea)
 }
 
-// 设置面板挂在透明工作区窗口内，由 FloatingPanel 的 interactive region 接管交互；
-// 保持覆盖全屏 workArea，避免修改物理窗口尺寸引发视口变化与精灵落点漂移。
-function setCompanionWindowExpanded(_expanded: boolean): void {
-  /* no-op: 保留全屏透明工作区窗口 */
-}
-
 function createSpriteWindow(): void {
   const icon = getAppIconPath() || undefined
   mainWindow = new BrowserWindow({
@@ -880,10 +874,6 @@ registerUpdateIpc({
 registerSpriteIpc({
   deps: { getSpriteWindow: () => mainWindow, getUserDataDir: () => app.getPath('userData'), screen },
   ipcMain
-})
-
-ipcMain.handle(IPC.invoke.windowSetCompanionSize, (_evt, payload: { expanded: boolean }) => {
-  setCompanionWindowExpanded(payload?.expanded === true)
 })
 
 ipcMain.handle(IPC.invoke.runnerGetTools, async () => {
