@@ -35,7 +35,13 @@ export {
   showMediaHint,
   submitPendingBatch
 } from './chat-store'
-export { ChatContextAmbientLine, ChatContextCapsule, ContextProgressBar, formatTokenNumber, useContextStatus } from './context-progress-bar'
+export {
+  ChatContextAmbientLine,
+  ChatContextCapsule,
+  ContextProgressBar,
+  formatTokenNumber,
+  useContextStatus
+} from './context-progress-bar'
 export {
   $currentSessionKind,
   $currentSessionTitle,

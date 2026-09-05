@@ -6,7 +6,6 @@ import { $persona } from '@/companion/persona-store'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import {
-  ArrowRight,
   CalendarPlus,
   Globe,
   type IconComponent,
@@ -111,11 +110,7 @@ function emotionLabel(emotion: string): string {
   }
 }
 
-interface LivingRailProps {
-  onGoToWorkbench: () => void
-}
-
-export function LivingRail({ onGoToWorkbench }: LivingRailProps): React.JSX.Element {
+export function LivingRail(): React.JSX.Element {
   const persona = useStore($persona)
   const portrait = useStore($portraitUrl)
   const view = useStore($livingView)
@@ -165,11 +160,6 @@ export function LivingRail({ onGoToWorkbench }: LivingRailProps): React.JSX.Elem
           )
         })}
       </nav>
-
-      <button className={styles.workbenchButton} onClick={onGoToWorkbench} style={{ marginTop: 'auto' }} type="button">
-        <span>去工作台</span>
-        <ArrowRight size={13} />
-      </button>
     </aside>
   )
 }
