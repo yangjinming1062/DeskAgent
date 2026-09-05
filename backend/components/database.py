@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -35,3 +37,6 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield db
     finally:
         await db.close()
+
+
+DbSession = Annotated[AsyncSession, Depends(get_db)]

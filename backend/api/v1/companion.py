@@ -1,14 +1,9 @@
 import base64
 
 from common import get_router
-from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads
-from fastapi import Body, Depends, HTTPException, Request, Response, status
-from modules.auth import (
-    LoginRecord,
-    User,
-    get_current_session,
-    get_optional_current_session,
-)
+from components import SESSION_LOCAL, SETTINGS, DbSession, get_logger, safe_json_loads
+from fastapi import Body, HTTPException, Request, Response, status
+from modules.auth import CurrentUser, OptionalSession
 from modules.companion import (
     AvatarAssetResponse,
     AvatarFromImageRequest,
@@ -94,7 +89,6 @@ from services.companion import (
 from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
@@ -103,17 +97,15 @@ logger = get_logger(__name__)
 
 @router.get("/onboarding/state", response_model=OnboardingStateResponse)
 async def get_onboarding_state_route(
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> OnboardingStateResponse:
-    user, _ = auth
     result = await get_onboarding_state(db, user.id)
     return OnboardingStateResponse(**result)
 
 
 @router.get("/persona", response_model=PersonaResponse)
-async def get_persona(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> PersonaResponse:
-    user, _ = auth
+async def get_persona(user: CurrentUser, db: DbSession) -> PersonaResponse:
     persona = await get_or_create_persona(db, user.id)
     tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
     return PersonaResponse(
@@ -125,8 +117,7 @@ async def get_persona(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
 
 
 @router.put("/persona", response_model=PersonaResponse)
-async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> PersonaResponse:
-    user, _ = auth
+async def put_persona(body: PersonaUpdate, user: CurrentUser, db: DbSession) -> PersonaResponse:
     data = safe_json_loads(body.definition_json, default={})
     try:
         persona = await update_persona(db, user.id, data)
@@ -145,10 +136,9 @@ async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depe
 
 @router.post("/portrait/confirm", response_model=CompanionOperationResponse)
 async def post_portrait_confirm(
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> CompanionOperationResponse:
-    user, _ = auth
     try:
         await finalize_avatar(db, user.id)
     except AvatarSourceUnreadableError as exc:
@@ -159,8 +149,7 @@ async def post_portrait_confirm(
 
 
 @router.get("/expressions", response_model=ExpressionsListResponse)
-async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> ExpressionsListResponse:
-    user, _ = auth
+async def get_expressions(user: CurrentUser, db: DbSession) -> ExpressionsListResponse:
     rows = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user.id))).scalars().all()
     exprs = [
         {
@@ -180,18 +169,16 @@ async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_s
 # Hub 无 gateway；此 REST 接口镜像 gateway 的 tts.list_voices 方法。
 @router.get("/voices", response_model=VoicesListResponse)
 async def list_voices(
+    user: CurrentUser,
+    db: DbSession,
     language: str | None = None,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> VoicesListResponse:
-    user, _ = auth
     result = await list_tts_voices(db, user.id, language=normalize_voice_language(language))
     return VoicesListResponse(**result)
 
 
 @router.get("/avatar", response_model=AvatarAssetResponse)
-async def get_avatar(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AvatarAssetResponse:
-    user, _ = auth
+async def get_avatar(user: CurrentUser, db: DbSession) -> AvatarAssetResponse:
     asset = await get_active_avatar(db, user.id)
     if asset is None:
         raise HTTPException(status_code=404, detail="No avatar found")
@@ -203,10 +190,9 @@ async def get_avatar(auth: tuple[User, LoginRecord] = Depends(get_current_sessio
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar(
     request: Request,  # required by @limiter.limit
+    user: CurrentUser,
     body: AvatarGenerateRequest = Body(default_factory=AvatarGenerateRequest),
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> AvatarAssetResponse:
-    user, _ = auth
     async with SESSION_LOCAL() as pre_db:
         persona = await get_or_create_persona(pre_db, user.id)
         if not persona.is_complete:
@@ -244,10 +230,9 @@ def _decode_upload_image(image_b64: str | None, content_type: str | None) -> tup
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar_from_image(
     request: Request,  # required by @limiter.limit
+    user: CurrentUser,
     body: AvatarFromImageRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> AvatarAssetResponse:
-    user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     pres_raw, pres_content_type = _decode_upload_image(body.presentation_image, body.presentation_content_type)
     async with SESSION_LOCAL() as pre_db:
@@ -283,10 +268,9 @@ async def post_avatar_from_image(
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar_upload(
     request: Request,  # required by @limiter.limit
+    user: CurrentUser,
     body: AvatarUploadRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> AvatarAssetResponse:
-    user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     if not raw:
         raise HTTPException(status_code=400, detail="Invalid image data")
@@ -311,15 +295,13 @@ async def post_avatar_upload(
 
 
 @router.get("/avatar/history", response_model=AvatarHistoryResponse)
-async def get_avatar_history(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AvatarHistoryResponse:
-    user, _ = auth
+async def get_avatar_history(user: CurrentUser, db: DbSession) -> AvatarHistoryResponse:
     history = await list_avatar_history(db, user.id)
     return AvatarHistoryResponse(history=[avatar_response(a) for a in history])
 
 
 @router.put("/avatar/{avatar_id}/select", response_model=AvatarAssetResponse)
-async def put_avatar_select(avatar_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AvatarAssetResponse:
-    user, _ = auth
+async def put_avatar_select(avatar_id: int, user: CurrentUser, db: DbSession) -> AvatarAssetResponse:
     try:
         asset = await select_avatar(db, user.id, avatar_id)
     except AvatarNotFoundError as exc:
@@ -335,10 +317,9 @@ async def post_fullbody_front_2d(
     request: Request,
     avatar_id: int,
     body: Fullbody2dFrontGenerateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> AvatarAssetResponse:
-    user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     ref_b64 = base64.b64encode(raw).decode("utf-8") if raw else None
     try:
@@ -373,10 +354,9 @@ async def post_fullbody_front_3d(
     request: Request,
     avatar_id: int,
     body: Fullbody3dSeedGenerateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> AvatarAssetResponse:
-    user, _ = auth
     try:
         asset = await generate_fullbody_front_3d(db, user.id, avatar_id=avatar_id, feedback=body.feedback)
     except AvatarNotFoundError as exc:
@@ -399,10 +379,9 @@ async def post_fullbody_back(
     request: Request,
     avatar_id: int,
     body: Fullbody3dSeedGenerateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> AvatarAssetResponse:
-    user, _ = auth
     try:
         asset = await generate_fullbody_back(db, user.id, avatar_id=avatar_id, feedback=body.feedback)
     except AvatarNotFoundError as exc:
@@ -425,10 +404,9 @@ async def post_fullbody_confirm_front(
     request: Request,
     avatar_id: int,
     body: FullbodyConfirmFrontRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> AvatarAssetResponse:
-    user, _ = auth
     try:
         asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url)
     except AvatarNotFoundError as exc:
@@ -443,8 +421,7 @@ async def post_fullbody_confirm_front(
 
 
 @router.get("/model", response_model=Companion3DModelResponse | None)
-async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion3DModelResponse | None:
-    user, _ = auth
+async def get_model(user: CurrentUser, db: DbSession) -> Companion3DModelResponse | None:
     model = await get_active_model(db, user.id)
     if model is None:
         return None
@@ -455,11 +432,10 @@ async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session
 @limiter.limit(f"{SETTINGS.companion_model_generate_rate_limit_per_minute}/minute")
 async def post_model(
     request: Request,  # required by @limiter.limit
+    user: CurrentUser,
+    db: DbSession,
     body: ModelGenerateRequest = Body(default_factory=ModelGenerateRequest),
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> Companion3DModelResponse:
-    user, _ = auth
     try:
         model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider, force=body.force)
     except ModelGenerationInProgressError as exc:
@@ -475,14 +451,12 @@ async def post_model(
 
 
 @router.get("/2d", response_model=Companion2DModelResponse | None)
-async def get_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion2DModelResponse | None:
-    user, _ = auth
+async def get_mesh2d(user: CurrentUser, db: DbSession) -> Companion2DModelResponse | None:
     return await get_active_mesh2d_response(db, user.id)
 
 
 @router.post("/2d", response_model=Companion2DModelResponse, status_code=status.HTTP_202_ACCEPTED)
-async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion2DModelResponse:
-    user, _ = auth
+async def post_mesh2d(user: CurrentUser, db: DbSession) -> Companion2DModelResponse:
     try:
         persona = await get_or_create_persona(db, user.id)
         priority = "low" if persona.render_mode == "3d" else "high"
@@ -496,8 +470,7 @@ async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
 
 
 @router.post("/render-mode", response_model=PersonaResponse)
-async def post_render_mode(body: RenderModeRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> PersonaResponse:
-    user, _ = auth
+async def post_render_mode(body: RenderModeRequest, user: CurrentUser, db: DbSession) -> PersonaResponse:
     persona = await set_render_mode(db, user_id=user.id, render_mode=body.render_mode)
 
     if body.render_mode == "3d":
@@ -525,8 +498,7 @@ def _outfit_http_error(exc: OutfitError) -> HTTPException:
 
 
 @router.get("/outfits", response_model=OutfitListResponse)
-async def get_outfits(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> OutfitListResponse:
-    user, _ = auth
+async def get_outfits(user: CurrentUser, db: DbSession) -> OutfitListResponse:
     outfits = await list_outfits(db, user.id)
     return OutfitListResponse(outfits=[outfit_response(o) for o in outfits])
 
@@ -537,10 +509,9 @@ async def get_outfits(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
 async def post_outfit(
     request: Request,  # required by @limiter.limit
     body: OutfitCreateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> OutfitResponse:
-    user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     try:
         outfit = await create_outfit_draft(db, user.id, description=body.description, image=raw, content_type=content_type)
@@ -558,10 +529,9 @@ async def post_outfit_regenerate(
     request: Request,  # required by @limiter.limit
     outfit_id: int,
     body: OutfitRegenerateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> OutfitResponse:
-    user, _ = auth
     try:
         outfit = await regenerate_outfit_draft(db, user.id, outfit_id, feedback=body.feedback)
     except OutfitError as exc:
@@ -575,10 +545,9 @@ async def post_outfit_regenerate(
 @router.post("/outfits/{outfit_id}/confirm", response_model=OutfitResponse)
 async def post_outfit_confirm(
     outfit_id: int,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> OutfitResponse:
-    user, _ = auth
     try:
         outfit = await confirm_outfit(db, user.id, outfit_id)
     except OutfitError as exc:
@@ -589,10 +558,9 @@ async def post_outfit_confirm(
 @router.put("/outfits/{outfit_id}/activate", response_model=OutfitResponse)
 async def put_outfit_activate(
     outfit_id: int,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> OutfitResponse:
-    user, _ = auth
     try:
         outfit = await activate_outfit(db, user.id, outfit_id)
     except OutfitError as exc:
@@ -603,10 +571,9 @@ async def put_outfit_activate(
 @router.delete("/outfits/{outfit_id}", response_model=CompanionOperationResponse)
 async def delete_outfit_route(
     outfit_id: int,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> CompanionOperationResponse:
-    user, _ = auth
     try:
         await delete_outfit(db, user.id, outfit_id)
     except OutfitError as exc:
@@ -621,9 +588,9 @@ public_router = get_router()
 async def serve_avatar_file(
     request: Request,
     filename: str,
+    session: OptionalSession,
     expires: int | None = None,
     sig: str | None = None,
-    session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session),
 ) -> Response:
     if session is None and not verify_signed_avatar_request(filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
@@ -639,9 +606,9 @@ async def serve_companion_asset(
     request: Request,
     user_id: int,
     filename: str,
+    session: OptionalSession,
     expires: int | None = None,
     sig: str | None = None,
-    session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session),
 ) -> Response:
     is_authed = session is not None and (session[0].id == user_id)
     if not is_authed and not verify_signed_asset_request(user_id, filename, expires, sig):
@@ -658,9 +625,9 @@ async def serve_model_file(
     request: Request,
     user_id: int,
     filename: str,
+    session: OptionalSession,
     expires: int | None = None,
     sig: str | None = None,
-    session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session),
 ) -> Response:
     is_authed = session is not None and (session[0].id == user_id)
     if not is_authed and not verify_signed_asset_request(user_id, filename, expires, sig):

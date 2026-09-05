@@ -11,13 +11,13 @@ from components import (
     SETTINGS,
     STT_MAX_AUDIO_BYTES,
     TTS_MAX_TEXT_CHARS,
-    get_db,
+    DbSession,
     get_file_path,
     get_logger,
 )
-from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from modules.auth import LoginRecord, User, get_current_session
+from modules.auth import CurrentUser
 from services.llm import (
     MissingLlmConfigError,
     classify_api_error,
@@ -32,7 +32,6 @@ from services.media import (
     video_mime_for_ext,
 )
 from services.rate_limit import limiter
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ._http_errors import classified_http_exception, missing_config_http
 
@@ -112,10 +111,10 @@ async def serve_session_video(session_id: str, file_id: str) -> FileResponse:
 @limiter.limit(f"{SETTINGS.media_video_rate_limit_per_minute}/minute")
 async def upload_chat_video(
     request: Request,
+    db: DbSession,
+    _user: CurrentUser,
     file: UploadFile | None = File(None),
     session_id: str = Form(""),
-    db: AsyncSession = Depends(get_db),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> dict[str, Any]:
     """聊天视频附件上传：落会话目录（滚动配额）并返回附件 URL（本地相对 / 公网绝对）。"""
     if file is None:
@@ -165,12 +164,11 @@ async def upload_chat_video(
 @limiter.limit(f"{SETTINGS.media_stt_rate_limit_per_minute}/minute")
 async def speech_to_text(
     request: Request,
+    user: CurrentUser,
     audio_file: UploadFile | None = File(None),
     file: UploadFile | None = File(None),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> dict[str, Any]:
     """走供应商链路的语音转写（仅 MiMo 注册了 STT）。"""
-    user, _ = auth_data
     target_file = audio_file or file
     if target_file is None:
         raise HTTPException(
@@ -227,9 +225,8 @@ async def _extract_request_data(request: Request) -> dict[str, Any]:
 
 @router.post("/tts")
 @limiter.limit(f"{SETTINGS.media_tts_rate_limit_per_minute}/minute")
-async def text_to_speech(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> StreamingResponse:
+async def text_to_speech(request: Request, user: CurrentUser) -> StreamingResponse:
     """走供应商链路的语音合成（MiMo TTS 或 MiniMax TTS），接受 JSON 或 Form body。"""
-    user, _ = auth_data
     data = await _extract_request_data(request)
     text = str(data.get("text") or "").strip()
     voice = str(data.get("voice") or "").strip()

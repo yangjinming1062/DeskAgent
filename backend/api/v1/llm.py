@@ -2,8 +2,8 @@ from typing import Any
 
 from common import get_router
 from components import SESSION_LOCAL, SETTINGS, get_logger
-from fastapi import Depends, HTTPException, Request
-from modules.auth import LoginRecord, User, get_current_session
+from fastapi import HTTPException, Request
+from modules.auth import CurrentUser
 from modules.system import CompletionResponse
 from pydantic import BaseModel
 from services.llm import MissingLlmConfigError, ServiceType, call_with_retry, classify_api_error, execute_with_fallback, resolve_context_tokens, resolve_provider_chain
@@ -28,9 +28,8 @@ class CompletionRequest(BaseModel):
 @router.post("/completion", response_model=CompletionResponse)
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_minute}/minute")
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_ip_per_minute}/minute", key_func=get_remote_address)
-async def create_completion(req: CompletionRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session)) -> CompletionResponse:
+async def create_completion(req: CompletionRequest, request: Request, user: CurrentUser) -> CompletionResponse:
     """Desktop Runner 代理 LLM 调用的无状态补全端点：错误响应走非泄露分类信封（异常细节留在服务端日志，renderer 只看到 {error, reason, status}，reason 为稳定 FailoverReason 枚举值，对应 docs/ARCHITECTURE.md §3.1 的 -32603 约束）；调用走 provider 链路，首个供应商遇鉴权/计费/模型不存在错误时自动透明切换下一家。"""
-    user, _login_record = current
 
     async def _call(provider: Any) -> Any:
         client = provider.raw_client()

@@ -6,10 +6,10 @@ import zipfile
 from pathlib import Path
 
 from common import get_or_404, get_router, list_response
-from components import apply_partial, get_db, sha512_b64
-from fastapi import Depends, File, Form, HTTPException, UploadFile
+from components import DbSession, apply_partial, sha512_b64
+from fastapi import File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from modules.auth import get_current_admin_token
+from modules.auth import CurrentAdmin
 from modules.system import MessageResponse, ReleaseManifestResponse
 from modules.update import UpdateVersion, UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
 from services.update import ALLOWED_ARCHIVE_SUFFIXES, CHUNK_SIZE, DOWNLOAD_SUFFIXES, VERSIONS_DIR, build_manifest
@@ -37,19 +37,19 @@ def _pick_asset(versions_dir: Path, *patterns: str) -> Path | None:
 
 
 @router.get("/latest.yml", response_model=ReleaseManifestResponse)
-async def get_latest_yml(db: AsyncSession = Depends(get_db)) -> ReleaseManifestResponse:
+async def get_latest_yml(db: DbSession) -> ReleaseManifestResponse:
     latest = await _get_latest(db)
     return ReleaseManifestResponse(**build_manifest(latest, latest.exe_filename, latest.exe_sha512, latest.exe_size))
 
 
 @router.get("/latest-mac.yml", response_model=ReleaseManifestResponse)
-async def get_latest_mac_yml(db: AsyncSession = Depends(get_db)) -> ReleaseManifestResponse:
+async def get_latest_mac_yml(db: DbSession) -> ReleaseManifestResponse:
     latest = await _get_latest(db)
     return ReleaseManifestResponse(**build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size))
 
 
 @router.get("/latest-runner.yml", response_class=FileResponse)
-async def get_latest_runner_yml(db: AsyncSession = Depends(get_db)) -> FileResponse:
+async def get_latest_runner_yml(db: DbSession) -> FileResponse:
     """提供 Build-UpdateZip 写入的签名 runner manifest：desktop 主进程在重启前读取它、本地暂存 wheel + server.py，校验通过后才允许点 "Restart"；下次启动由新 Electron 跑 installPending 执行 pip install --upgrade 并覆盖 server.py。"""
     latest = await _get_latest(db)
     if not latest.runner_filename:
@@ -61,7 +61,7 @@ async def get_latest_runner_yml(db: AsyncSession = Depends(get_db)) -> FileRespo
 
 
 @router.get("/versions", response_model=UpdateVersionListResponse)
-async def list_versions(_admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UpdateVersionListResponse:
+async def list_versions(_admin: CurrentAdmin, db: DbSession) -> UpdateVersionListResponse:
     records = (await db.execute(select(UpdateVersion).order_by(UpdateVersion.created_at.desc()))).scalars().all()
     return list_response(records, UpdateVersionItem, UpdateVersionListResponse)
 
@@ -86,10 +86,10 @@ def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
 
 @router.post("/versions", response_model=UpdateVersionItem, status_code=201)
 async def create_version(
+    admin: CurrentAdmin,
+    db: DbSession,
     file: UploadFile = File(...),
     release_notes: str = Form(""),
-    _admin: str = Depends(get_current_admin_token),
-    db: AsyncSession = Depends(get_db),
 ) -> UpdateVersionItem:
     # Squirrel 构建产物 zip，必须含 *.exe。
     if not file.filename or not file.filename.endswith(".zip"):
@@ -159,7 +159,7 @@ async def create_version(
         runner_size=wheel_file.stat().st_size if wheel_file else None,
         runner_version=version if wheel_file else None,
         is_active=True,
-        created_by=_admin,
+        created_by=admin,
     )
     db.add(record)
     await db.commit()
@@ -168,7 +168,7 @@ async def create_version(
 
 
 @router.patch("/versions/{id}", response_model=UpdateVersionItem)
-async def update_version(id: int, payload: UpdateVersionUpdate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UpdateVersionItem:
+async def update_version(id: int, payload: UpdateVersionUpdate, _admin: CurrentAdmin, db: DbSession) -> UpdateVersionItem:
     record = await get_or_404(db, UpdateVersion, id=id, detail="Version not found")
     apply_partial(record, payload)
     await db.commit()
@@ -176,7 +176,7 @@ async def update_version(id: int, payload: UpdateVersionUpdate, _admin: str = De
 
 
 @router.delete("/versions/{id}", response_model=MessageResponse)
-async def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
+async def delete_version(id: int, _admin: CurrentAdmin, db: DbSession) -> MessageResponse:
     record = await get_or_404(db, UpdateVersion, id=id, detail="Version not found")
     versions_dir = VERSIONS_DIR / record.version
     if versions_dir.exists():
@@ -187,7 +187,7 @@ async def delete_version(id: int, _admin: str = Depends(get_current_admin_token)
 
 
 @router.get("/{filename:path}", response_class=FileResponse)
-async def get_latest_file(filename: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+async def get_latest_file(filename: str, db: DbSession) -> FileResponse:
     latest = await _get_latest(db)
     if not any(filename.endswith(s) for s in DOWNLOAD_SUFFIXES):
         raise HTTPException(status_code=400, detail="Invalid filename")

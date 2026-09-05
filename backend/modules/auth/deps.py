@@ -67,3 +67,15 @@ async def get_optional_current_session(
         return await get_current_session(credentials, db)
     except HTTPException:
         return None
+
+
+async def get_current_user(
+    session: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> User:
+    return session[0]
+
+
+async def get_current_login_record(
+    session: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> LoginRecord:
+    return session[1]

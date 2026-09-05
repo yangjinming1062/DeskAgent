@@ -71,7 +71,7 @@ from .constants import (
     VIDEO_INLINE_MAX_PER_REQUEST,
 )
 from .correlation import REQUEST_ID_HEADER, adopt_inbound, begin_local_scope, correlated_exception_response, correlation_id_middleware, new_request_id
-from .database import ENGINE, SESSION_LOCAL, get_db, session_scope
+from .database import ENGINE, SESSION_LOCAL, DbSession, get_db, session_scope
 from .functions import (
     apply_partial,
     approx_text_tokens,
@@ -121,6 +121,7 @@ __all__ = [
     "CONTEXT_SUMMARY_HEADROOM_FACTOR",
     "DEFAULT_LANGUAGE",
     "DEFAULT_SESSION_TITLE",
+    "DbSession",
     "ENGINE",
     "JSONRPC_INTERNAL_ERROR",
     "JSONRPC_INVALID_PARAMS",

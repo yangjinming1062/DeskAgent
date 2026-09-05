@@ -1,22 +1,18 @@
 from datetime import timedelta
 
 from common import get_router
-from components import SETTINGS, get_db, utc_now
-from fastapi import Depends
-from modules.auth import LoginRecord, User, get_current_session
+from components import SETTINGS, DbSession, utc_now
+from modules.auth import CurrentUser, LoginRecord
 from modules.conversation import Conversation
 from modules.system import StatusResponse
 from services.ws import MANAGER
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
 
 @router.get("", response_model=StatusResponse)
-async def status(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> StatusResponse:
-    user, _login_record = current
-
+async def status(user: CurrentUser, db: DbSession) -> StatusResponse:
     login_count = (await db.execute(select(func.count()).select_from(LoginRecord).where(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)))).scalar_one()
 
     window_start = utc_now() - timedelta(minutes=SETTINGS.chat_active_window_minutes)

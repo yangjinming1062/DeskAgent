@@ -9,10 +9,11 @@ from datetime import datetime
 from pathlib import Path
 
 from common import get_or_404, get_router, list_response
-from components import SETTINGS, apply_partial, get_db, get_logger
+from components import SETTINGS, DbSession, apply_partial, get_logger
 from fastapi import Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from modules.auth import (
+    CurrentAdmin,
     User,
     UserCreate,
     UserListResponse,
@@ -48,12 +49,11 @@ from services.user_backup import (
 )
 from services.ws import MANAGER, cancel_user_cron_turns, discard_user
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
 logger = get_logger(__name__)
 
-router = get_router()
+router = get_router(dependencies=[Depends(get_current_admin_token)])
 
 # 用户备份 zip 大小上限 500 MB；上传也按此截断以免 OOM。
 ARCHIVE_MAX_BYTES = 500 * 1024 * 1024
@@ -76,17 +76,17 @@ INSERT_ORDER = (
 
 
 @router.get("/users", response_model=UserListResponse)
-async def list_users(_admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserListResponse:
+async def list_users(db: DbSession) -> UserListResponse:
     return list_response((await db.execute(select(User).order_by(User.id))).scalars().all(), UserResponse, UserListResponse)
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+async def get_user(user_id: int, db: DbSession) -> UserResponse:
     return UserResponse.model_validate(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
 
 
 @router.post("/users", response_model=UserResponse)
-async def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+async def create_user(payload: UserCreate, db: DbSession) -> UserResponse:
     if (await db.execute(select(User).where(User.username == payload.username))).scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
     raw_token = generate_activation_token()
@@ -99,7 +99,7 @@ async def create_user(payload: UserCreate, _admin: str = Depends(get_current_adm
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
-async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+async def update_user(user_id: int, payload: UserUpdate, db: DbSession) -> UserResponse:
     user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
     if payload.regenerate_token:
         raw_token = generate_activation_token()
@@ -129,7 +129,7 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
-async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
+async def delete_user(user_id: int, db: DbSession) -> MessageResponse:
     await get_or_404(db, User, id=user_id, detail="用户不存在。")
     # 主动踢掉活动 WS，让被删除用户的 renderer 干净断开。
     ws = MANAGER.active_connections.get(user_id)
@@ -168,7 +168,7 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
 
 
 @router.patch("/users/{user_id}/toggle-active")
-async def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+async def toggle_user_active(user_id: int, db: DbSession) -> UserResponse:
     user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
     user.is_active = not user.is_active
     await db.commit()
@@ -203,18 +203,18 @@ def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
 
 
 @router.get("/model-configs", response_model=UserModelConfigListResponse)
-async def list_model_configs(_admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserModelConfigListResponse:
+async def list_model_configs(db: DbSession) -> UserModelConfigListResponse:
     return UserModelConfigListResponse(items=[_config_list_item(r) for r in (await db.execute(select(UserModelConfig))).scalars().all()])
 
 
 @router.get("/runtime-info")
-async def runtime_info(_admin: str = Depends(get_current_admin_token)) -> dict:
+async def runtime_info() -> dict:
     """把 ``public_base_url`` 暴露给 admin 页：创建账号时自动填进激活码的 ``baseUrl``，留空时前端再降级到 ``http://localhost:10620``。"""
     return {"public_base_url": SETTINGS.public_base_url or ""}
 
 
 @router.put("/{user_id}/model-config")
-async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
+async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, db: DbSession) -> MessageResponse:
     # 管理员写入必须三字段齐全；行内字段不全会静默打断用户聊天链路（PROTOCOL §5.4）。
     if not (payload.llm_base_url and payload.llm_api_key and payload.llm_model_name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="base_url、api_key、model_name 三字段必填。")
@@ -233,7 +233,7 @@ async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _ad
 
 
 @router.delete("/{user_id}/model-config")
-async def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
+async def delete_model_config(user_id: int, db: DbSession) -> MessageResponse:
     await db.delete(await get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
     await db.commit()
     return {"message": "模型配置已删除。"}
@@ -247,8 +247,8 @@ async def delete_model_config(user_id: int, _admin: str = Depends(get_current_ad
 @router.get("/users/{user_id}/export")
 async def export_user_backup(
     user_id: int,
-    _admin: str = Depends(get_current_admin_token),
-    db: AsyncSession = Depends(get_db),
+    admin: CurrentAdmin,
+    db: DbSession,
 ) -> FileResponse:
     user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
     rows_by_table = {tbl: await serialize_rows(db, tbl, user_id) for tbl in TABLES}
@@ -258,7 +258,7 @@ async def export_user_backup(
     os.close(fd)
     try:
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("manifest.json", json.dumps(build_manifest(user, rows_by_table, _admin), ensure_ascii=False))
+            zf.writestr("manifest.json", json.dumps(build_manifest(user, rows_by_table, admin), ensure_ascii=False))
             for tbl, rs in rows_by_table.items():
                 zf.writestr(f"db/{tbl}.json", json.dumps({"table": tbl, "rows": rs}, ensure_ascii=False))
             for src in files:
@@ -279,10 +279,9 @@ async def export_user_backup(
 @router.post("/users/{user_id}/import")
 async def import_user_backup(
     user_id: int,
+    db: DbSession,
     file: UploadFile = File(...),
     mode: str = "overwrite",
-    _admin: str = Depends(get_current_admin_token),
-    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """从 zip 恢复用户的角色资产到目标用户。mode=overwrite 先清空；mode=merge 跳过唯一 per-user 表。"""
     if mode not in ("overwrite", "merge"):

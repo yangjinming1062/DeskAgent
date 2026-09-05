@@ -1,9 +1,9 @@
 import json
 
 from common import get_or_404, get_router
-from components import get_db, get_logger
+from components import DbSession, get_logger
 from fastapi import Depends, HTTPException, Response, status
-from modules.auth import LoginRecord, User, get_current_session
+from modules.auth import CurrentUser, User, get_current_session
 from modules.channels import (
     BindingInfo,
     ChannelBinding,
@@ -36,9 +36,8 @@ async def _list_peers(db: AsyncSession, binding_id: int) -> PeerListResponse:
 
 
 @router.get("", response_model=ChannelListResponse)
-async def list_channels(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> ChannelListResponse:
+async def list_channels(user: CurrentUser, db: DbSession) -> ChannelListResponse:
     """注册表能力位 + 当前用户各渠道绑定状态；凭据字段永不出现。"""
-    user, _ = auth
     bindings = {b.channel: b for b in (await db.execute(select(ChannelBinding).where(ChannelBinding.user_id == user.id))).scalars().all()}
     items = []
     for info in channels_info():
@@ -58,11 +57,10 @@ async def list_channels(auth: tuple[User, LoginRecord] = Depends(get_current_ses
 async def put_binding(
     channel: str,
     body: ChannelBindingPutRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> BindingInfo:
     """创建/更新渠道绑定（config 落 config_json）并重启适配器；需要登录的渠道（P1 微信）进入 login_pending。"""
-    user, _ = auth
     cls = try_resolve(channel)
     if cls is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown channel: {channel}")
@@ -84,11 +82,10 @@ async def put_binding(
 @router.delete("/{channel}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_binding(
     channel: str,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> Response:
     """停用并删除绑定（peers 级联清除；im 会话行保留沉淀为历史，重建绑定时新开会话）。"""
-    user, _ = auth
     binding = await _get_binding(db, user, channel)
     if binding is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Binding not found")
@@ -101,10 +98,9 @@ async def delete_binding(
 @router.get("/{channel}/peers", response_model=PeerListResponse)
 async def list_peers(
     channel: str,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> PeerListResponse:
-    user, _ = auth
     binding = await get_or_404(db, ChannelBinding, detail="Binding not found", user_id=user.id, channel=channel)
     return await _list_peers(db, binding.id)
 
@@ -114,11 +110,10 @@ async def act_on_peer(
     channel: str,
     peer_id: str,
     body: PeerActionRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> PeerListResponse:
     """对端审批：approve/block 改状态，delete 删行；返回操作后的全量列表便于前端就地刷新。"""
-    user, _ = auth
     binding = await get_or_404(db, ChannelBinding, detail="Binding not found", user_id=user.id, channel=channel)
     peer = await get_or_404(db, ChannelPeer, detail="Peer not found", binding_id=binding.id, peer_id=peer_id)
     if body.action == "delete":
@@ -134,11 +129,10 @@ WEIXIN_CHANNEL = "weixin_ilink"
 
 @router.post("/weixin/login", response_model=ChannelLoginStateResponse)
 async def start_weixin_login(
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> ChannelLoginStateResponse:
     """启动微信扫码登录：建/置绑定 login_pending → 重启适配器（停在等登录）→ 拉起登录任务返回首帧状态。"""
-    user, _ = auth
     if try_resolve(WEIXIN_CHANNEL) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="weixin channel not registered")
     binding = await _get_binding(db, user, WEIXIN_CHANNEL)
@@ -157,9 +151,8 @@ async def start_weixin_login(
 
 
 @router.get("/weixin/login", response_model=ChannelLoginStateResponse)
-async def weixin_login_state(auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> ChannelLoginStateResponse:
+async def weixin_login_state(user: CurrentUser) -> ChannelLoginStateResponse:
     """轮询登录状态（Hub 2s 一拉）：state ∈ wait|scaned|confirmed|expired|error；适配器未运行时按绑定态回放。"""
-    user, _ = auth
     adapter = MANAGER.adapter(user.id, WEIXIN_CHANNEL)
     if adapter is not None:
         return ChannelLoginStateResponse(**(await adapter.login_state()))
@@ -170,11 +163,10 @@ async def weixin_login_state(auth: tuple[User, LoginRecord] = Depends(get_curren
 @router.post("/{channel}/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_channel(
     channel: str,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> Response:
     """渠道登出：清凭据（适配器侧完成状态迁移与事件）；run 循环自会回到等登录态，无需重启任务。"""
-    user, _ = auth
     binding = await _get_binding(db, user, channel)
     if binding is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Binding not found")

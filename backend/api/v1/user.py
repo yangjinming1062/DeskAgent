@@ -1,8 +1,10 @@
 from common import get_router
-from components import SETTINGS, get_db, utc_now
-from fastapi import Depends, HTTPException, Request, status
+from components import SETTINGS, DbSession, utc_now
+from fastapi import HTTPException, Request, status
 from modules.auth import (
     ActivateRequest,
+    CurrentLogin,
+    CurrentUser,
     LoginRecord,
     RefreshRequest,
     TokenResponse,
@@ -10,14 +12,12 @@ from modules.auth import (
     UserInfo,
     create_access_token,
     decode_activation_code,
-    get_current_session,
     hash_activation_token,
 )
 from modules.system import MessageResponse
 from services.rate_limit import limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 WS_TICKET_TTL_SECONDS = 60
 
@@ -29,7 +29,7 @@ router = get_router()
 
 @router.post("/activate", response_model=TokenResponse)
 @limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
-async def activate(payload: ActivateRequest, request: Request, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def activate(payload: ActivateRequest, request: Request, db: DbSession) -> TokenResponse:
     """用激活码换取会话 JWT：激活码是 base64url JSON {b, t}，t 字段经哈希后按 activation_token_hash 查用户；成功后流程同旧登录（停用旧会话、签发 JWT、写 LoginRecord）。"""
     try:
         _base_url, raw_token = decode_activation_code(payload.code)
@@ -66,9 +66,8 @@ async def activate(payload: ActivateRequest, request: Request, db: AsyncSession 
 
 
 @router.post("/ws-ticket", response_model=TokenResponse)
-async def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
+async def mint_ws_ticket(user: CurrentUser) -> TokenResponse:
     """签发仅供 WS 的短期 JWT，避免 renderer 持有长寿命 bearer。"""
-    user, _session = current
     token, expires_in, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=WS_TICKET_TTL_SECONDS, purpose="ws")
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
 
@@ -77,10 +76,10 @@ async def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current
 async def refresh_session(
     payload: RefreshRequest,
     request: Request,
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    login_record: CurrentLogin,
+    db: DbSession,
 ) -> TokenResponse:
-    user, login_record = current
     now = utc_now()
 
     login_record.is_active = False
@@ -107,8 +106,7 @@ async def refresh_session(
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> MessageResponse:
-    _user, login_record = current
+async def logout(login_record: CurrentLogin, db: DbSession) -> MessageResponse:
     login_record.is_active = False
     login_record.logout_at = utc_now()
     db.add(login_record)

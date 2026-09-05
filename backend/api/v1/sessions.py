@@ -7,13 +7,13 @@ from components import (
     SESSION_PREVIEW_MAX_CHARS,
     SETTINGS,
     SQL_LIKE_ESCAPE_CHAR,
+    DbSession,
     attachments_gc_session,
-    get_db,
     get_logger,
     temp_files_gc_session,
 )
-from fastapi import Depends, HTTPException, Query
-from modules.auth import LoginRecord, User, get_current_session
+from fastapi import HTTPException, Query
+from modules.auth import CurrentUser, User
 from modules.conversation import (
     Conversation,
     DesktopSessionForkRequest,
@@ -42,7 +42,7 @@ from services.ws import MANAGER, JsonRpcError
 from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = get_router(dependencies=[Depends(get_current_session)])
+router = get_router()
 
 logger = get_logger(__name__)
 
@@ -96,16 +96,15 @@ async def _get_conversation_or_404(db: AsyncSession, user: User, session_id: str
 
 @router.get("", response_model=DesktopSessionListResponse)
 async def list_sessions(
+    user: CurrentUser,
+    db: DbSession,
     limit: int = 40,
     offset: int = 0,
     min_messages: int = 0,
     archived: Literal["only", "exclude", "include"] = "exclude",
     order: Literal["recent", "created", "messages"] = "recent",
     include_subagents: bool = False,
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionListResponse:
-    user, _ = current
     q = select(Conversation, _preview_subquery).where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
 
     msg_stats = (
@@ -195,14 +194,12 @@ async def list_sessions(
 
 @router.get("/search", response_model=DesktopSessionSearchResponse)
 async def search_sessions(
+    user: CurrentUser,
+    db: DbSession,
     q: str = Query(..., min_length=1, description="Substring to match against title, message content, and id"),
     archived: Literal["only", "exclude", "include"] = "exclude",
-    current: tuple[User, object] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionSearchResponse:
     """按标题、会话 id 或会话内任意消息检索；每用户最多 20 条（按最近活跃排序），q 必填且限长。"""
-    user, _ = current
-
     # 限制搜索词长度——LIKE 对多 KB 字符串慢，无 UX 理由让用户搜 10k 字符。
     if len(q) > SEARCH_INPUT_MAX_LEN:
         q = q[:SEARCH_INPUT_MAX_LEN]
@@ -279,13 +276,12 @@ async def search_sessions(
 
 @router.get("/{session_id}/messages", response_model=DesktopSessionMessagesResponse)
 async def get_session_messages(
+    user: CurrentUser,
+    db: DbSession,
     session_id: str,
     before_id: int | None = Query(default=None, ge=0, description="取 id < before_id 的更早历史，配合 next_cursor 翻页"),
     limit: int | None = Query(default=None, ge=1, le=1000, description="单次返回条数上限"),
-    current: tuple[User, object] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionMessagesResponse:
-    user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
     result = await build_session_messages(conv.id, db, before_id=before_id, limit=limit)
     return DesktopSessionMessagesResponse(session_id=str(conv.id), messages=result)
@@ -293,12 +289,11 @@ async def get_session_messages(
 
 @router.patch("/{session_id}", response_model=DesktopSessionOperationResponse)
 async def patch_session(
+    user: CurrentUser,
+    db: DbSession,
     session_id: str,
     body: DesktopSessionPatchRequest,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionOperationResponse:
-    user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
     if conv.kind == SPECIAL_KIND or not conv.is_renamable:
         raise HTTPException(status_code=403, detail="System preset conversations cannot be modified or deleted")
@@ -320,13 +315,12 @@ async def patch_session(
 
 @router.post("/{session_id}/fork", response_model=DesktopSessionForkResponse)
 async def fork_session(
+    user: CurrentUser,
+    db: DbSession,
     session_id: str,
     body: DesktopSessionForkRequest,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionForkResponse:
     """从源会话派生新会话：复制 1..source_message_id 共 N 条消息到 kind='standard' 的新会话（复制行按已发送历史对待）；返回 SessionResumeResult 形态（session_id/messages/message_count）。"""
-    user, _ = current
     try:
         result = await fork_conversation_from_message(db, user.id, session_id, body.source_message_id)
     except ForkNotAllowedError as e:
@@ -338,16 +332,16 @@ async def fork_session(
 
 @router.post("/{session_id}/undo-to-message", response_model=DesktopSessionUndoResponse)
 async def undo_to_message(
+    user: CurrentUser,
+    db: DbSession,
     session_id: str,
     body: DesktopSessionUndoRequest,
-    current: tuple[User, object] = Depends(get_current_session),
 ) -> DesktopSessionUndoResponse:
     """就地截断会话：硬删除 ``Message.id >= source_message_id`` 的全部行（含锚点本身），并把锚点载荷以 ``anchor`` 字段返回，供客户端落回输入框作为草稿。
 
     需要 ``confirmed=true``（与 ``session.clear_messages`` 同源约定）。返回 ``{session_id, deleted_count, anchor, messages}``，与 WS RPC 形态一致。
     共用 ``do_session_undo`` 共享实现——in-flight 守卫、per-conversation 锁与 ``message.deleted`` 多窗口广播与 WS 路径一致。
     """
-    user, _ = current
     if not body.confirmed:
         raise HTTPException(status_code=400, detail="confirmed=true required")
     try:
@@ -367,11 +361,10 @@ async def undo_to_message(
 
 @router.delete("/{session_id}", response_model=DesktopSessionOperationResponse)
 async def delete_session(
+    user: CurrentUser,
+    db: DbSession,
     session_id: str,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionOperationResponse:
-    user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
     if conv.kind == SPECIAL_KIND or not conv.is_deletable:
         raise HTTPException(status_code=403, detail="System preset conversations cannot be modified or deleted")

@@ -4,9 +4,9 @@
 """
 
 from common import get_router
-from components import get_db, get_logger
-from fastapi import Depends, HTTPException
-from modules.auth import LoginRecord, User, get_current_session
+from components import DbSession, get_logger
+from fastapi import HTTPException
+from modules.auth import CurrentUser
 from modules.companion import (
     BackdropPolicyRequest,
     BackdropPolicyResponse,
@@ -27,7 +27,6 @@ from services.companion import (
     schedule_room_generation,
     set_backdrop_policy,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router(prefix="/api/companion", tag="companion")
 logger = get_logger(__name__)
@@ -35,10 +34,9 @@ logger = get_logger(__name__)
 
 @router.get("/room", response_model=RoomStateResponse)
 async def get_room(
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ) -> RoomStateResponse:
-    user, _ = auth
     state = await get_room_state(db, user.id)
     return RoomStateResponse(
         active=BackdropResponse(**response_for_backdrop(state["active"])) if state["active"] is not None else None,
@@ -50,10 +48,9 @@ async def get_room(
 
 @router.post("/room/generate", response_model=BackdropResponse, status_code=202)
 async def post_room_generate(
+    user: CurrentUser,
     body: RoomGenerateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> BackdropResponse:
-    user, _ = auth
     try:
         row = await schedule_room_generation(
             user.id,
@@ -70,11 +67,10 @@ async def post_room_generate(
 
 @router.post("/room/activate", response_model=BackdropResponse)
 async def post_room_activate(
+    user: CurrentUser,
+    db: DbSession,
     body: RoomActivateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> BackdropResponse:
-    user, _ = auth
     try:
         row = await activate_backdrop(db, user.id, body.backdrop_id)
     except RoomBackdropNotFoundError as exc:
@@ -88,22 +84,20 @@ async def post_room_activate(
 
 @router.patch("/room/policy", response_model=BackdropPolicyResponse)
 async def patch_room_policy(
+    user: CurrentUser,
+    db: DbSession,
     body: BackdropPolicyRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> BackdropPolicyResponse:
-    user, _ = auth
     policy = await set_backdrop_policy(db, user.id, body.policy)
     return BackdropPolicyResponse(policy=policy)
 
 
 @router.get("/room/{backdrop_id}", response_model=BackdropResponse)
 async def get_room_by_id(
+    user: CurrentUser,
+    db: DbSession,
     backdrop_id: int,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> BackdropResponse:
-    user, _ = auth
     row = await get_backdrop(db, user.id, backdrop_id)
     if row is None:
         raise HTTPException(status_code=404, detail="找不到对应的房间图")
