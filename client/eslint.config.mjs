@@ -149,12 +149,8 @@ export default [
         {
           patterns: [
             {
-              group: ['@/setting/settings', '@/setting/settings/*', '../setting/settings', '../setting/settings/*'],
-              message: 'companion must not import setting/settings — review design before coupling.'
-            },
-            {
-              group: ['@/2d/*', '@/3d/*', '@/chat/*', '@/onboarding/*'],
-              message: 'cross-module imports must go through the target barrel (@/2d, @/3d, @/chat, @/onboarding).'
+              group: ['@/2d/*', '@/3d/*', '@/chat/*', '@/living/*', '@/workbench/*', '@/onboarding/*'],
+              message: 'cross-module imports must go through the target barrel (@/2d, @/3d, @/chat, @/living, @/workbench, @/onboarding).'
             }
           ]
         }
@@ -162,7 +158,7 @@ export default [
     }
   },
   {
-    files: ['renderer/setting/settings/**/*.{ts,tsx}'],
+    files: ['renderer/living/**/*.{ts,tsx}'],
     ignores: ['**/node_modules/**'],
     rules: {
       'no-restricted-imports': [
@@ -170,15 +166,42 @@ export default [
         {
           patterns: [
             {
-              group: [
-                '@/companion',
-                '@/companion/*',
-                '../companion',
-                '../companion/*',
-                '../../companion',
-                '../../companion/*'
-              ],
-              message: 'system settings must not import companion — review design before coupling the two windows.'
+              group: ['@/workbench/*', '../workbench/*'],
+              message: 'living must not import workbench — the two surfaces are independent.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: ['renderer/workbench/**/*.{ts,tsx}'],
+    ignores: ['**/node_modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/living/*', '../living/*'],
+              message: 'workbench must not import living — the two surfaces are independent.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: ['renderer/chat/**/*.{ts,tsx}'],
+    ignores: ['**/node_modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/living/*', '@/workbench/*', '../living/*', '../workbench/*'],
+              message: 'chat must not import either surface — chat is shared across both.'
             }
           ]
         }
@@ -197,14 +220,16 @@ export default [
               group: [
                 '@/companion',
                 '@/companion/*',
-                '@/setting',
-                '@/setting/*',
                 '@/2d',
                 '@/2d/*',
                 '@/3d',
                 '@/3d/*',
                 '@/chat',
                 '@/chat/*',
+                '@/living',
+                '@/living/*',
+                '@/workbench',
+                '@/workbench/*',
                 '@/onboarding',
                 '@/onboarding/*'
               ],
@@ -216,11 +241,7 @@ export default [
     }
   },
   {
-    files: [
-      'renderer/setting/companion/**/*.{ts,tsx}',
-      'renderer/clip-debugger/**/*.{ts,tsx}',
-      'renderer/puppet-entry.tsx'
-    ],
+    files: ['renderer/clip-debugger/**/*.{ts,tsx}', 'renderer/puppet-entry.tsx'],
     ignores: ['**/node_modules/**'],
     rules: {
       'no-restricted-imports': [
@@ -228,7 +249,7 @@ export default [
         {
           patterns: [
             {
-              group: ['@/2d/*', '@/3d/*', '@/chat/*', '@/onboarding/*', '@/companion/*', '@/setting/*'],
+              group: ['@/2d/*', '@/3d/*', '@/chat/*', '@/living/*', '@/workbench/*', '@/onboarding/*', '@/companion/*'],
               message: 'cross-module imports must go through the target barrel.'
             }
           ]
@@ -244,7 +265,8 @@ export default [
     // 部分在纯浏览器跑）不在此列；确需直连处逐行 eslint-disable 写明 URL 来源。
     files: [
       'renderer/companion/**/*.{ts,tsx}',
-      'renderer/setting/**/*.{ts,tsx}',
+      'renderer/living/**/*.{ts,tsx}',
+      'renderer/workbench/**/*.{ts,tsx}',
       'renderer/chat/**/*.{ts,tsx}',
       'renderer/onboarding/**/*.{ts,tsx}',
       'renderer/2d/**/*.{ts,tsx}',

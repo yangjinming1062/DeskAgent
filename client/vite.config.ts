@@ -57,10 +57,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './renderer'),
       '@shared': path.resolve(__dirname, './renderer/shared'),
       '@companion': path.resolve(__dirname, './renderer/companion'),
-      '@setting': path.resolve(__dirname, './renderer/setting'),
       '@2d': path.resolve(__dirname, './renderer/2d'),
       '@3d': path.resolve(__dirname, './renderer/3d'),
       '@chat': path.resolve(__dirname, './renderer/chat'),
+      '@living': path.resolve(__dirname, './renderer/living'),
+      '@workbench': path.resolve(__dirname, './renderer/workbench'),
       '@onboarding': path.resolve(__dirname, './renderer/onboarding'),
       '@ipc/contracts': path.resolve(__dirname, './shared/ipc/contracts'),
       '@runtime': path.resolve(__dirname, './shared/runtime')

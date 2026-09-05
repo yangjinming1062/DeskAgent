@@ -1,14 +1,17 @@
 // 生活空间右栏：根据 living-view 切换内容。
 //
 // - chat: ChatPanel（生活空间变体的对话 + 输入；与工作台共用）
-// - wardrobe: OutfitPanel（现有换一身/形象）
-// - appearance / settings / channels: AppSettingsPanel，由 setLivingView 同步 appSettingsView
+// - wardrobe: WardrobePage（衣橱）
+// - appearance: AppearancePage（形象 / 渲染模式）
 // - moments / diary: 后端直连两页
+// - channels / room: 单文件页
+// - settings: LivingSettings（长页：角色/音色/交互/主题/语音/快捷键/关于）
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
+import { ChatPanel } from '@/chat/chat-panel'
 import { $chatSessionId, $chatSessionKind } from '@/chat/chat-store'
 import {
   $currentSessionKind,
@@ -17,58 +20,37 @@ import {
   openMainSession,
   switchSession
 } from '@/chat/session-list-store'
-import { ChatPanel } from '@/conversation/chat-panel'
-import { AppearancePage, AppSettingsPanel, ChannelsSettings, RoomSettings, WardrobePage } from '@/setting'
 import { ArrowRight } from '@/shared/lib/icons'
 import { $gatewayState } from '@/shared/store/gateway'
 import { requestOpenSurface } from '@/shared/store/surfaces'
 
+import { AppearancePage } from './appearance-page'
+import { ChannelsPage } from './channels-page'
 import { DiaryPage } from './diary-page'
-import { $livingView } from './living-store'
+import { $livingView, type LivingView } from './living-store'
 import styles from './living.module.css'
 import { MomentsPage } from './moments-page'
+import { RoomPage } from './room-page'
+import { LivingSettings } from './settings/living-settings'
+import { WardrobePage } from './wardrobe-page'
+
+// 视图 → 渲染组件的闭包表（`chat` 走 ChatStage 局部组件，其他直接挂页）。
+// Record<LivingView, …> 强制 LivingView 出现新成员时报缺 key 错。
+const VIEW_RENDERERS: Record<LivingView, () => React.JSX.Element> = {
+  appearance: () => <AppearancePage />,
+  channels: () => <ChannelsPage />,
+  chat: () => <ChatStage />,
+  diary: () => <DiaryPage />,
+  moments: () => <MomentsPage />,
+  room: () => <RoomPage />,
+  settings: () => <LivingSettings />,
+  wardrobe: () => <WardrobePage />
+}
 
 export function LivingStage(): React.JSX.Element {
   const view = useStore($livingView)
 
-  if (view === 'chat') {
-    return <ChatStage />
-  }
-
-  if (view === 'wardrobe') {
-    return <WardrobePage />
-  }
-
-  if (view === 'appearance') {
-    return <AppearancePage />
-  }
-
-  if (view === 'channels') {
-    return <ChannelsSettings />
-  }
-
-  if (view === 'room') {
-    return <RoomSettings />
-  }
-
-  if (view === 'settings') {
-    return <AppSettingsPanel />
-  }
-
-  if (view === 'moments') {
-    return <MomentsPage />
-  }
-
-  if (view === 'diary') {
-    return <DiaryPage />
-  }
-
-  return (
-    <main className={styles.placeholder}>
-      <h1 className={styles.placeholderTitle}>{view}</h1>
-      <p className={styles.placeholderHint}>该视图待接入。</p>
-    </main>
-  )
+  return VIEW_RENDERERS[view]()
 }
 
 function ChatStage(): React.JSX.Element {

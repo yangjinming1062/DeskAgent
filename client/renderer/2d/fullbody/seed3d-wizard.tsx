@@ -1,10 +1,10 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { MAX_APPEARANCE, resolvePortraitUrl, WizardModal } from '@/companion'
+import { MAX_APPEARANCE, resolvePortraitUrl } from '@/companion'
 import { HistoryGallery, PortraitLightbox, useNaturalAspectRatio } from '@/shared'
 import { cn } from '@/shared/lib/utils'
-import { BTN_PRIMARY, BTN_SUBTLE, INPUT_CLASS } from '@/shared/panel'
+import { BTN_PRIMARY, BTN_SUBTLE, INPUT_CLASS, WizardModal } from '@/shared/panel'
 
 const HISTORY_CAP = 5
 

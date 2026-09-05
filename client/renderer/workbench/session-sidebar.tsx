@@ -3,7 +3,6 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { $chatSessionId } from '@/chat/chat-store'
-import { PresetIconBadge, PresetPickerModal } from '@/chat/preset-picker-modal'
 import {
   $archivedLoading,
   $archivedSessions,
@@ -53,6 +52,8 @@ import { cn } from '@/shared/lib/utils'
 import { INPUT_CLASS, SearchField } from '@/shared/panel'
 import { strings } from '@/shared/strings'
 import type { SessionInfo } from '@/shared/types/spiritagent'
+
+import { PresetIconBadge, PresetPickerModal } from './preset-picker-modal'
 
 const SORT_OPTIONS: { icon: IconComponent; label: string; value: SessionSort }[] = [
   { icon: Clock, label: '按最近活跃排序', value: 'recent' },

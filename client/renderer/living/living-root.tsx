@@ -6,9 +6,9 @@
 import { useEffect } from 'react'
 import type React from 'react'
 
+import { hydrateRoomBackdrop } from '@/living/room-backdrop-store'
 import { ArrowRight, Home } from '@/shared/lib/icons'
 import { WindowControls } from '@/shared/panel'
-import { hydrateRoomBackdrop } from '@/shared/store/room-backdrop-store'
 import { requestOpenSurface } from '@/shared/store/surfaces'
 
 import { LivingRail } from './living-rail'

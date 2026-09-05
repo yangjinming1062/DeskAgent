@@ -308,7 +308,7 @@ export function CompanionRoot(): React.JSX.Element {
         action: {
           label: strings.notifications.voice.invalidAction,
           onClick: () => {
-            void requestOpenSurface('workbench', { view: 'companion-settings' })
+            void requestOpenSurface('living', { view: 'settings/voice' })
           }
         }
       })

@@ -1,4 +1,6 @@
 export * from './components'
 export * from './palette'
+export * from './primitives'
 export * from './shortcut-recorder'
 export * from './window-controls'
+export * from './wizard-modal'

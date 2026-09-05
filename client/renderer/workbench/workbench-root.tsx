@@ -7,6 +7,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
+import { ChatPanel } from '@/chat/chat-panel'
 import { $chatSessionId, $chatSessionKind } from '@/chat/chat-store'
 import {
   $currentSessionKind,
@@ -15,7 +16,6 @@ import {
   isCompanionSession,
   switchSession
 } from '@/chat/session-list-store'
-import { ChatPanel } from '@/conversation/chat-panel'
 import { Home, SlidersHorizontal, Terminal } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { WindowControls } from '@/shared/panel'
@@ -39,9 +39,21 @@ export function WorkbenchRoot(): React.JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  const isStationSettingsHash = (rawHash: string): boolean => {
+    const clean = rawHash.replace(/^#\/?/, '').split('?')[0].toLowerCase()
+
+    return (
+      clean.includes('settings') ||
+      clean.startsWith('inference') ||
+      clean.startsWith('runner') ||
+      clean.startsWith('skills') ||
+      clean.startsWith('station')
+    )
+  }
+
   const [settingsOpen, setSettingsOpen] = useState(() => {
     if (typeof window !== 'undefined' && window.location.hash) {
-      return window.location.hash.toLowerCase().includes('settings')
+      return isStationSettingsHash(window.location.hash)
     }
 
     return false
@@ -76,7 +88,7 @@ export function WorkbenchRoot(): React.JSX.Element {
     }
 
     const onHash = (): void => {
-      if (window.location.hash.toLowerCase().includes('settings')) {
+      if (isStationSettingsHash(window.location.hash)) {
         setSettingsOpen(true)
       }
     }
@@ -87,7 +99,7 @@ export function WorkbenchRoot(): React.JSX.Element {
   }, [])
 
   const clearSettingsHash = (): void => {
-    if (typeof window !== 'undefined' && window.location.hash.toLowerCase().includes('settings')) {
+    if (typeof window !== 'undefined' && isStationSettingsHash(window.location.hash)) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search)
     }
   }

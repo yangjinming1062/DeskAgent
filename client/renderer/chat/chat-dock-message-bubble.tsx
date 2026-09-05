@@ -3,7 +3,6 @@ import type React from 'react'
 import { memo, useState } from 'react'
 
 import { $portraitUrl } from '@/companion'
-import { ToolChipTimeline } from '@/conversation/tool-chip-timeline'
 import { ArrowRight, ChevronDown } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { requestOpenSurface } from '@/shared/store/surfaces'
@@ -13,6 +12,7 @@ import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
 import { $chatMessageBodies, $chatSessionId, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
+import { ToolChipTimeline } from './tool-chip-timeline'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
 const SYSTEM_PILL_SUBTYPES = new Set([

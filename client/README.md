@@ -53,15 +53,14 @@ client/
 ├── shared/                # 跨进程共享契约定义（@ipc/contracts 别名）
 │   └── ipc/               # 强类型 IPC 通道、载荷与运行时常量
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
-│   ├── shared/            # 跨窗口共享层（主题、通知、通用面板、基础工具）
+│   ├── shared/            # 跨窗口共享层（主题、通知、通用面板 / 向导、基础工具）
 │   ├── companion/         # 伙伴层（桌宠 Overlay、状态机、情绪、桌面空间行为与交互、角色皮肤取色）
-│   ├── 2d/                # 2D 渲染模块（分层 PSD 木偶 PuppetStage、网格渲染）
+│   ├── 2d/                # 2D 渲染模块（分层 PSD 木偶 PuppetStage、网格渲染、3D 种子向导）
 │   ├── 3d/                # 3D 渲染模块（Three.js 引擎、骨骼装配、clip 动作系统与物理倾角）
-│   ├── conversation/      # 对话表面通用层（ConversationSurface、输入指挥台、工具芯片时间轴）
-│   ├── living/            # 生活空间模块（生活空间根组件、左栏导航、房间背景、时刻与日记页面及 store）
-│   ├── workbench/         # 工作台模块（工作台根组件、会话侧栏、运行轨迹栏、工位设置抽屉、运行轨迹状态）
+│   ├── chat/              # 对话表面通用层（ChatPanel、ConversationSurface、输入指挥台、工具芯片时间轴、会话列表 store）
+│   ├── living/            # 生活空间模块（生活空间根组件、左栏导航、单文件页 [衣橱/形象/通道/房间/日记/时刻] 与多区段设置页、房间背景 store）
+│   ├── workbench/         # 工作台模块（工作台根组件、会话侧栏、运行轨迹栏、工位设置抽屉 [推理/Runner/技能/工具集]、预设选择器）
 │   ├── onboarding/        # 引导模块（破蛋阶段、问卷流、激活与网关启动流水线）
-│   ├── setting/           # 设置模块（伙伴设置、形象设置与应用全局设置，按生活空间与工位抽屉重挂载）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点
 │   ├── sprite-entry.tsx   # 精灵窗口入口
@@ -73,16 +72,17 @@ client/
 
 **TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（`tsup` 编译至 `dist-electron/`；preload 单独走 CJS 的理由见 §4），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `shared/ipc/contracts.ts` 统一声明的强类型 IPC 契约与运行时常量，在主进程与渲染进程之间实现编译期通道和载荷同步校验。
 
-**renderer 内部跨模块边界**：`companion` ↔ `setting/settings` 是**两个窗口**而非一个工程的两个层——系统设置与桌面精灵的代码不得相互耦合：
+**renderer 内部跨模块边界**：`living` 与 `workbench` 是**两个窗口**而非一个工程的两个层——生活空间与工作台的代码不得相互耦合；`chat` 同时被两端引用，更不可偏向任一表面：
 
-| 起点 → 终点                                    | 许可 |
-| ---------------------------------------------- | ---- |
-| 任何模块 → `shared`                           | ✓    |
-| `companion` → `2d` / `3d` / `conversation` / `living` / `workbench` / `onboarding` | ✓ |
-| `setting/settings` ↔ `companion`               | ✗（系统全局设置与桌宠状态机互不耦合） |
-| `shared` → 任何                                | ✗    |
+| 起点 → 终点                                                   | 许可 |
+| ------------------------------------------------------------- | ---- |
+| 任何模块 → `shared`                                          | ✓    |
+| `companion` → `2d` / `3d` / `chat` / `living` / `workbench` / `onboarding` | ✓ |
+| `living` ↔ `workbench`                                       | ✗（两窗口互不可见） |
+| `chat` → `living` / `workbench`                               | ✗（对话层是两端共用的，不偏向任一表面） |
+| `shared` → 任何                                               | ✗    |
 
-ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/living-entry.tsx`、`renderer/workbench-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/setting`、`@/conversation`、`@/living`、`@/workbench`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
+ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`renderer/sprite-entry.tsx`、`renderer/living-entry.tsx`、`renderer/workbench-entry.tsx`、`renderer/app.tsx`）直接装配对应窗口的 root 组件；各特性模块间跨模块调用严格走公共 barrel（`@/companion`、`@/chat`、`@/living`、`@/workbench`、`@/2d`、`@/3d`、`@/onboarding`、`@/shared`）。模块内部细节不出 barrel。
 
 ## 4. 关键设计决策
 

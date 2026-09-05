@@ -29,14 +29,10 @@ export {
   type SpriteStateName
 } from './companion-store'
 export { DISTURBANCE_TIERS } from './disturbance-tiers'
-export { usePanelDrag } from './hooks/use-panel-drag'
-export { usePanelResize } from './hooks/use-panel-resize'
 export { useVoiceRecorder } from './hooks/use-voice-recorder'
 export { probeInteractiveRegions, useInteractiveRegion } from './interactive-regions'
 export { openMediaViewer } from './media-viewer-overlay'
 export { $memoryBrowserTab, type MemoryTab, setMemoryBrowserTab } from './memory-browser-store'
-export { FloatingPanel, RESIZE_HANDLES } from './panel/floating-panel'
-export { WizardModal } from './panel/wizard-modal'
 export {
   assembleCharacterPersona,
   assemblePersona,

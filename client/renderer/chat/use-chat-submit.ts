@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 
 import { cancelAutoVoice, setSpriteState } from '@/companion'
 import { useGatewayRequest } from '@/shared'
+import type { ConnectionState } from '@/shared/lib/gateway-protocol'
 import { log } from '@/shared/lib/log'
 import { parseSlashInput } from '@/shared/lib/slash-commands'
 import { notify } from '@/shared/store/notifications'
@@ -26,8 +27,8 @@ import {
 import { ensureChatSession } from './session-list-store'
 
 interface UseChatSubmitOptions {
-  externalPathsRef: React.MutableRefObject<string[]>
-  gatewayState: string
+  externalPaths: string[]
+  gatewayState: ConnectionState
   isReadOnlySession: boolean
   onClearExternalPaths: () => void
   onPreCheckFail: (message: string) => void
@@ -45,7 +46,7 @@ export interface ChatSubmit {
 }
 
 export function useChatSubmit({
-  externalPathsRef,
+  externalPaths,
   gatewayState,
   isReadOnlySession,
   onClearExternalPaths,
@@ -60,9 +61,14 @@ export function useChatSubmit({
   const textRef = useRef(text)
   const pendingRef = useRef(pending)
   const sendingRef = useRef(sending)
+  // externalPaths 已是值类型，但仍走 ref：send 是异步的，期间用户继续拖入文件
+  // 会改变 externalPaths 的引用。回调创建时闭包里的快照已过期，必须读 ref 才能
+  // 拿到发送瞬间的最新列表。
+  const externalPathsRef = useRef(externalPaths)
   textRef.current = text
   pendingRef.current = pending
   sendingRef.current = sending
+  externalPathsRef.current = externalPaths
 
   const send = useCallback(async () => {
     const currentText = textRef.current

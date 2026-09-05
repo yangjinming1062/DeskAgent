@@ -1,4 +1,6 @@
+export { type ConversationVariant } from './chat-dock-message-bubble'
 export { useResolvedMediaSrc } from './chat-media-src'
+export { ChatPanel } from './chat-panel'
 export { ChatParamsPanel } from './chat-params-panel'
 export {
   $chatDraftFromUndo,
@@ -42,6 +44,8 @@ export {
   formatTokenNumber,
   useContextStatus
 } from './context-progress-bar'
+export { type ChatSubmitState, ConversationInput, type ConversationInputProps } from './conversation-input'
+export { ConversationSurface } from './conversation-surface'
 export {
   $currentSessionKind,
   $currentSessionTitle,
@@ -50,4 +54,5 @@ export {
   switchSession
 } from './session-list-store'
 export { SlashCommandPopover } from './slash-command-popover'
+export { ToolChipTimeline } from './tool-chip-timeline'
 export { useChatSubmit } from './use-chat-submit'

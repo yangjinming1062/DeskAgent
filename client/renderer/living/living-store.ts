@@ -5,10 +5,11 @@
 
 import { atom } from 'nanostores'
 
-import type { AppSettingsView } from '@/setting/app-settings/app-settings-view'
-import { $appSettingsView } from '@/setting/app-settings/app-settings-view'
+import { definePersistedEnum } from '@/shared/lib/storage'
 
 export type LivingView = 'chat' | 'wardrobe' | 'appearance' | 'moments' | 'diary' | 'channels' | 'room' | 'settings'
+
+export type LivingSettingsSection = 'persona' | 'voice' | 'interaction' | 'theme' | 'speech' | 'shortcuts' | 'about'
 
 export const LIVING_VIEWS: ReadonlyArray<LivingView> = [
   'chat',
@@ -21,73 +22,104 @@ export const LIVING_VIEWS: ReadonlyArray<LivingView> = [
   'settings'
 ]
 
-const STORAGE_KEY = 'da.living.view'
-const DEFAULT_VIEW: LivingView = 'chat'
+export const LIVING_SETTINGS_SECTIONS: ReadonlyArray<LivingSettingsSection> = [
+  'persona',
+  'voice',
+  'interaction',
+  'theme',
+  'speech',
+  'shortcuts',
+  'about'
+]
 
-const LIVING_TO_APP_SETTINGS: Partial<Record<LivingView, AppSettingsView>> = {
-  appearance: 'appearance',
-  channels: 'channels'
-}
+const SETTINGS_SECTION_PREFIX = 'settings/'
 
-function parseHashView(): LivingView | null {
+function parseLivingViewFromHash(): LivingView | null {
   if (typeof window === 'undefined' || !window.location.hash) {
     return null
   }
 
-  const clean = window.location.hash.replace(/^#\/?/, '').trim() as LivingView
+  const cleanPath = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim()
+  const topSegment = cleanPath.split('/')[0]
 
-  return LIVING_VIEWS.includes(clean) ? clean : null
+  return (LIVING_VIEWS as ReadonlyArray<string>).includes(topSegment) ? (topSegment as LivingView) : null
 }
 
-function readStored(): LivingView {
-  const fromHash = parseHashView()
-
-  if (fromHash) {
-    return fromHash
+function parseLivingSettingsSectionFromHash(): LivingSettingsSection | null {
+  if (typeof window === 'undefined' || !window.location.hash) {
+    return null
   }
 
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const valid = LIVING_VIEWS.includes(raw as LivingView)
+  const cleanPath = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim()
 
-    return valid ? (raw as LivingView) : DEFAULT_VIEW
-  } catch {
-    return DEFAULT_VIEW
+  if (!cleanPath.startsWith(SETTINGS_SECTION_PREFIX)) {
+    return null
+  }
+
+  const section = cleanPath.slice(SETTINGS_SECTION_PREFIX.length).split('/')[0]
+
+  return (LIVING_SETTINGS_SECTIONS as ReadonlyArray<string>).includes(section)
+    ? (section as LivingSettingsSection)
+    : null
+}
+
+function replaceHash(next: string): void {
+  if (typeof window !== 'undefined' && window.location.hash !== next) {
+    window.history.replaceState(null, '', next)
   }
 }
 
-function writeStored(view: LivingView): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, view)
-  } catch {
-    /* ignore quota / disabled storage */
-  }
-}
+const viewStore = definePersistedEnum<LivingView>({
+  allowed: LIVING_VIEWS,
+  fallback: 'chat',
+  key: 'da.living.view'
+})
 
-export const $livingView = atom<LivingView>(readStored())
+// settings 视图用 #/settings/<section> 形式深链；hash 解析时去掉 settings/ 前缀。
+const sectionStore = definePersistedEnum<LivingSettingsSection>({
+  allowed: LIVING_SETTINGS_SECTIONS,
+  fallback: 'persona',
+  key: 'da.living.settings.section'
+})
+
+export const $livingView = atom<LivingView>(parseLivingViewFromHash() ?? viewStore.get())
+export const $livingSettingsSection = atom<LivingSettingsSection>(
+  parseLivingSettingsSectionFromHash() ?? sectionStore.get()
+)
 
 export function setLivingView(view: LivingView): void {
-  writeStored(view)
+  viewStore.set(view)
   $livingView.set(view)
 
-  // 同步 hash，方便从外链 deep-link
-  if (typeof window !== 'undefined' && window.location.hash !== `#/${view}`) {
-    window.history.replaceState(null, '', `#/${view}`)
+  if (view === 'settings') {
+    replaceHash(`#/settings/${$livingSettingsSection.get()}`)
+  } else {
+    replaceHash(`#/${view}`)
   }
+}
 
-  const sub = LIVING_TO_APP_SETTINGS[view]
-
-  if (sub && $appSettingsView.get() !== sub) {
-    $appSettingsView.set(sub)
-  }
+export function setLivingSettingsSection(section: LivingSettingsSection): void {
+  viewStore.set('settings')
+  $livingView.set('settings')
+  sectionStore.set(section)
+  $livingSettingsSection.set(section)
+  replaceHash(`#/settings/${section}`)
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('hashchange', () => {
-    const fromHash = parseHashView()
+    const view = parseLivingViewFromHash()
 
-    if (fromHash && $livingView.get() !== fromHash) {
-      setLivingView(fromHash)
+    if (view && $livingView.get() !== view) {
+      viewStore.set(view)
+      $livingView.set(view)
+    }
+
+    const section = parseLivingSettingsSectionFromHash()
+
+    if (section && $livingSettingsSection.get() !== section) {
+      sectionStore.set(section)
+      $livingSettingsSection.set(section)
     }
   })
 }

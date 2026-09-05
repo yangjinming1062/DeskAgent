@@ -9,7 +9,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useState } from 'react'
 
-import { $activeBackdrop, $backdropStatus } from '@/shared/store/room-backdrop-store'
+import { $activeBackdrop, $backdropStatus } from '@/living/room-backdrop-store'
 
 import styles from './room-backdrop.module.css'
 
