@@ -200,6 +200,12 @@ export function createWindowHandlers({
     })
   }
 
+  function installSurfaceWindowHandlers(win: BrowserWindow): void {
+    installStandardWindowHandlers(win)
+    installZoomShortcuts(win)
+    installContextMenu(win)
+  }
+
   function isAudioCapturePermission(
     permission: string,
     details:
@@ -384,9 +390,8 @@ export function createWindowHandlers({
     installContextMenu,
     installMediaPermissions,
     installStandardWindowHandlers,
+    installSurfaceWindowHandlers,
     installZoomShortcuts,
     registerPowerResumeListeners
   }
 }
-
-export type WindowHandlers = ReturnType<typeof createWindowHandlers>

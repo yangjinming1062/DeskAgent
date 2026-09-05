@@ -466,6 +466,7 @@ export const IPC = {
     shortcutsReset: 'spiritagent:shortcuts:reset',
     surfaceOpen: 'spiritagent:surface:open',
     surfaceClose: 'spiritagent:surface:close',
+    surfaceFocus: 'spiritagent:surface:focus',
     surfaceMinimize: 'spiritagent:surface:minimize',
     surfaceMaximize: 'spiritagent:surface:maximize',
     surfaceIsMaximized: 'spiritagent:surface:is-maximized',

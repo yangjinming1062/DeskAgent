@@ -47,19 +47,11 @@ class SttLimiter {
   private readonly refillRate: number
   private tokens: number
 
-  constructor({
-    burst = STT_BURST,
-    maxConcurrency = STT_MAX_CONCURRENCY,
-    refillRate = STT_REFILL_RATE
-  }: {
-    burst?: number
-    maxConcurrency?: number
-    refillRate?: number
-  } = {}) {
-    this.maxConcurrency = maxConcurrency
-    this.burst = burst
-    this.refillRate = refillRate
-    this.tokens = burst
+  constructor() {
+    this.maxConcurrency = STT_MAX_CONCURRENCY
+    this.burst = STT_BURST
+    this.refillRate = STT_REFILL_RATE
+    this.tokens = STT_BURST
     this.lastRefill = Date.now()
   }
 
@@ -98,15 +90,9 @@ class BoundedTtsQueue {
   private readonly minCloudIntervalMs: number
   private readonly queue: Array<TtsQueueItem<unknown>> = []
 
-  constructor({
-    maxQueueSize = TTS_MAX_QUEUE_SIZE,
-    minCloudIntervalMs = MIN_TTS_INTERVAL_MS
-  }: {
-    maxQueueSize?: number
-    minCloudIntervalMs?: number
-  } = {}) {
-    this.maxQueueSize = maxQueueSize
-    this.minCloudIntervalMs = minCloudIntervalMs
+  constructor() {
+    this.maxQueueSize = TTS_MAX_QUEUE_SIZE
+    this.minCloudIntervalMs = MIN_TTS_INTERVAL_MS
   }
 
   enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -361,11 +347,6 @@ interface MediaIpcDeps {
   isSttEnabled: () => boolean
   ipcMain: IpcMain
   log?: (msg: string) => void
-  minTtsIntervalMs?: number
-  sttBurst?: number
-  sttMaxConcurrency?: number
-  sttRefillRate?: number
-  ttsMaxQueueSize?: number
 }
 
 export function registerMediaIpc({
@@ -374,16 +355,11 @@ export function registerMediaIpc({
   fetchImpl,
   isSttEnabled,
   ipcMain,
-  log = () => {},
-  minTtsIntervalMs,
-  sttBurst,
-  sttMaxConcurrency,
-  sttRefillRate,
-  ttsMaxQueueSize
+  log = () => {}
 }: MediaIpcDeps): void {
   const diskCache = createTtsDiskCache({ spiritagentHome })
-  const sttLimiter = new SttLimiter({ burst: sttBurst, maxConcurrency: sttMaxConcurrency, refillRate: sttRefillRate })
-  const ttsQueue = new BoundedTtsQueue({ maxQueueSize: ttsMaxQueueSize, minCloudIntervalMs: minTtsIntervalMs })
+  const sttLimiter = new SttLimiter()
+  const ttsQueue = new BoundedTtsQueue()
 
   ipcMain.handle(IPC.invoke.mediaStt, async (_event, payload?: MediaSttPayload) => {
     const sttId = ++sttSeq

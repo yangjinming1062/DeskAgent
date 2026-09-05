@@ -659,7 +659,7 @@ async function createSurfaceWindow(id: SurfaceId, payload?: DesktopSurfaceOpenPa
     app.dock?.setIcon(icon)
   }
 
-  windowHandlers.installStandardWindowHandlers(win)
+  windowHandlers.installSurfaceWindowHandlers(win)
 
   win.on('close', () => {
     surfaces?.onWindowClosed(id, win)

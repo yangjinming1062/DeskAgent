@@ -323,6 +323,22 @@ export function createSurfacesManager(options: SurfacesManagerOptions): Surfaces
     }
 
     ipcMain.handle(IPC.invoke.surfaceClose, () => closeSurface())
+    ipcMain.handle(IPC.invoke.surfaceFocus, () => {
+      if (!openSurfaceId) {
+        return
+      }
+
+      const win = windows.get(openSurfaceId)
+
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) {
+          win.restore()
+        }
+
+        win.show()
+        win.focus()
+      }
+    })
     ipcMain.handle(IPC.invoke.surfaceMinimize, event => {
       resolveWindow(event)?.minimize()
     })
