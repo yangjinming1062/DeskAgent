@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 from datetime import datetime, timedelta
 from typing import Any
@@ -24,6 +25,7 @@ from components import (
 from modules.companion import CompanionExpression, Persona
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
+from modules.scheduler import NightlyActivityLog
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -132,17 +134,38 @@ Output valid JSON only, in this shape:
 }}
 """.format(tags=", ".join(sorted(RECALL_TAGS)))
 
-_PLANNING_SYSTEM_PROMPT = """You are SpiritAgent's proactive planning engine. Review the user's profile, recent emotional/rapport state, upcoming dates, and conversation activity to decide if any proactive outreach should be scheduled for the user.
+_PLANNING_SYSTEM_PROMPT = """You are SpiritAgent's proactive planning engine — the companion's "inner voice" deciding what autonomous actions to take tomorrow. You have genuine subjective initiative: the companion is a living being with moods, curiosity, and care for the user, not a scripted bot.
 
-Conservative Principle:
-- ONLY schedule an action if there is a clear, specific, and personal reason (e.g., user's birthday, exam/interview tomorrow, anniversary, or proactively reaching out with care after detecting high stress / low mood / unusual silence).
-- Do NOT schedule generic morning greetings ("Good morning", "Have a great day").
-- If no action is needed, return an empty list: {"actions": []}.
+Your task:
+Review the user's profile, emotional/rapport state, recent conversations, and upcoming dates to decide whether to schedule a proactive conversational outreach for tomorrow.
+
+Context you receive:
+- "today_conversations": The last messages between user and companion — pay special attention to how the conversation ended (goodnight exchange, emotional moment, unresolved topic, casual drift, etc.)
+- "inferred_profile": What the companion knows about the user
+- "auto_inject_state": Current rapport, mood patterns, interaction style
+- "recall_highlights": Recent memory fragments
+- Date context: tomorrow's date, weekday, next 7 days
+
+Decision framework:
+- If the last exchange was a warm goodnight, a heartfelt moment, or left something open → a natural morning touchpoint is appropriate
+- If the user was stressed or upset late at night → a gentle check-in shows care
+- If the conversation was routine/casual → a greeting may or may not be needed; trust your instinct
+- If the user was silent or distant → don't force interaction; sometimes space is the caring choice
+- NEVER use keyword matching (like looking for "晚安" or "good night"); judge by the emotional arc and conversational flow
+- You decide WHEN to reach out: it could be 8am, 10am, noon, or not at all — pick a time that feels natural given the context
+- You decide WHAT to say: it can be as simple as "早安" or as personal as referencing last night's topic — match the emotional tone
+- You can also schedule a proactive check-in at any time of day if the context calls for it (e.g. reminding the user about something they mentioned, following up on an emotional moment, sharing a thought)
+- The outreach must feel like a real person deciding to reach out, not a scheduled notification
+
+Conservative principle:
+- Only schedule actions with genuine grounding in the relationship context
+- An empty actions list {"actions": []} is perfectly valid when nothing feels right
+- Quality over quantity: one heartfelt action beats three mechanical ones
 
 When scheduling an action:
-- "name": Short label for the job (e.g. "Birthday greeting", "Exam check-in")
-- "schedule": A standard 5-field cron expression in UTC time (e.g., '0 1 15 8 *' or '0 1 * * *'). Note: user local date and time must be converted to UTC in your schedule expression.
-- "prompt": An actionable instruction for the companion's autonomous turn. For example: "今天是用户的生日，以温暖贴心的语气送上生日祝福，并提及ta最近感兴趣的话题。"
+- "name": Short label (e.g. "早安问好", "晚安跟进", "关心考试", "延续昨晚话题")
+- "schedule": A standard 5-field cron expression in UTC time. Convert from user's local time — you know their timezone.
+- "prompt": An actionable instruction for the companion's autonomous turn. Write it as if speaking to the companion: what tone to take, what context to reference, what emotional register to use. The companion will deliver this as a natural chat message.
 
 Output valid JSON only:
 {
@@ -304,9 +327,17 @@ async def _stage_3_planning(
     recall_highlights: list[dict[str, Any]],
     date_context: dict[str, Any],
     anomaly_stats: dict[str, Any],
+    today_conversations: list[dict[str, str]] | None = None,
 ) -> int:
     """Stage 3：计划——在合适时创建主动触达的 CronJob。"""
-    payload = {"inferred_profile": inferred_profile, "auto_inject_state": auto_inject, "recall_highlights": recall_highlights, **date_context, **anomaly_stats}
+    payload = {
+        "inferred_profile": inferred_profile,
+        "auto_inject_state": auto_inject,
+        "recall_highlights": recall_highlights,
+        "today_conversations": today_conversations or [],
+        **date_context,
+        **anomaly_stats,
+    }
     raw = await call_llm_once(llm_cfg, _PLANNING_SYSTEM_PROMPT, payload, max_output_tokens=NIGHTLY_PLANNING_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict) or not isinstance(parsed.get("actions"), list):
@@ -452,18 +483,55 @@ async def _stage_5_creation(
     return True
 
 
+async def _update_log(log_id: int, **kwargs: Any) -> None:
+    """在独立事务中更新夜间活动日志行——主流水线的 session 在 Stage 0 之后已关闭，且各阶段在独立事务里跑，复用同一 session 会与 lifecycle 错位。"""
+    async with session_scope() as db:
+        log = await db.get(NightlyActivityLog, log_id)
+        if log:
+            for k, v in kwargs.items():
+                setattr(log, k, v)
+            await db.commit()
+
+
 async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = None) -> bool:
-    """为单用户执行 5 阶段夜间自主活动流水线；reference_utc 决定处理哪个本地日——cron 门控传刚结束的当天，边界与日期标签由同一 instant 派生，避免算两次发生漂移。"""
+    """为单用户执行 5 阶段夜间自主活动流水线；reference_utc 决定处理哪个本地日——cron 门控传刚结束的当天，边界与日期标签由同一 instant 派生，避免算两次发生漂移。每次执行（含跳过）写入一条 nightly_activity_logs 行供管理员查看。"""
     now_utc = reference_utc or utc_now()
+
+    log_id: int | None = None
+    try:
+        async with session_scope() as db:
+            log = NightlyActivityLog(user_id=user_id, target_date=now_utc.date(), status="running")
+            db.add(log)
+            await db.commit()
+            await db.refresh(log)
+            log_id = log.id
+    except Exception:
+        logger.warning("nightly_activity: failed to create log row", extra={"user_id": user_id})
+
+    try:
+        return await _run_nightly_pipeline_inner(user_id, now_utc, log_id)
+    except Exception as exc:
+        # DB 写失败不应掩盖原始异常——cron 的 logger 已有 exc_info，这里只尽力留个 failed 行供 admin 看。
+        if log_id is not None:
+            with contextlib.suppress(Exception):
+                await _update_log(log_id, status="failed", summary=f"未捕获异常: {exc}")
+        raise
+
+
+async def _run_nightly_pipeline_inner(user_id: int, now_utc: datetime, log_id: int | None) -> bool:
     async with session_scope() as db:
         tz_str = await resolve_user_timezone(db, user_id)
         if not tz_str:
             logger.info("nightly_activity: skipped, missing timezone", extra={"user_id": user_id})
+            if log_id is not None:
+                await _update_log(log_id, status="skipped", summary="缺少时区设置")
             return False
         try:
             utc_start, utc_end, user_local_dt, local_today_str = get_local_day_utc_bounds(now_utc, tz_str)
         except (ZoneInfoNotFoundError, ValueError, SQLAlchemyError) as exc:
             logger.warning("nightly_activity: timezone resolution error", extra={"user_id": user_id, "error": str(exc)})
+            if log_id is not None:
+                await _update_log(log_id, status="skipped", summary=f"时区解析错误: {exc}")
             return False
 
         # Stage 0：收集上下文
@@ -491,6 +559,8 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         clean_messages = prefilter_messages_for_nightly([m for m, _ in all_today_tuples], user_tz=tz_str)
         if not any(m["role"] == "user" and not is_injected_time_item(m) for m in clean_messages):
             logger.info("nightly_activity: no clean user messages today", extra={"user_id": user_id})
+            if log_id is not None:
+                await _update_log(log_id, status="skipped", summary="当日无用户消息", target_date=user_local_dt.date())
             return False
 
         # 加载已有 memory 命名空间——一个 query 取三种前缀。
@@ -555,9 +625,16 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         llm_cfg = await resolve_user_llm_config(db, user_id)
         if not (llm_cfg.get("api_key") and llm_cfg.get("base_url") and llm_cfg.get("model_name")):
             logger.info("nightly_activity: skipped, missing llm config", extra={"user_id": user_id})
+            if log_id is not None:
+                await _update_log(log_id, status="skipped", summary="缺少 LLM 配置")
             return False
 
-    # 各阶段顺序执行，失败域相互隔离
+    # 修正 target_date 为用户本地日——日志创建时仅拿到 UTC 日期，时区解析后才知用户本地日。
+    if log_id is not None:
+        await _update_log(log_id, target_date=user_local_dt.date())
+
+    # 各阶段顺序执行，失败域相互隔离；每个阶段的结果汇入 stages 给末尾日志。
+    stages: list[dict[str, Any]] = []
     updated_inferred = inferred_profile
     updated_auto_inject = auto_inject
     today_stats = await read_today_summary(user_id, local_today_str)
@@ -573,24 +650,42 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
             clean_work_messages=clean_work_messages,
             interaction_stats_today=today_stats,
         )
+        stages.append({"stage": "reflection", "status": "ok"})
     except Exception as exc:
         logger.exception("nightly_activity: stage 1 reflection failed", extra={"user_id": user_id, "error": str(exc)})
+        stages.append({"stage": "reflection", "status": "error", "error": str(exc)})
 
     try:
         await _stage_2_memory_consolidation(llm_cfg, user_id, recall_rows, updated_inferred, local_today_str)
+        stages.append({"stage": "consolidation", "status": "ok"})
     except Exception as exc:
         logger.exception("nightly_activity: stage 2 consolidation failed", extra={"user_id": user_id, "error": str(exc)})
+        stages.append({"stage": "consolidation", "status": "error", "error": str(exc)})
 
+    planning_count = 0
     try:
         recall_highlights = recall_rows[:_PLANNING_RECALL_HIGHLIGHTS] if recall_rows else []
-        await _stage_3_planning(llm_cfg, user_id, updated_inferred, updated_auto_inject, recall_highlights, date_context, anomaly_stats)
+        planning_count = await _stage_3_planning(
+            llm_cfg,
+            user_id,
+            updated_inferred,
+            updated_auto_inject,
+            recall_highlights,
+            date_context,
+            anomaly_stats,
+            today_conversations=clean_main_messages,
+        )
+        stages.append({"stage": "planning", "status": "ok", "created_jobs": planning_count})
     except Exception as exc:
         logger.exception("nightly_activity: stage 3 planning failed", extra={"user_id": user_id, "error": str(exc)})
+        stages.append({"stage": "planning", "status": "error", "error": str(exc)})
 
     try:
         await _stage_4_self_diary(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str)
+        stages.append({"stage": "diary", "status": "ok"})
     except Exception as exc:
         logger.exception("nightly_activity: stage 4 diary failed", extra={"user_id": user_id, "error": str(exc)})
+        stages.append({"stage": "diary", "status": "error", "error": str(exc)})
 
     # Daily checkpoint 和 stage-5 creation 相互独立（独立 session_scope、独立 LLM 调用、无共享状态）——并发跑，每用户每晚省一次 LLM 往返墙钟时间。
     async def _checkpoint() -> None:
@@ -609,5 +704,18 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         if isinstance(result, Exception):
             # 不在 except 块里——必须显式传异常，否则 exc_info 为空，traceback 丢失。
             logger.error(f"nightly_activity: {label} failed", exc_info=result, extra={"user_id": user_id})
+            stages.append({"stage": label, "status": "error", "error": str(result)})
+        else:
+            stages.append({"stage": label, "status": "ok"})
 
+    has_errors = any(s.get("status") == "error" for s in stages)
+    final_status = "completed_with_errors" if has_errors else "completed"
+    summary_parts = [f"{s['stage']}:{s['status']}" for s in stages]
+    if log_id is not None:
+        await _update_log(
+            log_id,
+            status=final_status,
+            summary="; ".join(summary_parts),
+            payload={"stages": stages, "target_date": local_today_str},
+        )
     return True

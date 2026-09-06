@@ -449,6 +449,10 @@ input[type="file"] { font-size: 0.78rem; }
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     <span>版本管理</span>
                 </button>
+                <button class="nav-item" data-tab="logs" onclick="showTab('logs')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <span>活动日志</span>
+                </button>
             </nav>
             <div class="side-foot">
                 <button class="btn btn--ghost btn--sm" onclick="logout()">
@@ -542,6 +546,30 @@ input[type="file"] { font-size: 0.78rem; }
                                         <th>版本</th><th>更新说明</th><th>平台</th><th>状态</th><th>发布时间</th><th style="text-align:right">操作</th>
                                     </tr></thead>
                                     <tbody id="versionList"><tr class="state-row"><td colspan="6"><div class="state-msg">加载中…</div></td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ── Logs ──────────────────────────────────────── -->
+                    <section id="panel-logs" class="panel">
+                        <div class="card">
+                            <div class="card-head">
+                                <h2>活动日志</h2>
+                                <span class="count" id="logCount"></span>
+                                <span class="spacer"></span>
+                                <div class="inline-form">
+                                    <input type="number" id="logUserId" placeholder="用户 ID（可选）" style="width:8rem">
+                                    <input type="date" id="logDate">
+                                    <button class="btn btn--ghost btn--sm" onclick="loadLogs()">查询</button>
+                                </div>
+                            </div>
+                            <div class="table-scroll">
+                                <table>
+                                    <thead><tr>
+                                        <th>ID</th><th>用户</th><th>目标日期</th><th>状态</th><th>更新时间</th><th style="text-align:right">操作</th>
+                                    </tr></thead>
+                                    <tbody id="logList"><tr class="state-row"><td colspan="6"><div class="state-msg">加载中…</div></td></tr></tbody>
                                 </table>
                             </div>
                         </div>
@@ -814,12 +842,13 @@ input[type="file"] { font-size: 0.78rem; }
 <script>
 const API_BASE = '';
 const TOKEN_KEY = 'spiritagent_admin_token';
-const tabCache = { users: null, models: null, versions: null };
+const tabCache = { users: null, models: null, versions: null, logs: null };
 
 const TABS = {
     users:    { title: '用户管理', desc: '管理可登录客户端的账户、使用权限与激活码' },
     models:   { title: '模型配置', desc: '为每个用户配置 LLM、语音、图像与视频的接入凭证' },
     versions: { title: '版本管理', desc: '上传并分发桌面端与 Runner 的更新包' },
+    logs: { title: '活动日志', desc: '查看夜间自主活动流水线运行记录' },
 };
 
 // service → (input-id map) for the credential modal. video_gen was missing
@@ -880,6 +909,7 @@ function showTab(name) {
     if (name === 'users') loadUsers();
     if (name === 'models') loadModelConfigs();
     if (name === 'versions') loadVersions();
+    if (name === 'logs') loadLogs();
 }
 
 function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
@@ -1356,6 +1386,54 @@ async function deleteModelConfig(userId) {
     catch (e) { toast(e.message, 'err'); }
 }
 
+
+// ── Logs ────────────────────────────────────────────────
+async function loadLogs() {
+    const userId = $('#logUserId').value.trim();
+    const dateVal = $('#logDate').value;
+    const params = new URLSearchParams();
+    if (userId) params.set('user_id', userId);
+    if (dateVal) params.set('target_date', dateVal);
+    try {
+        const data = await (await apiFetch('/api/admin/nightly-activity-logs' + (params.toString() ? '?' + params : ''))).json();
+        tabCache.logs = data;
+        renderLogs(data);
+    } catch (e) { $('#logList').innerHTML = stateRow(6, '加载失败：' + e.message, '', true); }
+}
+
+function renderLogs(data) {
+    const tbody = $('#logList');
+    const items = getItems(data);
+    $('#logCount').textContent = items.length ? `${items.length} 条记录` : '';
+    if (!items.length) { tbody.innerHTML = stateRow(6, '暂无夜间活动记录', '当夜间流水线运行后会在此展示'); return; }
+    tbody.innerHTML = items.map(r => {
+        const statusPill = pill(
+            r.status === 'completed' ? '已完成' :
+            r.status === 'completed_with_errors' ? '部分失败' :
+            r.status === 'skipped' ? '跳过' : '失败',
+            r.status === 'completed' ? 'green' :
+            r.status === 'skipped' ? 'muted' : 'red'
+        );
+        return `<tr style="cursor:pointer" onclick="openLogDetail(${r.id})">
+            <td class="td-id">${r.id}</td>
+            <td><div class="cell-strong">${esc(String(r.user_id))}</div><div class="cell-sub">${esc(r.summary || '')}</div></td>
+            <td>${esc(r.target_date)}</td>
+            <td>${statusPill}</td>
+            <td>${fmtDate(r.updated_at || r.created_at)}</td>
+            <td class="td-actions"><button class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); openLogDetail(${r.id})">查看</button></td>
+        </tr>`;
+    }).join('');
+}
+
+async function openLogDetail(id) {
+    const items = tabCache.logs?.items ?? [];
+    const item = items.find(r => r.id === id);
+    if (!item) return;
+    $('#logDetailTitle').textContent = `日志 #${item.id} · 用户 ${item.user_id} · ${item.target_date}`;
+    $('#logDetailBody').textContent = JSON.stringify(item, null, 2);
+    openModal('logDetailModal');
+}
+
 // ── Versions ─────────────────────────────────────────────
 async function loadVersions() {
     try {
@@ -1428,5 +1506,23 @@ function closeModal(id) { $('#' + id).classList.remove('open'); document.body.st
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $$('.modal.open').forEach(m => m.classList.remove('open')); });
 </script>
+
+<div id="logDetailModal" class="modal" onclick="if(event.target===this)closeModal('logDetailModal')">
+    <div class="modal-card wide">
+        <div class="modal-head">
+            <h2 id="logDetailTitle">日志详情</h2>
+            <button class="modal-close" onclick="closeModal('logDetailModal')" aria-label="关闭">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <pre id="logDetailBody" style="white-space:pre-wrap;word-break:break-word;font-size:0.82rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;max-height:60vh;overflow:auto"></pre>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn--ghost" onclick="closeModal('logDetailModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

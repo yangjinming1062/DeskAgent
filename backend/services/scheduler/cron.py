@@ -8,7 +8,6 @@ from typing import Any
 from components import (
     MEMORY_CONSOLIDATE_INTERVAL_SECONDS,
     MEMORY_CONSOLIDATE_TRIGGER_ROWS,
-    NIGHTLY_MIN_MESSAGES_TODAY,
     NIGHTLY_SCAN_INTERVAL_SECONDS,
     NIGHTLY_WINDOW_END_HOUR,
     NIGHTLY_WINDOW_START_HOUR,
@@ -441,7 +440,8 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
                     msg_counts[int(uid)] = int(cnt)
 
             for uid, reference_utc, target_date_str in candidates:
-                if msg_counts.get(uid, 0) >= NIGHTLY_MIN_MESSAGES_TODAY:
+                # 任意用户交互即触发——硬阈值会让 1–4 条消息的轻量互动日静默跳过，丢掉 LLM 反思/规划机会。
+                if msg_counts.get(uid, 0) > 0:
                     eligible.append((uid, reference_utc, target_date_str))
 
     if not eligible:

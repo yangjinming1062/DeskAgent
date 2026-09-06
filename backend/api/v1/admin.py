@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from common import get_or_404, get_router, list_response
@@ -31,6 +31,7 @@ from modules.auth import (
     public_provider_slots,
 )
 from modules.companion import AvatarAsset, Companion3DModel
+from modules.scheduler import NightlyActivityLog, NightlyActivityLogItem, NightlyActivityLogListResponse
 from modules.system import MessageResponse
 from services.companion import delete_portrait_file
 from services.gateway import discard_user_session
@@ -211,6 +212,25 @@ async def list_model_configs(db: DbSession) -> UserModelConfigListResponse:
 async def runtime_info() -> dict:
     """把 ``public_base_url`` 暴露给 admin 页：创建账号时自动填进激活码的 ``baseUrl``，留空时前端再降级到 ``http://localhost:10620``。"""
     return {"public_base_url": SETTINGS.public_base_url or ""}
+
+
+@router.get("/nightly-activity-logs", response_model=NightlyActivityLogListResponse)
+async def list_nightly_activity_logs(
+    db: DbSession,
+    user_id: int | None = None,
+    target_date: str | None = None,
+) -> NightlyActivityLogListResponse:
+    """查询夜间自主活动日志。可选按 user_id 和 target_date 过滤。"""
+    stmt = select(NightlyActivityLog).order_by(NightlyActivityLog.id.desc()).limit(300)
+    if user_id is not None:
+        stmt = stmt.where(NightlyActivityLog.user_id == user_id)
+    if target_date:
+        try:
+            stmt = stmt.where(NightlyActivityLog.target_date == date.fromisoformat(target_date))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid target_date format, use YYYY-MM-DD")
+    rows = (await db.execute(stmt)).scalars().all()
+    return list_response(rows, NightlyActivityLogItem, NightlyActivityLogListResponse)
 
 
 @router.put("/{user_id}/model-config")
