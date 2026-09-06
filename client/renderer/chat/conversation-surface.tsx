@@ -18,6 +18,7 @@ import {
 } from '@/chat/chat-store'
 import { $portraitUrl } from '@/companion'
 import { useAtomListen } from '@/shared/hooks/use-atom-listen'
+import { cn } from '@/shared/lib/utils'
 import { $gatewayState } from '@/shared/store/gateway'
 
 interface ConversationSurfaceProps {
@@ -64,13 +65,17 @@ export function ConversationSurface({
   const portraitUrl = useStore($portraitUrl)
 
   return (
-    <div className={className ?? 'flex-1 space-y-3 overflow-y-auto px-4 py-4'} data-surface={variant} ref={scrollRef}>
+    <div
+      className={cn('space-y-3', className ?? 'flex-1 overflow-y-auto px-4 py-4')}
+      data-surface={variant}
+      ref={scrollRef}
+    >
       {list.length === 0 && <p className="mt-8 text-center text-sm text-faint">{emptyHint}</p>}
       {list.map(item => (
         <MessageBubble key={item.id} message={item} variant={variant} />
       ))}
       {showTyping && (
-        <div className="flex items-start gap-2.5">
+        <div className="flex shrink-0 items-start gap-2.5">
           {variant === 'workbench' && (
             <div className="mt-0.5 size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm">
               {portraitUrl ? (

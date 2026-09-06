@@ -1,10 +1,11 @@
-﻿import { useStore } from '@nanostores/react'
+import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import type React from 'react'
 
 import { $chatSessionId } from '@/chat/chat-store'
 import { undoToMessage } from '@/chat/session-list-store'
 import { ArrowBackUp, Loader2 } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 import { notifyError } from '@/shared/store/notifications'
 
 interface ChatMessageUndoButtonProps {
@@ -28,7 +29,9 @@ export function ChatMessageUndoButton({
   const isMineInFlight = inFlight === messageId
   const otherBusy = inFlight !== null && !isMineInFlight
 
-  const onClick = async (): Promise<void> => {
+  const onClick = async (e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation()
+
     if (!sourceSessionId || inFlight !== null) {
       return
     }
@@ -54,39 +57,37 @@ export function ChatMessageUndoButton({
     }
   }
 
-  let icon: React.JSX.Element
-  let label: string
-  let styleClass: string
+  let label = '撤回此条消息'
+  let icon = <ArrowBackUp className="size-3.5" />
+  let stateClass = 'text-muted hover:bg-fill-hover/80 hover:text-strong'
 
   if (isMineInFlight) {
-    icon = <Loader2 className="animate-spin" size={12} />
     label = '正在撤回…'
-    styleClass =
-      'rounded-md border border-line-strong bg-fill-hover px-2 py-1 text-xs text-strong transition hover:bg-fill-hover'
+    icon = <Loader2 className="size-3.5 animate-spin text-accent" />
+    stateClass = 'text-accent'
   } else if (otherBusy) {
-    icon = <ArrowBackUp size={12} />
     label = '另一条正在撤回'
-    styleClass = 'rounded-md border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
-  } else {
-    icon = <ArrowBackUp size={12} />
-    label = '撤回此条消息'
-    styleClass =
-      'rounded-md border border-line-strong bg-fill-faint px-2 py-1 text-xs text-muted transition hover:bg-fill-hover hover:text-strong'
+    icon = <ArrowBackUp className="size-3.5 opacity-30" />
+    stateClass = 'cursor-not-allowed text-faint/40 opacity-50'
   }
 
   return (
     <button
       aria-label={label}
-      className={`${styleClass} ${className} inline-flex items-center gap-1`}
+      className={cn(
+        'inline-flex size-6 shrink-0 items-center justify-center rounded-md transition select-none',
+        stateClass,
+        className
+      )}
+      data-busy={isMineInFlight || undefined}
       disabled={otherBusy || isMineInFlight}
-      onClick={() => {
-        void onClick()
+      onClick={e => {
+        void onClick(e)
       }}
       title={label}
       type="button"
     >
       {icon}
-      <span>{label}</span>
     </button>
   )
 }

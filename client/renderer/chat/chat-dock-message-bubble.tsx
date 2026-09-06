@@ -172,11 +172,10 @@ function MessageBubbleWithBody({
   const canOperate =
     Boolean(message.backendMessageId) && !body.streaming && !body.error && !body.cancelled && !body.toolName
 
-  // 派生按钮：工作台专属，生活空间为单一上下文不允许派生新会话。
+  // 生活空间只有唯一陪伴上下文，不允许派生。
   const canFork = variant === 'workbench' && canOperate
 
-  // 撤回按钮：限定 user-role，避免误点 assistant 行造成「撤回伙伴上一句回答」的歧义；
-  // 用户在生活空间或工作台均可撤回自身消息。
+  // 避免误点助手行变成撤回伙伴上一句。
   const canUndo = isUser && canOperate
 
   // 用户附件渲染为可点击图片卡（data URL 或本地路径，媒体源通道负责取图）；
@@ -206,7 +205,12 @@ function MessageBubbleWithBody({
   }
 
   return (
-    <div className={`group/message relative flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div
+      className={cn(
+        'group/message relative flex shrink-0 gap-2.5 overflow-visible',
+        isUser ? 'justify-end' : 'justify-start'
+      )}
+    >
       {!isUser && variant === 'workbench' && (
         <div className="size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm mt-0.5">
           {portraitUrl ? (
@@ -218,7 +222,7 @@ function MessageBubbleWithBody({
           )}
         </div>
       )}
-      <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={cn('relative flex max-w-[80%] flex-col overflow-visible', isUser ? 'items-end' : 'items-start')}>
         {body.attachments?.length ? (
           <div className="flex flex-col gap-1">
             {body.attachments.map(a => (
@@ -281,21 +285,53 @@ function MessageBubbleWithBody({
             ))}
           </div>
         ) : null}
+        {/* 贴气泡旁纵向居中，避免工作台纵向 flex 把顶部浮层裁掉。 */}
+        {(canFork || canUndo) && (
+          <MessageActionCluster
+            canFork={canFork}
+            canUndo={canUndo}
+            isUser={isUser}
+            messageId={message.id}
+            sourceMessageId={message.backendMessageId!}
+            variant={variant}
+          />
+        )}
       </div>
+    </div>
+  )
+}
 
-      {/* hover 区承载 Fork / Undo；pointer-events-auto 防止父级 pointer-events-none 把按钮吃掉。 */}
-      {(canFork || canUndo) && (
-        <div
-          className="pointer-events-auto absolute -top-3 right-2 z-10 flex items-center gap-1
-                     rounded-md border border-line-standard bg-surface-panel/90 px-1.5 py-1
-                     backdrop-blur-glass opacity-0 shadow-lg
-                     transition-opacity duration-150
-                     group-hover/message:opacity-100"
-        >
-          {canFork && <ChatMessageForkButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
-          {canUndo && <ChatMessageUndoButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
-        </div>
+function MessageActionCluster({
+  canFork,
+  canUndo,
+  isUser,
+  messageId,
+  sourceMessageId,
+  variant
+}: {
+  canFork: boolean
+  canUndo: boolean
+  isUser: boolean
+  messageId: string
+  sourceMessageId: number
+  variant: ConversationVariant
+}): React.JSX.Element {
+  return (
+    <div
+      className={cn(
+        'absolute top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 whitespace-nowrap',
+        'rounded-full border border-line-hairline/80 bg-surface-card/90 p-0.5 shadow-sm backdrop-blur-md',
+        'transition-opacity duration-150',
+        'focus-within:pointer-events-auto focus-within:opacity-100',
+        'has-[[data-busy]]:pointer-events-auto has-[[data-busy]]:opacity-100',
+        isUser ? 'right-full mr-1.5' : 'left-full ml-1.5',
+        variant === 'workbench'
+          ? 'pointer-events-auto opacity-70 group-hover/message:opacity-100'
+          : 'pointer-events-none opacity-0 group-hover/message:pointer-events-auto group-hover/message:opacity-100'
       )}
+    >
+      {canFork && <ChatMessageForkButton messageId={messageId} sourceMessageId={sourceMessageId} />}
+      {canUndo && <ChatMessageUndoButton messageId={messageId} sourceMessageId={sourceMessageId} />}
     </div>
   )
 }

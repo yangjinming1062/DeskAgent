@@ -24,6 +24,7 @@ export {
   IconPhoto as FileImage,
   IconFileText as FileText,
   IconFolderOpen as FolderOpen,
+  IconGitFork as GitFork,
   IconGlobe as Globe,
   IconHome as Home,
   IconPhoto as ImageIcon,

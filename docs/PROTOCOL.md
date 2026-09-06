@@ -308,7 +308,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 - 状态 pill 渲染 → `status_command_result` 加入 `chat-dock-message-bubble.tsx` 的 status 渲染分支
 - 自动压缩事件 → [backend/services/chat/orchestrator.py](backend/services/chat/orchestrator.py)（orchestrator 命中阈值后 push）+ [backend/services/gateway/emitter.py](backend/services/gateway/emitter.py)（`_TRANSLATED` 表 + `_translate`）+ [client/renderer/companion/events.ts](client/renderer/companion/events.ts)（`compress.completed` switch）+ `chat-dock-message-bubble.tsx` 的 `COMPRESS_CARD_SUBTYPES` 折叠卡片分支 + 本文档 §1.3
 
-**手动撤回不走 slash 命令**：消息级粒度的「撤回」由用户在历史气泡上点击 hover 浮现的撤回图标触发，直接走 `session.undo_to_message` RPC（slash 命令无法承载消息级粒度 + 需要服务端精确路由到具体 source_message_id）。详见 §1.2 与 §1.3 的 `message.deleted` 事件。
+**手动撤回不走 slash 命令**：消息级粒度的「撤回」由用户在历史用户气泡旁点击撤回图标触发，直接走 `session.undo_to_message` RPC（slash 命令无法承载消息级粒度 + 需要服务端精确路由到具体 source_message_id）。详见 §1.2 与 §1.3 的 `message.deleted` 事件。
 
 ---
 
