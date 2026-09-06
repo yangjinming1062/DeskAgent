@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   $effectiveTier,
@@ -18,9 +19,15 @@ import {
   setDisturbanceTier,
   setResponseMode
 } from '@/companion'
+import { triggerHaptic } from '@/shared/lib/haptics'
 import { Check } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import { HINT_TEXT, Segmented, SettingRow, Toggle } from '@/shared/panel'
+import { HINT_TEXT, PanelSelect, Segmented, SettingRow, Toggle } from '@/shared/panel'
+import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
+import { notifyError } from '@/shared/store/notifications'
+
+const RECORDING_OPTIONS = [15, 30, 60, 120, 300] as const
+const DEFAULT_RECORDING_SECONDS = 60
 
 // 交互页：伙伴怎么回应（回应方式 / 打扰档位 / 智能反应与自主行为）。
 // 长页（living-settings）内嵌段，不使用 SettingsPage 外壳。
@@ -30,6 +37,51 @@ export function InteractionPage(): React.ReactElement {
   const llmReactions = useStore($llmReactions)
   const llmAffect = useStore($llmAffect)
   const llmAutonomy = useStore($llmAutonomy)
+
+  const [maxRecordingSeconds, setMaxRecordingSeconds] = useState<number>(DEFAULT_RECORDING_SECONDS)
+  const [isSavingRecordTime, setIsSavingRecordTime] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    void getSpiritAgentConfig()
+      .then(cfg => {
+        if (mounted && typeof cfg.voice?.max_recording_seconds === 'number') {
+          setMaxRecordingSeconds(cfg.voice.max_recording_seconds)
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const recordingOptions = useMemo(
+    () =>
+      Array.from(new Set([...RECORDING_OPTIONS, maxRecordingSeconds]))
+        .sort((a, b) => a - b)
+        .map(sec => ({ value: String(sec), label: `${sec} 秒` })),
+    [maxRecordingSeconds]
+  )
+
+  const handleRecordingSecondsChange = async (val: string): Promise<void> => {
+    const nextSec = Number(val)
+    const prevSec = maxRecordingSeconds
+    setMaxRecordingSeconds(nextSec)
+    setIsSavingRecordTime(true)
+
+    try {
+      await saveSpiritAgentConfig({
+        voice: { max_recording_seconds: nextSec }
+      })
+      triggerHaptic('success')
+    } catch (err) {
+      setMaxRecordingSeconds(prevSec)
+      notifyError(err, '保存录音时长失败')
+    } finally {
+      setIsSavingRecordTime(false)
+    }
+  }
 
   const selectTier = (id: DisturbanceTier): void => {
     setDisturbanceTier(id)
@@ -56,6 +108,22 @@ export function InteractionPage(): React.ReactElement {
             ]}
             value={responseMode}
           />
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-xs font-medium text-strong">语音录制</h3>
+        <p className={cn(HINT_TEXT, 'mt-1')}>使用麦克风录制语音消息时的设置。</p>
+        <div className="mt-2.5 overflow-hidden rounded-xl border border-line-hairline bg-surface-card">
+          <SettingRow description="单条语音录音的最大时长，到达上限后自动停止录制并发送" label="录音时长上限">
+            <PanelSelect
+              disabled={isSavingRecordTime}
+              onChange={v => void handleRecordingSecondsChange(v)}
+              options={recordingOptions}
+              value={String(maxRecordingSeconds)}
+              widthClass="w-28"
+            />
+          </SettingRow>
         </div>
       </section>
 

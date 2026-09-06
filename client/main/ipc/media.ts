@@ -344,7 +344,6 @@ interface MediaIpcDeps {
   spiritagentHome?: null | string
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
   fetchImpl?: typeof globalThis.fetch
-  isSttEnabled: () => boolean
   ipcMain: IpcMain
   log?: (msg: string) => void
 }
@@ -353,7 +352,6 @@ export function registerMediaIpc({
   spiritagentHome,
   ensureBackend,
   fetchImpl,
-  isSttEnabled,
   ipcMain,
   log = () => {}
 }: MediaIpcDeps): void {
@@ -383,11 +381,6 @@ export function registerMediaIpc({
       })
 
       sttLog('start')
-
-      if (!isSttEnabled()) {
-        sttLog('done', { disabled: true, ms: Date.now() - startedAt })
-        throw new Error('STT is disabled in configuration')
-      }
 
       const text = await sttViaBackend({
         data,

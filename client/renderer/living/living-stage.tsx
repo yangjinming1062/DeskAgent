@@ -5,7 +5,7 @@
 // - appearance: AppearancePage（形象 / 渲染模式）
 // - moments / diary: 后端直连两页
 // - channels / room: 单文件页
-// - settings: LivingSettings（长页：角色/音色/交互/主题/语音/快捷键/关于）
+// - settings: LivingSettings（长页：角色/音色/交互/主题/快捷键/关于）
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'

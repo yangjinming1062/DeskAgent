@@ -246,20 +246,6 @@ export const strings = {
     }
   },
 
-  speech: {
-    title: '语音输入',
-    intro: '语音输入与录音设置',
-    loading: '加载中…',
-    sttEnabledTitle: '语音转文字总开关',
-    sttEnabledDesc: '关闭后语音条不可用。',
-    recordingTitle: '录音时长上限',
-    recordingDesc: '单条语音录音的最大时长（秒）',
-    save: '保存',
-    saving: '保存中…',
-    saved: '已保存',
-    saveFailed: '保存失败'
-  },
-
   skills: {
     tabSkills: '技能',
     tabToolsets: '工具集',

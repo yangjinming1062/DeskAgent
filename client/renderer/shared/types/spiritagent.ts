@@ -123,8 +123,6 @@ export interface SpiritAgentConfigResponse {
     compression_temperature?: number
   }
   stt?: {
-    /** 总开关——为 false 时，spiritagent:media:stt 直接拒绝，
-     * 不进行任何云端 STT 工作。见 media.cjs。 */
     enabled?: boolean
   }
   voice?: {

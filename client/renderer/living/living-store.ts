@@ -10,7 +10,7 @@ import { definePersistedEnum } from '@/shared/lib/storage'
 
 export type LivingView = 'chat' | 'wardrobe' | 'appearance' | 'moments' | 'diary' | 'channels' | 'room' | 'settings'
 
-export type LivingSettingsSection = 'persona' | 'voice' | 'interaction' | 'theme' | 'speech' | 'shortcuts' | 'about'
+export type LivingSettingsSection = 'persona' | 'voice' | 'interaction' | 'theme' | 'shortcuts' | 'about'
 
 export const LIVING_VIEWS: ReadonlyArray<LivingView> = [
   'chat',
@@ -28,7 +28,6 @@ export const LIVING_SETTINGS_SECTIONS: ReadonlyArray<LivingSettingsSection> = [
   'voice',
   'interaction',
   'theme',
-  'speech',
   'shortcuts',
   'about'
 ]

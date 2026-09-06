@@ -1,4 +1,4 @@
-// 生活空间「设置」长页：单页平铺角色/音色/交互/主题/语音/快捷键/关于，
+// 生活空间「设置」长页：单页平铺角色/音色/交互/主题/快捷键/关于，
 // 与 AppSettingsPanel 同形态——顶部锚点导航 + 滚动正文 + 触底高亮「关于」。
 //
 // 推理与对话已搬至工作台工位抽屉，本页不再收纳。
@@ -22,7 +22,6 @@ import { AboutPage } from './about-page'
 import { InteractionPage } from './interaction-page'
 import { PersonaPage } from './persona-page'
 import { ShortcutsPage } from './shortcuts-page'
-import { SpeechPage } from './speech-page'
 import { ThemePage } from './theme-page'
 import { VoicePage } from './voice-page'
 
@@ -35,7 +34,6 @@ const SECTION_PAGES: Record<LivingSettingsSection, SectionPage> = {
   interaction: InteractionPage,
   persona: PersonaPage,
   shortcuts: ShortcutsPage,
-  speech: SpeechPage,
   theme: ThemePage,
   voice: VoicePage
 }
@@ -45,7 +43,6 @@ const SECTION_LABELS: Record<LivingSettingsSection, string> = {
   interaction: '交互',
   persona: '角色与记忆',
   shortcuts: strings.settings.nav.shortcuts,
-  speech: strings.speech.title,
   theme: '主题',
   voice: '音色'
 }
