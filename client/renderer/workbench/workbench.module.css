@@ -593,40 +593,6 @@ html[data-theme='day'] .stepIndex {
   }
 }
 
-.outputStack {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.outputText {
-  background: rgba(0, 0, 0, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  color: var(--ui-text-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
-  line-height: 1.5;
-  margin: 0;
-  max-height: 220px;
-  overflow: auto;
-  padding: 8px 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-html[data-theme='day'] .outputText {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(0, 0, 0, 0.06);
-  color: #1c1c22;
-}
-
-.outputMedia {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .artifacts {
   display: grid;
   gap: 6px;

@@ -17,6 +17,7 @@ import {
   $chatTurnInFlight,
   $turnHadBubbleBreak,
   appendAssistantDelta,
+  appendAssistantReasoningDelta,
   beginAssistantMessage,
   bindTrailingAssistantMessageId,
   bindTrailingUserMessageIds,
@@ -241,6 +242,16 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       break
     }
 
+    case 'message.reasoning.delta': {
+      const text = (event.payload as { text?: string } | undefined)?.text ?? ''
+
+      if (text) {
+        appendAssistantReasoningDelta(text)
+      }
+
+      break
+    }
+
     case 'message.break': {
       // 后端把回合切成了连续的气泡——收尾当前气泡；
       // 下一条 message.delta 会开一个新气泡（后端已在它们之间插入 0.5–1.5 秒停顿）。
@@ -268,6 +279,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       const payload = event.payload as
         | {
             text?: string
+            reasoning?: string
             media?: ChatMediaItem[]
             affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string }
             usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
@@ -303,7 +315,12 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       // 多气泡回合：每个气泡各自携带流式文本；
       // payload.text 是整轮（包含两个气泡）的全文，会覆盖最后一个气泡。
       // 这种情况下保留 last.text。媒体与正文正交，始终挂到最后一格。
-      finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text, payload?.media)
+      const hadBreak = $turnHadBubbleBreak.get()
+      finalizeAssistantMessage(
+        hadBreak ? undefined : payload?.text,
+        payload?.media,
+        hadBreak ? undefined : payload?.reasoning
+      )
 
       if (typeof payload?.message_id === 'number') {
         bindTrailingAssistantMessageId(payload.message_id)

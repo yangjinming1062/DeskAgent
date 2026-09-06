@@ -151,16 +151,19 @@ async def _persist_assistant_no_tool_turn(
     spatial_locale: str | None = None,
     spatial_target: str | None = None,
     media: list[dict[str, str]] | None = None,
+    reasoning: str | None = None,
+    turn_reasoning: str | None = None,
 ) -> None:
     """终端路径：助手只产出文本（可附生成媒体）；持久化 Message、触发可选的标题生成与后台 review、发出 ``message.complete``。"""
     assistant_message_id: int | None = None
-    if turn_content or media:
+    if turn_content or media or reasoning:
         async with session_scope() as db:
             row = Message(
                 conversation_id=conv.id,
                 role="assistant",
                 content=turn_content or None,
                 media_json=json.dumps(media, ensure_ascii=False) if media else None,
+                reasoning_content=reasoning or None,
                 prompt_tokens=final_prompt_tokens,
                 completion_tokens=final_completion_tokens,
                 turn_duration_ms=turn_duration_ms,
@@ -219,10 +222,12 @@ async def _persist_assistant_no_tool_turn(
     if spatial_target:
         affect_payload["target"] = spatial_target
 
+    displayed_reasoning = turn_reasoning if turn_reasoning is not None else reasoning
     await emitter.send_json(
         {
             "type": "message.complete",
             "text": turn_content,
+            **({"reasoning": displayed_reasoning} if displayed_reasoning else {}),
             "affect": affect_payload,
             **({"media": media} if media else {}),
             **({"usage": final_usage_payload} if final_usage_payload else {}),
@@ -242,6 +247,8 @@ async def _persist_assistant_with_tool_calls_and_results(
     context: dict[str, Any],
     active_tool_names: set[str],
     schemas_by_name: dict[str, dict],
+    *,
+    reasoning: str | None = None,
 ) -> list[dict[str, str]]:
     """持久化含 tool_calls 的 assistant Message、跑工具批处理，并同步更新 Responses 输入轨迹；返回本轮生成的可送达媒体。"""
     if turn_content:
@@ -254,6 +261,7 @@ async def _persist_assistant_with_tool_calls_and_results(
                 role="assistant",
                 content=turn_content if turn_content else None,
                 tool_calls=json.dumps(tool_calls_list),
+                reasoning_content=reasoning or None,
                 prompt_tokens=final_prompt_tokens,
                 completion_tokens=final_completion_tokens,
                 turn_duration_ms=turn_duration_ms,

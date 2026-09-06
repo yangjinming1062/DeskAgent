@@ -134,6 +134,7 @@ async def run_chat_turn(
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
     # 本轮所有工具批次产出的生成媒体，随终端 assistant 行落库并在 message.complete 下发。
     turn_media: list[dict[str, str]] = []
+    turn_reasoning_parts: list[str] = []
 
     dispatch_ctx = _ToolDispatchContext(
         user_id=user_id,
@@ -199,6 +200,9 @@ async def run_chat_turn(
             await emitter.send_json({"type": "error", "message": f"LLM unavailable: {exc}"})
             break
 
+        if llm_result.reasoning:
+            turn_reasoning_parts.append(llm_result.reasoning)
+
         if not llm_result.tool_calls_list:
             await _persist_assistant_no_tool_turn(
                 conv,
@@ -221,6 +225,8 @@ async def run_chat_turn(
                 spatial_locale=llm_result.spatial_locale,
                 spatial_target=llm_result.spatial_target,
                 media=turn_media,
+                reasoning=llm_result.reasoning,
+                turn_reasoning="\n\n".join(turn_reasoning_parts) or None,
             )
             break
 
@@ -242,6 +248,7 @@ async def run_chat_turn(
                 current_context,
                 active_tool_names,
                 schemas_by_name,
+                reasoning=llm_result.reasoning,
             ),
         )
 

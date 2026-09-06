@@ -15,6 +15,7 @@ export {
   $proactiveBubble,
   $turnHadBubbleBreak,
   appendAssistantDelta,
+  appendAssistantReasoningDelta,
   beginAssistantMessage,
   bindTrailingAssistantMessageId,
   bindTrailingUserMessageIds,

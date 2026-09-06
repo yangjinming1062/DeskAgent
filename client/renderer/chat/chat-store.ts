@@ -22,6 +22,7 @@ export interface ChatMessageListItem {
 
 export interface ChatMessageBody {
   text: string
+  reasoning?: string
   streaming?: boolean
   toolName?: string | null
   tools?: string[]
@@ -178,6 +179,26 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
   const bodies: Record<string, ChatMessageBody> = {}
 
   let totalChars = 0
+  const pendingReasoning: string[] = []
+
+  const takeReasoning = (current?: string): string | undefined => {
+    const parts = [...pendingReasoning, current].filter((part): part is string => Boolean(part?.trim()))
+    pendingReasoning.length = 0
+
+    return parts.length ? parts.join('\n\n') : undefined
+  }
+
+  const flushPendingReasoning = (timestamp?: number): void => {
+    const reasoning = takeReasoning()
+
+    if (!reasoning) {
+      return
+    }
+
+    const id = nextId()
+    items.push({ id, role: 'assistant', timestamp })
+    bodies[id] = { text: '', reasoning, streaming: false, toolName: null }
+  }
 
   for (const m of messages) {
     // 过滤底层工具执行结果（role === 'tool'），避免将 raw JSON 结果作为气泡显示
@@ -186,10 +207,19 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
     }
 
     const textContent = extractText(m)
+    const reasoningContent = typeof m.reasoning === 'string' ? m.reasoning : ''
 
-    // 过滤无正文且无媒体的助手行（只调用工具无文字输出的空中间帧，避免气泡省略号 …）
+    // 无正文无媒体的助手行（工具中间帧）不单独占气泡；其推理过程并到下一可见助手行。
     if (m.role === 'assistant' && !textContent.trim() && !m.media?.length) {
+      if (reasoningContent.trim()) {
+        pendingReasoning.push(reasoningContent)
+      }
+
       continue
+    }
+
+    if (m.role === 'user') {
+      flushPendingReasoning(m.timestamp)
     }
 
     const id = nextId()
@@ -202,8 +232,10 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
       backendMessageId: typeof m.id === 'number' ? m.id : undefined,
       timestamp: m.timestamp
     })
+
     bodies[id] = {
       text: textContent,
+      reasoning: m.role === 'assistant' ? takeReasoning(reasoningContent || undefined) : undefined,
       toolName: m.tool_name ?? null,
       tools: m.tool_name ? [m.tool_name] : undefined,
       streaming: false,
@@ -211,6 +243,8 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
       ...(m.media?.length ? { media: m.media } : {})
     }
   }
+
+  flushPendingReasoning()
 
   $chatMessageBodies.set(bodies)
   $chatMessageList.set(items)
@@ -478,7 +512,7 @@ export function clearPendingPrompts(): void {
 
 export const $chatTurnInFlight = atom<boolean>(false)
 
-// 当后端在 in-flight 回合期间发出 bubble.break 时置位，防止 message.complete 全文覆盖末尾气泡。
+// 当后端在 in-flight 回合期间发出 bubble.break 时置位，防止 message.complete 的全文/推理覆盖末尾气泡。
 export const $turnHadBubbleBreak = atom<boolean>(false)
 
 interface ChatUndoDraft {
@@ -649,7 +683,7 @@ function ensureAssistantMessage(): void {
   beginAssistantMessage()
 }
 
-export function appendAssistantDelta(text: string): void {
+function patchLastAssistant(patch: (body: ChatMessageBody) => ChatMessageBody): void {
   ensureAssistantMessage()
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
@@ -664,10 +698,20 @@ export function appendAssistantDelta(text: string): void {
     return
   }
 
-  // 仅更新当前流式消息 body，不改动 list 引用；首个 delta 过滤前导空行，避免撑大气泡上方
-  const nextText = !body.text ? text.trimStart() : body.text + text
-  $chatMessageBodies.setKey(lastItem.id, { ...body, text: nextText })
+  $chatMessageBodies.setKey(lastItem.id, patch(body))
   $chatStreamingTick.set($chatStreamingTick.get() + 1)
+}
+
+export function appendAssistantDelta(text: string): void {
+  // 仅更新当前流式消息 body，不改动 list 引用；首个 delta 过滤前导空行，避免撑大气泡上方
+  patchLastAssistant(body => ({ ...body, text: !body.text ? text.trimStart() : body.text + text }))
+}
+
+export function appendAssistantReasoningDelta(text: string): void {
+  patchLastAssistant(body => ({
+    ...body,
+    reasoning: !body.reasoning ? text.trimStart() : body.reasoning + text
+  }))
 }
 
 export function setAssistantTool(name: string | null): void {
@@ -690,7 +734,7 @@ export function setAssistantTool(name: string | null): void {
   $chatMessageBodies.setKey(lastItem.id, { ...body, toolName: name, tools })
 }
 
-export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[]): void {
+export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[], reasoning?: string): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
 
@@ -708,9 +752,13 @@ export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[])
   const finalStr = rawStr.trim()
   const finalMedia = media ?? body.media
 
-  // 助手消息为空且无工具/错误/取消/媒体时剪掉，避免空白气泡。
+  const finalReasoning =
+    (typeof reasoning === 'string' && reasoning.trim() ? reasoning : body.reasoning)?.trim() || undefined
+
+  // 助手消息为空且无推理/工具/错误/取消/媒体时剪掉，避免空白气泡。
   const isEmpty =
     !finalStr.trim() &&
+    !finalReasoning?.trim() &&
     !body.toolName &&
     !body.error &&
     !body.cancelled &&
@@ -728,6 +776,7 @@ export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[])
   $chatMessageBodies.setKey(lastItem.id, {
     ...body,
     text: finalStr,
+    reasoning: finalReasoning,
     media: finalMedia,
     streaming: false,
     toolName: null

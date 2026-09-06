@@ -3,7 +3,7 @@ import type React from 'react'
 import { memo, useState } from 'react'
 
 import { $portraitUrl } from '@/companion'
-import { ChevronDown } from '@/shared/lib/icons'
+import { ChevronDown, Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
 import { ChatMediaCard } from './chat-media-card'
@@ -205,7 +205,9 @@ function MessageBubbleWithBody({
     return <></>
   }
 
-  // 非流式、非错误且无任何可见文本与媒体的空消息不渲染
+  const hasVisibleReasoning = variant === 'workbench' && Boolean(body.reasoning?.trim())
+
+  // 非流式、非错误且无任何可见文本与媒体及推理的空消息不渲染
   if (
     !isUser &&
     !displayText &&
@@ -213,7 +215,8 @@ function MessageBubbleWithBody({
     !body.attachments?.length &&
     !body.media?.length &&
     !body.error &&
-    !body.cancelled
+    !body.cancelled &&
+    !hasVisibleReasoning
   ) {
     return <></>
   }
@@ -297,6 +300,9 @@ function MessageBubbleWithBody({
               ) : null}
             </div>
           ) : null}
+          {!isUser && variant === 'workbench' && (body.reasoning || (body.streaming && !displayText)) ? (
+            <ReasoningBlock reasoning={body.reasoning} streaming={body.streaming} />
+          ) : null}
           {body.media?.length ? (
             <div className="mt-1 flex flex-col gap-1">
               {body.media.map(m => (
@@ -317,6 +323,55 @@ function MessageBubbleWithBody({
           />
         )}
       </div>
+    </div>
+  )
+}
+
+function ReasoningBlock({
+  reasoning,
+  streaming
+}: {
+  reasoning?: string
+  streaming?: boolean
+}): React.JSX.Element | null {
+  const [expanded, setExpanded] = useState(false)
+  const trimmed = reasoning?.trim() ?? ''
+
+  if (!trimmed && !streaming) {
+    return null
+  }
+
+  return (
+    <div className="mt-1.5 flex max-w-full flex-col select-none">
+      <button
+        aria-expanded={expanded}
+        className={cn(
+          'group/reason inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] text-white/50 backdrop-blur-xs transition-all duration-150',
+          'hover:border-white/20 hover:bg-white/[0.06] hover:text-white/80 cursor-pointer text-left'
+        )}
+        onClick={() => setExpanded(prev => !prev)}
+        type="button"
+      >
+        <Search className="size-3 shrink-0 text-white/40 group-hover/reason:text-white/70 transition-colors" />
+        <span className="font-medium">
+          {streaming && !trimmed ? '正在思考…' : streaming ? '正在推理…' : '已完成思考'}
+        </span>
+        {streaming ? <span className="size-1.5 animate-pulse rounded-full bg-blue-400" /> : null}
+        <span className="text-[10px] text-white/35 group-hover/reason:text-white/60 transition-colors ml-0.5">
+          {expanded ? '收起' : '展开查看'}
+        </span>
+        <ChevronDown
+          className={cn(
+            'size-3 shrink-0 text-white/40 transition-transform duration-200 group-hover/reason:text-white/70',
+            expanded ? 'rotate-180' : '-rotate-90'
+          )}
+        />
+      </button>
+      {expanded ? (
+        <div className="mt-1.5 max-h-60 max-w-full overflow-y-auto rounded-xl border border-white/10 bg-black/25 p-3 text-[11px] leading-relaxed text-white/65 shadow-inner backdrop-blur-md select-text cursor-text whitespace-pre-wrap break-words font-sans">
+          {trimmed ? trimmed : <span className="text-white/30 italic">正在思考…</span>}
+        </div>
+      ) : null}
     </div>
   )
 }

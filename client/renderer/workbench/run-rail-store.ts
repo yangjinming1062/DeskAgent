@@ -1,4 +1,4 @@
-// 工作台 Run Rail 派生 store：本轮工具列表 / 最新输出 / 本会话工件，全部从现有会话投影。
+// 工作台 Run Rail 派生 store：本轮工具列表 / 本会话工件，全部从现有会话投影。
 //
 // 不新开后端；事件流订阅 `companion.events`（`tool.start` / `tool.complete`），
 // 历史与媒体从 chat-store 派生。
@@ -17,10 +17,6 @@ export interface ToolStep {
 export interface RunRound {
   /** 工具步骤顺序列表 */
   steps: ToolStep[]
-  /** 当前回合的助手正文（工具结果摘要或后续正文） */
-  outputText: string
-  /** 当前回合的媒体（生成图/视频） */
-  outputMedia: ChatMessageBody['media']
   /** 当前回合是否还在 in-flight */
   active: boolean
 }
@@ -76,8 +72,6 @@ export const $runRound = computed([$chatMessageList, $chatMessageBodies], (list,
 
   return {
     active: Boolean(active.toolName) || active.streaming === true,
-    outputMedia: active.media,
-    outputText: active.text,
     steps
   } satisfies RunRound | null
 })

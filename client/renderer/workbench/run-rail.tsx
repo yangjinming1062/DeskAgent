@@ -1,11 +1,10 @@
-// 工作台运行轨迹：本轮工具调用、最新输出与本会话工件
+// 工作台运行轨迹：本轮工具调用与本会话工件
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 
 import { ChatMediaCard } from '@/chat/chat-media-card'
 import { X } from '@/shared/lib/icons'
-import type { ChatMediaItem } from '@/shared/types/spiritagent'
 import { $artifacts, $isRailOpen, $runRound, setRailOpen, toggleRail } from '@/workbench/run-rail-store'
 
 import styles from './workbench.module.css'
@@ -69,10 +68,6 @@ export function RunRail(): React.JSX.Element {
           )}
         </Section>
 
-        <Section subtitle={round?.active ? '正在执行' : '已落定'} title="最新输出">
-          <LatestOutput active={Boolean(round?.active)} media={round?.outputMedia} text={round?.outputText ?? ''} />
-        </Section>
-
         <Section subtitle={artifacts.length ? `${artifacts.length} 项` : '尚无'} title="本会话工件">
           {artifacts.length > 0 ? (
             <div className={styles.artifacts}>
@@ -104,43 +99,5 @@ function Section({ children, subtitle, title }: SectionProps): React.JSX.Element
       </header>
       <div className={styles.sectionBody}>{children}</div>
     </section>
-  )
-}
-
-interface LatestOutputProps {
-  active: boolean
-  media?: ChatMediaItem[]
-  text: string
-}
-
-function LatestOutput({ active, media, text }: LatestOutputProps): React.JSX.Element {
-  const trimmed = text.trim()
-  const showStreamingHint = active && !trimmed && !media?.length
-
-  const textPreview = trimmed.length > 800 ? `${trimmed.slice(0, 800)}…` : trimmed
-
-  if (showStreamingHint) {
-    return <p className={styles.sectionEmpty}>正在准备输出…</p>
-  }
-
-  if (!textPreview && !media?.length) {
-    return <p className={styles.sectionEmpty}>暂无输出</p>
-  }
-
-  return (
-    <div className={styles.outputStack}>
-      {textPreview ? (
-        <pre className={styles.outputText} data-empty={!trimmed}>
-          {textPreview}
-        </pre>
-      ) : null}
-      {media?.length ? (
-        <div className={styles.outputMedia}>
-          {media.map(m => (
-            <ChatMediaCard item={{ type: m.type, url: m.url }} key={m.url} />
-          ))}
-        </div>
-      ) : null}
-    </div>
   )
 }

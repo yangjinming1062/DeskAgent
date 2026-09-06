@@ -33,6 +33,7 @@ class _LLMTurnResult:
     final_completion_tokens: int
     final_usage_payload: dict | None
     turn_duration_ms: int
+    reasoning: str | None = None
     emotion: str | None = None
     actions: list[str] | None = None
     spatial_locale: str | None = None
@@ -81,6 +82,17 @@ def _usage_payload(usage: Any) -> dict[str, Any]:
     if details := getattr(usage, "output_tokens_details", None):
         payload["reasoning_tokens"] = getattr(details, "reasoning_tokens", 0)
     return payload
+
+
+def _reasoning_item_text(item: Any) -> str:
+    texts: list[str] = []
+    for part in getattr(item, "content", None) or []:
+        if t := getattr(part, "text", None):
+            texts.append(t)
+    for part in getattr(item, "summary", None) or []:
+        if t := getattr(part, "text", None):
+            texts.append(t)
+    return "\n\n".join(texts)
 
 
 async def _stream_llm_response(
@@ -134,6 +146,7 @@ async def _stream_llm_response(
 
     turn_parts: list[str] = []
     bubble_parts: list[str] = []
+    reasoning_parts: list[str] = []
     tool_calls_list: list[dict] = []
     final_prompt_tokens = final_completion_tokens = 0
     final_usage_payload: dict | None = None
@@ -213,12 +226,23 @@ async def _stream_llm_response(
                 event_type = str(getattr(chunk, "type", ""))
                 if event_type == "response.output_text.delta":
                     await _feed_clean(affect.feed(chunk.delta))
+                elif event_type in ("response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.reasoning.delta"):
+                    delta = getattr(chunk, "delta", None)
+                    if isinstance(delta, str) and delta:
+                        reasoning_parts.append(delta)
+                        await emitter.send_json({"type": "reasoning.delta", "content": delta})
                 elif event_type == "response.output_item.done":
                     item = getattr(chunk, "item", None)
                     if item is not None and getattr(item, "type", None) == "function_call":
                         tool_calls_list.append(_function_call_to_dict(item))
-                    elif item is not None and getattr(item, "type", None) == "reasoning" and hasattr(item, "model_dump"):
-                        context["input"].append(item.model_dump(exclude_none=True))
+                    elif item is not None and getattr(item, "type", None) == "reasoning":
+                        if hasattr(item, "model_dump"):
+                            context["input"].append(item.model_dump(exclude_none=True))
+                        if not reasoning_parts:
+                            extracted = _reasoning_item_text(item)
+                            if extracted:
+                                reasoning_parts.append(extracted)
+                                await emitter.send_json({"type": "reasoning.delta", "content": extracted})
                 elif event_type in {"response.completed", "response.incomplete"}:
                     if usage := getattr(getattr(chunk, "response", None), "usage", None):
                         final_prompt_tokens, final_completion_tokens = usage.input_tokens, usage.output_tokens
@@ -246,9 +270,11 @@ async def _stream_llm_response(
     turn_duration_ms = int((time.monotonic() - turn_start_time) * 1000)
 
     turn_content = "\n\n".join(turn_parts)
+    turn_reasoning = "".join(reasoning_parts).strip() or None
 
     return _LLMTurnResult(
         turn_content=turn_content,
+        reasoning=turn_reasoning,
         tool_calls_list=tool_calls_list,
         final_prompt_tokens=final_prompt_tokens,
         final_completion_tokens=final_completion_tokens,

@@ -7,6 +7,7 @@ from ..chat import Emitter
 # 原始 ``type`` → JSON-RPC ``params.type``。每个原始帧要么翻译成 JSON-RPC 事件信封，要么丢弃（未知类型）。
 _TRANSLATED: dict[str, str] = {
     "chunk": "message.delta",
+    "reasoning.delta": "message.reasoning.delta",
     "message.start": "message.start",
     "bubble.break": "message.break",
     "message.complete": "message.complete",
@@ -43,7 +44,7 @@ class JsonRpcEmitter:
 
     @staticmethod
     def _translate(raw_type: str, data: dict) -> Any:
-        if raw_type == "chunk":
+        if raw_type in ("chunk", "reasoning.delta"):
             return {"text": data.get("content", "")}
         if raw_type in ("tool_start", "tool_end"):
             return {"tool_id": data.get("call_id"), "name": data.get("name"), "call_id": data.get("call_id"), "status": "complete" if raw_type == "tool_end" else "running"}
@@ -54,6 +55,7 @@ class JsonRpcEmitter:
             # P0：persist.py（138-145 行）在原始帧上挂 ``affect: {emotion: ...}``；旧 translate 把这字段丢掉，导致桌面端 ``payload?.affect?.emotion`` 取到 undefined，所有回复都掉到 ``idle`` 而不是 ``EMOTIONAL(affect)``。把嵌套 affect 透传到 JSON-RPC 信封以让通道继续生效。
             return {
                 "text": data.get("text", ""),
+                **({"reasoning": data["reasoning"]} if data.get("reasoning") else {}),
                 **({"affect": data["affect"]} if isinstance(data.get("affect"), dict) else {}),
                 **({"media": data["media"]} if isinstance(data.get("media"), list) else {}),
                 **({"usage": usage} if isinstance(usage, dict) else {}),

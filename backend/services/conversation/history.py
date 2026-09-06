@@ -48,6 +48,8 @@ async def build_session_messages(
             media = safe_json_loads(msg.media_json, default=None)
             if isinstance(media, list) and media:
                 item["media"] = media
+        if msg.reasoning_content:
+            item["reasoning"] = msg.reasoning_content
         if include_id:
             item["id"] = msg.id
 

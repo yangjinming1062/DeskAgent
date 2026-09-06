@@ -23,6 +23,7 @@ type GatewayEventName =
   | 'message.deleted'
   | 'message.delta'
   | 'message.persisted'
+  | 'message.reasoning.delta'
   | 'message.start'
   | 'model.failed'
   | 'model.gen.progress'
