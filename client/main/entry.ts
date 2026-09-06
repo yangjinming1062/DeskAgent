@@ -893,12 +893,10 @@ const autoUpdater = createAutoUpdater({
 })
 
 registerAuthIpc({
-  deps: {
-    ...bridgeDeps,
-    clearLocalAssetCaches: async () => {
-      await Promise.all([assetDiskCache.clear(), modelDiskCache.clear()])
-    }
+  clearLocalAssetCaches: async () => {
+    await Promise.all([assetDiskCache.clear(), modelDiskCache.clear()])
   },
+  deps: bridgeDeps,
   ipcMain
 })
 registerRunnerIpc({ deps: bridgeDeps, ipcMain })
