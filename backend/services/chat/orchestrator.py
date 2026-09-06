@@ -1,5 +1,3 @@
-import asyncio
-
 from components import (
     AGENT_MAX_LOOP_TURNS,
     CHAT_TEMPERATURE_DEFAULT,
@@ -28,10 +26,20 @@ from ..llm import (
 )
 from .chat_emitter import Emitter
 from .message_sanitization import truncate_responses_context
-from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
+from .persistence import (
+    _persist_assistant_no_tool_turn,
+    _persist_assistant_with_tool_calls_and_results,
+    _persist_user_message,
+)
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
-from .turn_inputs import _parse_reasoning_effort, build_turn_inputs, load_user_settings, merge_session_settings, parse_temperature
+from .turn_inputs import (
+    _parse_reasoning_effort,
+    build_turn_inputs,
+    load_user_settings,
+    merge_session_settings,
+    parse_temperature,
+)
 from .types import IterationBudget, TrackTask
 
 logger = get_logger(__name__)
@@ -115,8 +123,6 @@ async def run_chat_turn(
     # 初始来自注册表过滤集合；search_tools 在运行时同时增扩名称与 schema，保持 active_schemas 同步。
     active_tool_names: set[str] = {schema_name(s) for s in inputs.all_schemas}
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
-    # 本轮实际调用过的工具名；tool_summary 行据此直接构建而非重新查询，避免与相邻轮次错位。
-    invoked_tool_names: set[str] = set()
     # 本轮所有工具批次产出的生成媒体，随终端 assistant 行落库并在 message.complete 下发。
     turn_media: list[dict[str, str]] = []
 
@@ -130,114 +136,106 @@ async def run_chat_turn(
         emitter=emitter,
     )
 
-    try:
-        while True:
-            if not budget.consume():
-                await emitter.send_json(
-                    {"type": "error", "message": f"Max tool execution turns ({AGENT_MAX_LOOP_TURNS}) reached. Terminating loop to prevent unbounded execution."},
-                )
-                break
+    while True:
+        if not budget.consume():
+            await emitter.send_json(
+                {"type": "error", "message": f"Max tool execution turns ({AGENT_MAX_LOOP_TURNS}) reached. Terminating loop to prevent unbounded execution."},
+            )
+            break
 
-            active_schemas = [schemas_by_name[n] for n in active_tool_names if n in schemas_by_name]
-            # 供应商链包装：按顺序尝试已配置供应商，仅在尚未输出 chunk 时触发回退；每次尝试使用对应槽位的 model，避免回退供应商收到不识别的模型名导致 model_not_found、链提前耗尽。
-            stream_emitted = False
+        active_schemas = [schemas_by_name[n] for n in active_tool_names if n in schemas_by_name]
+        # 供应商链包装：按顺序尝试已配置供应商，仅在尚未输出 chunk 时触发回退；每次尝试使用对应槽位的 model，避免回退供应商收到不识别的模型名导致 model_not_found、链提前耗尽。
+        stream_emitted = False
 
-            async def _call(provider):
-                if provider.raw_client() is None:
-                    raise RuntimeError(f"provider {provider.provider_name} does not expose the Responses API")
-                model_for_slot = inputs.model_override or provider.config.model
-                # 渲染端钉住的窗口优先；否则按供应商重新解析，使回退供应商更小的默认窗口生效。
-                slot_ctx_length = inputs.ctx_length if inputs.context_tokens_override is not None else resolve_context_tokens(provider.provider_name, ServiceType.llm)
-                return await _stream_llm_response(
-                    emitter,
-                    model_for_slot,
-                    current_context,
-                    active_schemas,
-                    slot_ctx_length,
-                    provider,
-                    on_first_chunk=set_stream_emitted,
-                    reasoning_effort=reasoning_effort,
-                    temperature=temperature,
-                    allowed_emotions=inputs.allowed_emotions,
-                    allowed_actions=inputs.allowed_actions,
-                    user_local_tz=inputs.user_local_tz,
-                    lang=inputs.language,
-                )
-
-            def set_stream_emitted() -> None:
-                nonlocal stream_emitted
-                stream_emitted = True
-
-            try:
-                # db=None：链已在上方预解析，流式调用与回退期间不持有 session。
-                llm_result = await execute_with_fallback(None, user_id, "llm", call_fn=_call, stream_started=lambda: stream_emitted, _chain=inputs.llm_chain)
-            except LLMRuntimeError as exc:
-                # 链已耗尽（非回退错误或已输出 chunk 后中断）：补发结尾 error 帧，让渲染端消息状态机干净收尾。
-                reason_val = exc.classified.reason.value if getattr(exc, "classified", None) else "unknown"
-                prov_val = getattr(getattr(exc, "classified", None), "provider", None)
-                model_val = getattr(getattr(exc, "classified", None), "model", None)
-                logger.warning("LLM turn failed", extra={"user_id": user_id, "reason": reason_val, "provider": prov_val, "model": model_val, "error": str(exc)}, exc_info=True)
-                await _emit_llm_error(emitter, exc)
-                break
-            except (MissingLlmConfigError, RuntimeError) as exc:
-                # 空链或槽位供应商未暴露 Responses API：仅在无回退时派发器才暴露此类错误，输出定制化错误并结束本轮。
-                logger.warning("LLM chain failed to start: %s", exc)
-                await emitter.send_json({"type": "error", "message": f"LLM unavailable: {exc}"})
-                break
-
-            if not llm_result.tool_calls_list:
-                if invoked_tool_names:
-                    await asyncio.shield(persist_tool_summary(conv, invoked_tool_names))
-                    invoked_tool_names.clear()
-                await _persist_assistant_no_tool_turn(
-                    conv,
-                    user_id,
-                    effective_settings,
-                    emitter,
-                    req,
-                    llm_result.turn_content,
-                    llm_result.final_prompt_tokens,
-                    llm_result.final_completion_tokens,
-                    llm_result.final_usage_payload,
-                    llm_result.turn_duration_ms,
-                    llm_config,
-                    inputs.first_user_msg_content,
-                    current_context,
-                    track_task,
-                    provider_name=inputs.provider_name,
-                    emotion=llm_result.emotion,
-                    actions=llm_result.actions,
-                    spatial_locale=llm_result.spatial_locale,
-                    spatial_target=llm_result.spatial_target,
-                    media=turn_media,
-                )
-                break
-
-            for tc in llm_result.tool_calls_list:
-                name = tc.get("name")
-                if isinstance(name, str) and name:
-                    active_tool_names.add(name)
-                    invoked_tool_names.add(name)
-            _ensure_tool_call_ids(llm_result.tool_calls_list)
-
-            turn_media.extend(
-                await _persist_assistant_with_tool_calls_and_results(
-                    conv,
-                    llm_result.tool_calls_list,
-                    llm_result.turn_content,
-                    llm_result.final_prompt_tokens,
-                    llm_result.final_completion_tokens,
-                    llm_result.turn_duration_ms,
-                    dispatch_ctx,
-                    current_context,
-                    active_tool_names,
-                    schemas_by_name,
-                ),
+        async def _call(provider):
+            if provider.raw_client() is None:
+                raise RuntimeError(f"provider {provider.provider_name} does not expose the Responses API")
+            model_for_slot = inputs.model_override or provider.config.model
+            # 渲染端钉住的窗口优先；否则按供应商重新解析，使回退供应商更小的默认窗口生效。
+            slot_ctx_length = inputs.ctx_length if inputs.context_tokens_override is not None else resolve_context_tokens(provider.provider_name, ServiceType.llm)
+            return await _stream_llm_response(
+                emitter,
+                model_for_slot,
+                current_context,
+                active_schemas,
+                slot_ctx_length,
+                provider,
+                on_first_chunk=set_stream_emitted,
+                reasoning_effort=reasoning_effort,
+                temperature=temperature,
+                allowed_emotions=inputs.allowed_emotions,
+                allowed_actions=inputs.allowed_actions,
+                user_local_tz=inputs.user_local_tz,
+                lang=inputs.language,
             )
 
-            if guardrails.halt_decision:
-                await emitter.send_json({"type": "error", "message": f"Tool execution loop halted by guardrails: {guardrails.halt_decision.message}"})
-                break
-    finally:
-        if invoked_tool_names:
-            await asyncio.shield(persist_tool_summary(conv, invoked_tool_names))
+        def set_stream_emitted() -> None:
+            nonlocal stream_emitted
+            stream_emitted = True
+
+        try:
+            # db=None：链已在上方预解析，流式调用与回退期间不持有 session。
+            llm_result = await execute_with_fallback(None, user_id, "llm", call_fn=_call, stream_started=lambda: stream_emitted, _chain=inputs.llm_chain)
+        except LLMRuntimeError as exc:
+            # 链已耗尽（非回退错误或已输出 chunk 后中断）：补发结尾 error 帧，让渲染端消息状态机干净收尾。
+            reason_val = exc.classified.reason.value if getattr(exc, "classified", None) else "unknown"
+            prov_val = getattr(getattr(exc, "classified", None), "provider", None)
+            model_val = getattr(getattr(exc, "classified", None), "model", None)
+            logger.warning("LLM turn failed", extra={"user_id": user_id, "reason": reason_val, "provider": prov_val, "model": model_val, "error": str(exc)}, exc_info=True)
+            await _emit_llm_error(emitter, exc)
+            break
+        except (MissingLlmConfigError, RuntimeError) as exc:
+            # 空链或槽位供应商未暴露 Responses API：仅在无回退时派发器才暴露此类错误，输出定制化错误并结束本轮。
+            logger.warning("LLM chain failed to start: %s", exc)
+            await emitter.send_json({"type": "error", "message": f"LLM unavailable: {exc}"})
+            break
+
+        if not llm_result.tool_calls_list:
+            await _persist_assistant_no_tool_turn(
+                conv,
+                user_id,
+                effective_settings,
+                emitter,
+                req,
+                llm_result.turn_content,
+                llm_result.final_prompt_tokens,
+                llm_result.final_completion_tokens,
+                llm_result.final_usage_payload,
+                llm_result.turn_duration_ms,
+                llm_config,
+                inputs.first_user_msg_content,
+                current_context,
+                track_task,
+                provider_name=inputs.provider_name,
+                emotion=llm_result.emotion,
+                actions=llm_result.actions,
+                spatial_locale=llm_result.spatial_locale,
+                spatial_target=llm_result.spatial_target,
+                media=turn_media,
+            )
+            break
+
+        for tc in llm_result.tool_calls_list:
+            name = tc.get("name")
+            if isinstance(name, str) and name:
+                active_tool_names.add(name)
+        _ensure_tool_call_ids(llm_result.tool_calls_list)
+
+        turn_media.extend(
+            await _persist_assistant_with_tool_calls_and_results(
+                conv,
+                llm_result.tool_calls_list,
+                llm_result.turn_content,
+                llm_result.final_prompt_tokens,
+                llm_result.final_completion_tokens,
+                llm_result.turn_duration_ms,
+                dispatch_ctx,
+                current_context,
+                active_tool_names,
+                schemas_by_name,
+            ),
+        )
+
+        if guardrails.halt_decision:
+            await emitter.send_json({"type": "error", "message": f"Tool execution loop halted by guardrails: {guardrails.halt_decision.message}"})
+            break

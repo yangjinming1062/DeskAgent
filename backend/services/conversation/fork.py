@@ -44,7 +44,7 @@ async def fork_conversation_from_message(
             f"源消息不在会话内: message_id={source_message_id} session_id={source_session_id!r}",
         )
 
-    # 排除 status_* 行（UI 痕迹，不入 LLM 上下文）；保留 hint / compress_summary / daily_summary / tool_summary
+    # 排除 status_* 行（UI 痕迹，不入 LLM 上下文）；保留 hint / compress_summary / daily_summary
     rows = (
         (
             await db.execute(

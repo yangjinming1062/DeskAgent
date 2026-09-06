@@ -14,13 +14,7 @@ import { $chatMessageBodies, type ChatMessageBody, type ChatMessageListItem } fr
 import { ToolChipTimeline } from './tool-chip-timeline'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
-const SYSTEM_PILL_SUBTYPES = new Set([
-  'hint',
-  'tool_summary',
-  'daily_summary',
-  'status_cleared',
-  'status_command_result'
-])
+const SYSTEM_PILL_SUBTYPES = new Set(['hint', 'daily_summary', 'status_cleared', 'status_command_result'])
 
 // 上下文压缩检查点：居中的分界线式可折叠卡片，默认折叠、点击展开摘要全文。
 // 走独立分支而不是 pill —— 视觉权重要让用户意识到这是个有信息量的节点。
@@ -127,11 +121,6 @@ function MessageBubbleWithBody({
   }
 
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
-    // 生活空间弱化工具调用细节，通过 subtype === 'tool_summary' 契约过滤工具摘要胶囊
-    if (variant === 'living' && subtype === 'tool_summary') {
-      return <></>
-    }
-
     return (
       <div className="my-1.5 flex justify-center px-2">
         <div className="max-w-[90%] rounded-full border border-line-standard bg-surface-card/60 px-3 py-1 text-center text-xs leading-relaxed text-muted backdrop-blur-glass shadow-xs">

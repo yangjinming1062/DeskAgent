@@ -36,7 +36,7 @@ from services.companion import (
     retrieve_proactive_memories,
 )
 from services.companion.mesh2d import DEFAULT_ACTIONS, NON_LLM_ACTIONS
-from services.conversation import SPECIAL_KIND, UI_ONLY_SUBTYPES
+from services.conversation import UI_ONLY_SUBTYPES
 from services.llm import (
     MissingLlmConfigError,
     ProviderConfig,
@@ -111,7 +111,6 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
 def db_message_to_response_items(
     msg: Message,
     *,
-    drop_tool_intermediates: bool = False,
     user_local_tz: str | None = None,
     inject_message_timestamps: bool = True,
 ) -> list[dict[str, Any]]:
@@ -122,8 +121,6 @@ def db_message_to_response_items(
     ``inject_message_timestamps=False`` 时所有 role 都不加前缀（工作预设不需要 per-message 时间戳）。
     """
     if msg.subtype in UI_ONLY_SUBTYPES:
-        return []
-    if drop_tool_intermediates and (msg.role == "tool" or (msg.role == "assistant" and msg.tool_calls)):
         return []
 
     content_val: str | list = msg.content or ""
@@ -184,12 +181,11 @@ def _history_to_responses_context(
     db_msgs: list[Message],
     system_prompt: str,
     *,
-    drop_tool_intermediates: bool,
     user_local_tz: str | None = None,
     lang: str = DEFAULT_LANGUAGE,
     inject_message_timestamps: bool = True,
 ) -> dict[str, Any]:
-    """``drop_tool_intermediates`` 仅对主会话开启（用 ``tool_summary`` 行替代）；普通会话保留原始 call/result 对。
+    """DB 消息列表转换为 Responses API 上下文。完整保留所有会话中的原始 call/result 工具帧。
 
     跨天时插一条 ``role=user`` 的日期标记，让 LLM 能区分 ``[23:50] → [08:00]`` 是「昨夜到今晨」还是「倒流」。
     ``inject_message_timestamps=False`` 时跳过跨天分界（工作预设不需要）。
@@ -214,7 +210,6 @@ def _history_to_responses_context(
         context["input"].extend(
             db_message_to_response_items(
                 msg,
-                drop_tool_intermediates=drop_tool_intermediates,
                 user_local_tz=user_local_tz,
                 inject_message_timestamps=inject_message_timestamps,
             ),
@@ -222,17 +217,11 @@ def _history_to_responses_context(
     return context
 
 
-def _find_authoritative_token_baseline(history: list[Message], *, is_main_conversation: bool) -> tuple[int | None, list[Message]]:
-    """主会话候选 Assistant 含 tool_calls 或后随工具帧时弃用基线——prompt_tokens 含已裁剪的工具输出，不可信。"""
+def _find_authoritative_token_baseline(history: list[Message]) -> tuple[int | None, list[Message]]:
+    """寻找最新已记录的 Token 基线；所有会话均标准保留工具帧，基线统一可靠。"""
     for i in range(len(history) - 2, -1, -1):
         msg = history[i]
         if msg.role == "assistant" and msg.prompt_tokens > 0:
-            if is_main_conversation:
-                if msg.tool_calls:
-                    return None, history
-                subsequent = history[i + 1 :]
-                if any(m.role == "tool" or m.subtype == "tool_summary" or (m.role == "assistant" and m.tool_calls) for m in subsequent):
-                    return None, history
             return msg.prompt_tokens + msg.completion_tokens, history[i + 1 :]
     return None, history
 
@@ -353,7 +342,6 @@ async def build_turn_inputs(
     context = _history_to_responses_context(
         history,
         build_system_prompt(agent_config, preset=resolved_preset),
-        drop_tool_intermediates=conv.kind == SPECIAL_KIND,
         user_local_tz=user_local_tz,
         lang=session_lang,
         inject_message_timestamps=inject_message_timestamps,
@@ -366,15 +354,13 @@ async def build_turn_inputs(
 
     # 计算上下文 Token 估算值：结合 Responses 权威基线与 CJK 全量/增量估算
     full_context_tokens = approx_responses_tokens(context["instructions"], context["input"])
-    baseline, subsequent_msgs = _find_authoritative_token_baseline(history, is_main_conversation=(conv.kind == SPECIAL_KIND))
+    baseline, subsequent_msgs = _find_authoritative_token_baseline(history)
     if baseline is not None:
-        drop_tools = conv.kind == SPECIAL_KIND
         delta_items = [
             item
             for m in subsequent_msgs
             for item in db_message_to_response_items(
                 m,
-                drop_tool_intermediates=drop_tools,
                 user_local_tz=user_local_tz,
                 inject_message_timestamps=inject_message_timestamps,
             )

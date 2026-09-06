@@ -2,12 +2,21 @@ import asyncio
 import json
 from typing import Any
 
-from components import ATTACHMENT_TYPE_VIDEO, BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, TITLE_GENERATION_TEMPERATURE, TaskBag, get_logger, safe_json_loads, session_scope
+from components import (
+    ATTACHMENT_TYPE_VIDEO,
+    BACKGROUND_REVIEW_DEFAULT,
+    DEFAULT_LANGUAGE,
+    TITLE_GENERATION_TEMPERATURE,
+    TaskBag,
+    get_logger,
+    safe_json_loads,
+    session_scope,
+)
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..conversation import AFFECT_TRACE_SUBTYPE, SPECIAL_KIND
+from ..conversation import AFFECT_TRACE_SUBTYPE
 from ..llm import copy_responses_context, message_to_response_items
 from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
@@ -31,15 +40,6 @@ def _on_bg_error(task: asyncio.Task) -> None:
 def _track_background_task(task: asyncio.Task) -> None:
     """将 task 纳入模块级强引用集合，done 时自动移除并打日志。"""
     _BG.add(task, on_error=_on_bg_error)
-
-
-async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None:
-    """主会话轮次从 LLM 上下文中丢弃原始 tool 帧，此行作为替代，故无论轮次如何结束都必须写入。"""
-    if conv.kind != SPECIAL_KIND or not tool_names:
-        return
-    async with session_scope() as db:
-        db.add(Message(conversation_id=conv.id, role="system", content=f"[执行了工具调用：{', '.join(sorted(tool_names))}]", subtype="tool_summary"))
-        await db.commit()
 
 
 def _coerce_tool_result_content(content: Any) -> str:
