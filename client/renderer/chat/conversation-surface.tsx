@@ -6,7 +6,7 @@
 
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { type RefObject, useEffect } from 'react'
+import { type RefObject, useEffect, useMemo } from 'react'
 
 import { type ConversationVariant, MessageBubble } from '@/chat/chat-dock-message-bubble'
 import {
@@ -16,6 +16,7 @@ import {
   $lastAssistantStreaming,
   $pendingPromptBatch
 } from '@/chat/chat-store'
+import { collectTimeDividerIds } from '@/chat/conversation-time'
 import { $activeAvatarId, $portraitUrl } from '@/companion'
 import { useAtomListen } from '@/shared/hooks/use-atom-listen'
 import { cn } from '@/shared/lib/utils'
@@ -64,6 +65,7 @@ export function ConversationSurface({
 
   const portraitUrl = useStore($portraitUrl)
   const activeAvatarId = useStore($activeAvatarId)
+  const showTimeSet = useMemo(() => collectTimeDividerIds(list), [list])
 
   return (
     <div
@@ -73,7 +75,7 @@ export function ConversationSurface({
     >
       {list.length === 0 && <p className="mt-8 text-center text-sm text-faint">{emptyHint}</p>}
       {list.map(item => (
-        <MessageBubble key={item.id} message={item} variant={variant} />
+        <MessageBubble key={item.id} message={item} showTimeLabel={showTimeSet.has(item.id)} variant={variant} />
       ))}
       {showTyping && (
         <div className="flex shrink-0 items-start gap-2.5">

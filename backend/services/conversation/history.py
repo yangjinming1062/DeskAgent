@@ -52,6 +52,8 @@ async def build_session_messages(
             item["reasoning"] = msg.reasoning_content
         if include_id:
             item["id"] = msg.id
+        if msg.created_at is not None:
+            item["timestamp"] = int(msg.created_at.timestamp() * 1000)
 
         if msg.tool_calls:
             calls = safe_json_loads(msg.tool_calls, default=None)

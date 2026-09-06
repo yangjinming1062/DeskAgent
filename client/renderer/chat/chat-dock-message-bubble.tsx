@@ -12,6 +12,7 @@ import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
 import { $chatMessageBodies, $chatTurnInFlight, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
+import { formatConversationTime } from './conversation-time'
 import { ToolChipTimeline } from './tool-chip-timeline'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
@@ -25,6 +26,7 @@ export type ConversationVariant = 'living' | 'workbench'
 
 interface MessageBubbleProps {
   message: ChatMessageListItem
+  showTimeLabel?: boolean
   variant?: ConversationVariant
 }
 
@@ -44,7 +46,20 @@ function stripAttachmentDirectives(text: string): string {
     .join('\n')
 }
 
-function MessageBubbleInner({ message, variant }: MessageBubbleProps): React.JSX.Element {
+function wrapWithTimeDivider(timeDivider: React.ReactNode, node: React.JSX.Element): React.JSX.Element {
+  if (!timeDivider) {
+    return node
+  }
+
+  return (
+    <div className="flex flex-col">
+      {timeDivider}
+      {node}
+    </div>
+  )
+}
+
+function MessageBubbleInner({ message, showTimeLabel, variant }: MessageBubbleProps): React.JSX.Element {
   // 仅订阅本 id 的 body，避免流式增量触发全局重渲染。
   const bodies = useStore($chatMessageBodies, { keys: [message.id], deps: [message.id] })
   // 撤回在 in-flight 时会被服务端拒绝，必须订这个 atom，否则 memo 挡掉按钮显隐。
@@ -56,28 +71,26 @@ function MessageBubbleInner({ message, variant }: MessageBubbleProps): React.JSX
   }
 
   return (
-    <MessageBubbleWithBody body={body} message={message} turnInFlight={turnInFlight} variant={variant ?? 'living'} />
+    <MessageBubbleWithBody
+      body={body}
+      message={message}
+      showTimeLabel={showTimeLabel}
+      turnInFlight={turnInFlight}
+      variant={variant ?? 'living'}
+    />
   )
-}
-
-function formatBubbleTime(timestamp?: number): string {
-  if (!timestamp) {
-    return ''
-  }
-
-  const date = new Date(timestamp > 1e11 ? timestamp : timestamp * 1000)
-
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function MessageBubbleWithBody({
   body,
   message,
+  showTimeLabel,
   turnInFlight,
   variant
 }: {
   body: ChatMessageBody
   message: ChatMessageListItem
+  showTimeLabel?: boolean
   turnInFlight: boolean
   variant: ConversationVariant
 }): React.JSX.Element {
@@ -89,6 +102,14 @@ function MessageBubbleWithBody({
   // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
   const [compressExpanded, setCompressExpanded] = useState(false)
 
+  const timeLabel = showTimeLabel ? formatConversationTime(message.timestamp) : ''
+
+  const timeDivider = timeLabel ? (
+    <div className="flex justify-center select-none py-1">
+      <span className="text-[11px] text-faint">{timeLabel}</span>
+    </div>
+  ) : null
+
   if (COMPRESS_CARD_SUBTYPES.has(subtype)) {
     // 解析 content：第一行 "[🗜️ 对话压缩 — N 条早期消息已压缩]" 是胶囊标题，剩余为摘要 body。
     const rawText = body.text
@@ -97,7 +118,8 @@ function MessageBubbleWithBody({
     const summary = newlineIdx === -1 ? '' : rawText.slice(newlineIdx + 1)
     const cardId = `compress-card-${message.id}`
 
-    return (
+    return wrapWithTimeDivider(
+      timeDivider,
       <div className="relative my-3 flex items-center gap-3 px-1">
         <div className="h-px flex-1 bg-line-strong" />
         <button
@@ -129,7 +151,8 @@ function MessageBubbleWithBody({
   }
 
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
-    return (
+    return wrapWithTimeDivider(
+      timeDivider,
       <div className="my-1.5 flex justify-center px-2">
         <div className="max-w-[90%] rounded-full border border-line-standard bg-surface-card/60 px-3 py-1 text-center text-xs leading-relaxed text-muted backdrop-blur-glass shadow-xs">
           {body.text}
@@ -139,7 +162,8 @@ function MessageBubbleWithBody({
   }
 
   if (STATUS_TRACE_SUBTYPES.has(subtype)) {
-    return (
+    return wrapWithTimeDivider(
+      timeDivider,
       <div className={`my-0.5 flex ${isUser ? 'justify-end' : 'justify-start'} px-2`}>
         <div className="max-w-[80%] text-[11px] italic text-faint">{body.text}</div>
       </div>
@@ -147,7 +171,8 @@ function MessageBubbleWithBody({
   }
 
   if (subtype === AFFECT_TRACE_SUBTYPE) {
-    return (
+    return wrapWithTimeDivider(
+      timeDivider,
       <div className="my-0.5 flex justify-start px-2">
         <div className="max-w-[80%] text-[11px] italic text-faint">用表情/动作回应了</div>
       </div>
@@ -155,7 +180,8 @@ function MessageBubbleWithBody({
   }
 
   if (subtype === MEDIA_STATUS_SUBTYPE) {
-    return (
+    return wrapWithTimeDivider(
+      timeDivider,
       <div className="my-1 flex justify-start px-2">
         <div className="flex max-w-[80%] flex-col gap-1">
           {body.media?.map(m => (
@@ -226,7 +252,8 @@ function MessageBubbleWithBody({
   const canCopy = Boolean(displayText) && !body.streaming
   const hasActions = canFork || canUndo || canCopy
 
-  return (
+  return wrapWithTimeDivider(
+    timeDivider,
     <div className={cn('relative flex shrink-0 gap-2.5 overflow-visible', isUser ? 'justify-end' : 'justify-start')}>
       {!isUser && variant === 'workbench' && (
         <div className="size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm mt-0.5">
@@ -289,16 +316,6 @@ function MessageBubbleWithBody({
               ) : (
                 <span className="animate-pulse text-faint">…</span>
               )}
-              {variant === 'workbench' && message.timestamp ? (
-                <div
-                  className={cn(
-                    'mt-1.5 flex items-center gap-1 text-[10px] select-none',
-                    isUser ? 'justify-end text-blue-200/50' : 'justify-end text-white/35'
-                  )}
-                >
-                  <span>{formatBubbleTime(message.timestamp)}</span>
-                </div>
-              ) : null}
             </div>
           ) : null}
           {!isUser && variant === 'workbench' && (body.reasoning || (body.streaming && !displayText)) ? (
