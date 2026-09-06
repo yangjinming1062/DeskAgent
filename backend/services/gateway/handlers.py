@@ -579,7 +579,7 @@ async def _do_clear_history(db: AsyncSession, conv: Conversation, runtime) -> di
         )
     ).scalar_one()
 
-    # 全量清掉本会话所有消息 + 视频附件；DELPHI 会话 onboarding 时写入的 hint 行也跟着删，
+    # 全量清掉本会话所有消息 + 视频附件，
     # 让 cleared 之后客户端只看到 status_cleared marker 一条历史行。
     await prune_videos_in_range(db, conv.id)
     await db.execute(delete(Message).where(Message.conversation_id == conv.id))

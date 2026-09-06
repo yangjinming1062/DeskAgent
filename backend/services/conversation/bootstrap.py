@@ -2,12 +2,12 @@
 
 from datetime import UTC, datetime
 
-from modules.conversation import Conversation, Message
+from modules.conversation import Conversation
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .main_conversation import HINT_TEXT, SPECIAL_KIND
+from .main_conversation import SPECIAL_KIND
 from .presets import SYSTEM_PRESET_CATALOG
 
 
@@ -44,15 +44,6 @@ async def ensure_system_conversations_for_user(db: AsyncSession, user_id: int) -
                 )
                 db.add(conv)
                 await db.flush()
-                if preset_id == "companion":
-                    db.add(
-                        Message(
-                            conversation_id=conv.id,
-                            role="system",
-                            content=HINT_TEXT,
-                            subtype="hint",
-                        ),
-                    )
         except IntegrityError:
             continue
 

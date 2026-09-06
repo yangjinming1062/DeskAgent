@@ -1,4 +1,4 @@
-from modules.conversation import Conversation, Message
+from modules.conversation import Conversation
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,8 +22,6 @@ AFFECT_TRACE_SUBTYPE: str = "status_affect"
 
 # 后台视频任务完成后的送达行：媒体列携带可播放 URL，渲染端显示为媒体卡。故意不在 UI_ONLY_SUBTYPES——主会话工具帧被摘要行替代后，这行是 LLM 回答「视频好了吗」的结果来源。
 MEDIA_STATUS_SUBTYPE: str = "status_media"
-
-HINT_TEXT = "在这里和精灵聊日常吧～需要干活时可以新开一个独立对话，避免上下文互相干扰。"
 
 
 async def get_special_conversation(db: AsyncSession, user_id: int, preset_id: str) -> Conversation | None:
@@ -58,8 +56,6 @@ async def get_or_create_special_conversation(db: AsyncSession, user_id: int, pre
         async with db.begin_nested():
             db.add(conv)
             await db.flush()
-            if preset_id == "companion":
-                db.add(Message(conversation_id=conv.id, role="system", content=HINT_TEXT, subtype="hint"))
     except IntegrityError:
         existing = await get_special_conversation(db, user_id, preset_id)
         if existing is not None:
