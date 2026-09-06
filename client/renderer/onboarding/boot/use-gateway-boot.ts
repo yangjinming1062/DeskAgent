@@ -185,7 +185,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         }
 
         void syncRunnerTools(gateway)
-        void fetchSlashCommandMeta(method => gateway.request(method))
         reconnectAttempt = 0
         lastReconnectError = null
         reconnectErrorNotified = false
@@ -262,6 +261,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         // 重推打扰档位与本地时区，覆盖离线期间尚未上云的变化。
         syncDisturbanceTier()
         syncTimezone(gateway)
+        void fetchSlashCommandMeta()
         startAutonomyProvision()
 
         // 断连阶段挂的 sleep_zzz 气泡需要主动清掉，否则即便精灵已经"醒来"

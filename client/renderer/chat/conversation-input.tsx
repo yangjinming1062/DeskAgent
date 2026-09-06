@@ -4,6 +4,7 @@
 // 这里只渲染 + 把事件转回父组件。这样 living / workbench 可以共用同一个
 // 视觉与交互壳，而父组件可以各自选择是否挂语音条、附件槽、slash popover。
 
+import { useStore } from '@nanostores/react'
 import type React from 'react'
 import {
   type ClipboardEvent,
@@ -24,8 +25,14 @@ import { PendingAttachmentView } from '@/chat/chat-pending-attachment'
 import type { PendingAttachment } from '@/chat/chat-store'
 import { SlashCommandPopover } from '@/chat/slash-command-popover'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
-import { FileText, FolderOpen, ImageIcon, Mic, Plus, Send, SquareFilled, Video } from '@/shared/lib/icons'
-import { fuzzyFilterCommands, type ScoredSlashCommand, type SlashCommandMeta } from '@/shared/lib/slash-commands'
+import { FileText, FolderOpen, ImageIcon, Mic, Plus, Send, Slash, SquareFilled, Video } from '@/shared/lib/icons'
+import {
+  $slashCommandMeta,
+  fetchSlashCommandMeta,
+  fuzzyFilterCommands,
+  type ScoredSlashCommand,
+  type SlashCommandMeta
+} from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
 import { strings } from '@/shared/strings'
 
@@ -106,6 +113,9 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
   const [internalSlashDismissed, setInternalSlashDismissed] = useState(false)
   const [internalHighlightIndex, setInternalHighlightIndex] = useState(0)
   const [focused, setFocused] = useState(false)
+  const [slashPaletteForced, setSlashPaletteForced] = useState(false)
+
+  const slashMeta = useStore($slashCommandMeta)
 
   // 工作台只在「要打字了」时升格成指挥台——空闲保持胶囊形态。
   const expanded = variant === 'workbench' && (focused || Boolean(pending) || text.length >= COMMAND_LINE_THRESHOLD)
@@ -121,25 +131,39 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
     }
   }, [expanded])
 
-  const derivedSlashQuery = useMemo(() => {
-    if (slashQuery !== undefined) {
-      return slashQuery
+  // 仅前导 / 且尚未键入参数时，空 query 仍算命令模式，弹层展示全量。
+  const slashContext = useMemo<{ active: boolean; query: string }>(() => {
+    if (slashQuery !== undefined || slashPaletteForced) {
+      return { active: true, query: slashQuery ?? '' }
     }
 
     const trimmed = text.trim()
 
     if (!trimmed.startsWith('/')) {
-      return ''
+      return { active: false, query: '' }
     }
 
     const body = trimmed.slice(1)
     const spaceIdx = body.search(/\s/)
 
-    return spaceIdx === -1 ? body : ''
-  }, [slashQuery, text])
+    if (spaceIdx !== -1) {
+      return { active: false, query: '' }
+    }
 
-  const items = slashItems ?? (derivedSlashQuery ? fuzzyFilterCommands(derivedSlashQuery, 8) : [])
-  const isOpen = (slashPopoverOpen ?? (derivedSlashQuery.length > 0 && !internalSlashDismissed)) && items.length > 0
+    return { active: true, query: body }
+  }, [slashPaletteForced, slashQuery, text])
+
+  const items = slashItems ?? (slashContext.active ? fuzzyFilterCommands(slashContext.query, 8) : [])
+  const isOpen = (slashPopoverOpen ?? (slashContext.active && !internalSlashDismissed)) && items.length > 0
+
+  useEffect(() => {
+    if (!slashContext.active || slashMeta.length > 0) {
+      return
+    }
+
+    void fetchSlashCommandMeta()
+  }, [slashContext.active, slashMeta.length])
+
   const highlightIdx = slashHighlightIndex ?? internalHighlightIndex
 
   const setHighlight = (next: number): void => {
@@ -148,6 +172,8 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
   }
 
   const handleSlashSelect = (cmd: SlashCommandMeta): void => {
+    setSlashPaletteForced(false)
+
     if (onSlashSelect) {
       onSlashSelect(cmd, [])
     } else {
@@ -167,6 +193,7 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
         (pending?.type === 'video' && pending.status !== 'ready')))
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    setSlashPaletteForced(false)
     setInternalSlashDismissed(false)
     setInternalHighlightIndex(0)
     onSetText(e.target.value)
@@ -211,7 +238,7 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         const chosen = items[highlightIdx]
 
-        if (chosen && derivedSlashQuery.length > 0) {
+        if (chosen) {
           e.preventDefault()
           handleSlashSelect(chosen.cmd)
 
@@ -222,6 +249,11 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
 
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
+
+      if (text.trim() === '/') {
+        return
+      }
+
       onSend()
     }
   }
@@ -280,8 +312,8 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
 
       <div
         className={cn(
-          'relative flex w-full items-center gap-1.5 border border-white/14 bg-white/[0.05] backdrop-blur-xl px-2.5 transition focus-within:border-blue-500/60 focus-within:bg-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.12)]',
-          expanded ? 'rounded-2xl min-h-[3.6em] items-start py-1.5' : 'rounded-full h-10'
+          'relative flex w-full items-center border border-white/14 bg-white/[0.05] backdrop-blur-xl px-3 transition focus-within:border-blue-500/60 focus-within:bg-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.12)]',
+          expanded ? 'rounded-2xl min-h-[3.6em] py-1.5' : 'rounded-2xl min-h-[2.6em] py-1'
         )}
       >
         {isOpen && (
@@ -292,72 +324,108 @@ export function ConversationInput(props: ConversationInputProps): React.JSX.Elem
               onSlashHighlight?.(idx)
             }}
             onSelect={cmd => handleSlashSelect(cmd)}
-            query={derivedSlashQuery}
+            query={slashContext.query}
           />
         )}
 
-        <div className="relative shrink-0">
-          <button
-            aria-label="添加附件"
-            className={cn(
-              'inline-flex size-7 items-center justify-center rounded-full text-muted transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
-              attachMenuOpen && 'bg-white/15 text-white'
-            )}
-            disabled={isReadOnlySession}
-            onClick={() => onAttachMenuToggle?.(!attachMenuOpen)}
-            title="添加附件"
-            type="button"
-          >
-            <Plus className="size-4" />
-          </button>
+        {editorElement}
+      </div>
 
-          {attachMenuOpen && (
-            <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-line-standard bg-surface-card p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
-              <button
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                onClick={() => void pickFile(onSetPending)}
-                type="button"
-              >
-                <FileText className="size-3.5 text-accent" />
-                <span>添加文件</span>
-              </button>
-              <button
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                onClick={() => void pickFolder(onSetPending)}
-                type="button"
-              >
-                <FolderOpen className="size-3.5 text-amber-400" />
-                <span>添加文件夹</span>
-              </button>
-              <button
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                onClick={() => void pickImage(onSetPending)}
-                type="button"
-              >
-                <ImageIcon className="size-3.5 text-emerald-400" />
-                <span>添加图片</span>
-              </button>
-              <button
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                onClick={() => void pickVideo(onSetPending)}
-                type="button"
-              >
-                <Video className="size-3.5 text-rose-400" />
-                <span>添加视频</span>
-              </button>
-            </div>
-          )}
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <div className="relative shrink-0">
+            <button
+              aria-label="添加附件"
+              className={cn(
+                'inline-flex size-7 items-center justify-center rounded-full border border-line-hairline/60 bg-white/[0.04] text-muted transition hover:border-line-strong hover:bg-white/[0.08] hover:text-white disabled:pointer-events-none disabled:opacity-40',
+                attachMenuOpen && 'border-line-strong bg-white/[0.15] text-white'
+              )}
+              disabled={isReadOnlySession}
+              onClick={() => onAttachMenuToggle?.(!attachMenuOpen)}
+              title="添加附件"
+              type="button"
+            >
+              <Plus className="size-4" />
+            </button>
+
+            {attachMenuOpen && (
+              <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-line-standard bg-surface-card p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+                <button
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
+                  onClick={() => void pickFile(onSetPending)}
+                  type="button"
+                >
+                  <FileText className="size-3.5 text-accent" />
+                  <span>添加文件</span>
+                </button>
+                <button
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
+                  onClick={() => void pickFolder(onSetPending)}
+                  type="button"
+                >
+                  <FolderOpen className="size-3.5 text-amber-400" />
+                  <span>添加文件夹</span>
+                </button>
+                <button
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
+                  onClick={() => void pickImage(onSetPending)}
+                  type="button"
+                >
+                  <ImageIcon className="size-3.5 text-emerald-400" />
+                  <span>添加图片</span>
+                </button>
+                <button
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
+                  onClick={() => void pickVideo(onSetPending)}
+                  type="button"
+                >
+                  <Video className="size-3.5 text-rose-400" />
+                  <span>添加视频</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative shrink-0">
+            <button
+              aria-label="命令快捷"
+              className={cn(
+                'inline-flex size-7 items-center justify-center rounded-full border border-line-hairline/60 bg-white/[0.04] text-muted transition hover:border-accent-line/60 hover:bg-accent-soft hover:text-accent disabled:pointer-events-none disabled:opacity-40',
+                isOpen && 'border-accent-line bg-accent-soft text-accent'
+              )}
+              disabled={isReadOnlySession}
+              onClick={() => {
+                onAttachMenuToggle?.(false)
+
+                if (isOpen) {
+                  setSlashPaletteForced(false)
+                  setInternalSlashDismissed(true)
+
+                  return
+                }
+
+                setSlashPaletteForced(true)
+                setInternalSlashDismissed(false)
+
+                if (!text.trim()) {
+                  onSetText('/')
+                }
+
+                editorRef.current?.focus()
+              }}
+              title="命令快捷（输入 / 也能触发）"
+              type="button"
+            >
+              <Slash className="size-4" />
+            </button>
+          </div>
         </div>
 
-        {editorElement}
-
-        <div className={cn('flex items-center gap-1.5 shrink-0', expanded && 'self-end pb-0.5')}>
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             className={cn(
-              'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-40',
-              recording
-                ? 'border border-rose-400/70 bg-rose-500/25 text-rose-200 animate-pulse'
-                : 'text-muted hover:bg-white/10 hover:text-white'
+              'inline-flex size-7 items-center justify-center rounded-full border border-line-hairline/60 bg-white/[0.04] text-muted transition hover:border-line-strong hover:bg-white/[0.08] hover:text-white disabled:pointer-events-none disabled:opacity-40',
+              recording && 'border-rose-400/70 bg-rose-500/25 text-rose-200 animate-pulse'
             )}
             disabled={isReadOnlySession}
             onPointerCancel={onRecordingPointerCancel}

@@ -99,6 +99,10 @@ export function useChatSubmit({
       return
     }
 
+    if (trimmed === '/') {
+      return
+    }
+
     if (gatewayState !== 'open') {
       return
     }

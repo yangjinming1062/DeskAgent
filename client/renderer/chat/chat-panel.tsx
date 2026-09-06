@@ -22,6 +22,7 @@ import { useAtomListen } from '@/shared/hooks/use-atom-listen'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
 import { SlidersHorizontal } from '@/shared/lib/icons'
+import { fetchSlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
 import { notify } from '@/shared/store/notifications'
 
@@ -78,6 +79,12 @@ export function ChatPanel({
   const [paramsPanelOpen, setParamsPanelOpen] = useState(false)
   const [paramsPanelTab, setParamsPanelTab] = useState<'context' | 'params'>('context')
   const paramsPanelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (gatewayState === 'open') {
+      void fetchSlashCommandMeta()
+    }
+  }, [gatewayState])
 
   // 点击面板外部 / ESC 关闭参数面板
   useEffect(() => {

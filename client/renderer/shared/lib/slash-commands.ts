@@ -1,12 +1,11 @@
-// 客户端 Slash 命令元数据：权威源在服务端 services/chat/slash_commands.py 的 SLASH_COMMANDS
-// 注册表，通过 WS RPC ``command.list`` 拉取并写进本文件的 atom —— 避免前后端两份数组手同步漂移。
-//
-// 启动流程（use-gateway-boot.ts）：gateway open 后调 fetchSlashCommandMeta() 写 atom；
-// 拉取完成前的短暂窗口内，弹层为空（首期 2 条命令的延迟 <100ms 可忽略）。
-//
-// 服务端 dispatch 仍是唯一权威：前端 getLocalSlashMeta 只用于自动补全 UI 与 confirm 弹窗。
+// 客户端斜杠命令元数据：权威源在服务端注册表，经 RPC 拉到本窗口，避免两份数组手同步。
+// 每个渲染窗口一份状态；对话所在窗口必须自己拉，否则斜杠输入没有列表。
+// 服务端 dispatch 仍是唯一权威：本地元数据只用于自动补全与确认弹窗。
 
 import { atom } from 'nanostores'
+
+import { log } from '@/shared/lib/log'
+import { $gateway } from '@/shared/store/gateway'
 
 export interface SlashCommandMeta {
   /** 主名（小写，无前导 /）。 */
@@ -27,8 +26,8 @@ interface ServerCommandEntry {
   requires_confirmation?: boolean
 }
 
-// 启动前为空，启动后由 fetchSlashCommandMeta 写入。
-const $slashCommandMeta = atom<readonly SlashCommandMeta[]>([])
+// 启动前为空；拉取失败也保持空，由下次连通或再次进入命令模式时重试。
+export const $slashCommandMeta = atom<readonly SlashCommandMeta[]>([])
 
 function setSlashCommandMeta(metas: readonly SlashCommandMeta[]): void {
   $slashCommandMeta.set(metas)
@@ -223,18 +222,35 @@ interface SlashCommandListResponse {
   commands: readonly ServerCommandEntry[]
 }
 
-/** gateway 打开后从服务端拉取命令元数据并写入 atom；幂等（已加载则跳过）。 */
-export async function fetchSlashCommandMeta(
-  request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
-): Promise<void> {
+let slashMetaInflight: Promise<void> | null = null
+
+/** 从网关拉取命令元数据写入本窗口 atom；已有数据则跳过，失败保持空以便重试。 */
+export async function fetchSlashCommandMeta(): Promise<void> {
   if ($slashCommandMeta.get().length > 0) {
     return
   }
 
-  try {
-    const res = await request<SlashCommandListResponse>('command.list', {})
-    setSlashCommandMeta((res.commands ?? []).map(normalizeServerEntry))
-  } catch {
-    // 失败时保持空数组：用户敲 / 不会弹层，但 prompt.submit 仍正常。
+  if (slashMetaInflight) {
+    return slashMetaInflight
   }
+
+  const gateway = $gateway.get()
+
+  if (!gateway) {
+    return
+  }
+
+  slashMetaInflight = (async () => {
+    try {
+      const res = await gateway.request<SlashCommandListResponse>('command.list', {})
+      setSlashCommandMeta((res.commands ?? []).map(normalizeServerEntry))
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log.error('slash-commands', `command.list failed: ${msg}`, error)
+    } finally {
+      slashMetaInflight = null
+    }
+  })()
+
+  return slashMetaInflight
 }
