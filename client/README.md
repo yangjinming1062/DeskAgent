@@ -86,8 +86,8 @@ ESLint `no-restricted-imports` 在模块间设置拦截。窗口入口脚本（`
 ## 4. 关键设计决策
 
 - **preload 必须保持 CJS（即便主进程已迁 ESM）**：沙盒 preload 由运行时虚拟机执行脚本，不按 ESM 解析——输出含 import 语句即抛语法错，渲染桥的全局对象变 `undefined`，根组件的兜底页把整棵子树（含激活码录入页）一起埋掉。打包分两条流水线：主进程入口走 ESM，preload 走 CJS、扩展名 `.cjs`。**不要**把 preload 重新合成 ESM——沙盒层限制绕不过模块解析。
-- **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零 JS 涂色、零组件重渲染；色值权威全在 CSS，TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名与预览色板。新增控件进 panel kit，不新增硬编码色值。
-- **主题切换入口在「生活空间」的「外观设置」，夜色与日色液态玻璃**：用户在此切换（夜色 `night` / 日色 `day`）。主进程与渲染进程共享统一契约 `normalizeUiTheme`（旧主题 ID 映射到这两档，避免云端水合丢失）；样式库 `:root` 首帧直出夜色变量，加载不闪烁。
+- **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零组件重渲染；底色权威全在 CSS。「动态」档由立绘抽色覆写强调色变量，夜色与日色不走这条覆写。TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名与预览色板。新增控件进 panel kit，不新增硬编码色值。
+- **主题切换入口在「生活空间」的「外观设置」，支持动态、夜色与日色**：用户在此切换（动态 `dynamic` / 夜色 `night` / 日色 `day`）。本地无记录时默认动态，跟随立绘抽取强调色；云端已有记录则覆盖各窗口，缺记录时不改写本地缓存。旧主题 ID 映射到对应档位，避免云端水合丢失。样式库首帧直出夜色变量，加载不闪烁。
 - **液态玻璃表面与集成显卡降级**：以毛玻璃（24px 模糊）、0.6px 细描边、大圆角与低饱和强调色为视觉基座。低功耗与集成显卡环境下给根节点加 `.no-blur`，关闭高开销 backdrop-filter 并将表面不透明度提升至 0.94~0.96，避免集显掉帧。
 - **无边框透明窗口与自定义控制契约（消除系统原生白标题栏）**：工作台与生活空间窗口统一采用无边框真透明外壳（`frame: false`, `transparent: true`, `backgroundColor: '#00000000'`），并关闭系统圆角与原生阴影。液态玻璃由 CSS 圆角、细描边、内高光与毛玻璃绘制；系统亚克力按窗口矩形铺底，会在大圆角四角漏出灰底，也会盖住工作台伴工外侧的桌面。顶栏内置原生平替样式的轻量窗口控制按钮（最小化、最大化/还原、关闭），通过强类型 IPC 通道（`spiritagent:surface:minimize`、`spiritagent:surface:maximize`、`spiritagent:surface:is-maximized`）由主进程统一调度，支持顶栏双击最大化与拖拽。
 - **双入口互斥开窗与统一表面调度（`requestOpenSurface`）**：主进程集中裁决互斥开窗，生活空间与工作台严格二选一，同一时刻最多存在一个入口窗口；原设置面板按场景分别重新挂载至生活空间设置（生活向表单与房间管理）与工作台抽屉（工位环境、Runner、Skills、Toolsets）；旧 `requestOpenDock` 全面收敛为 `requestOpenSurface`。

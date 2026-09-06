@@ -101,11 +101,11 @@ export function normalizeUiTheme(raw: unknown): SpiritAgentUiTheme {
     return 'day'
   }
 
-  if (raw === 'dynamic') {
-    return 'dynamic'
+  if (raw === 'night' || raw === 'classic' || raw === 'cyber-glass' || raw === 'holo') {
+    return 'night'
   }
 
-  return 'night'
+  return 'dynamic'
 }
 
 // 入口面：互斥的两个 BrowserWindow。"closed" 仅渲染层用作占位，不进主进程 IPC 边界。

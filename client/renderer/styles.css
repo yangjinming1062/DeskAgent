@@ -256,7 +256,9 @@
 }
 
 html[data-theme='night'] .bg-surface-panel,
-html[data-theme='night'] .bg-surface-chrome {
+html[data-theme='night'] .bg-surface-chrome,
+html[data-theme='dynamic'] .bg-surface-panel,
+html[data-theme='dynamic'] .bg-surface-chrome {
   box-shadow:
     0 0 0 0.6px var(--ui-line-standard),
     0 12px 32px -8px rgba(0, 0, 0, 0.45);
@@ -279,7 +281,10 @@ html.no-blur .bg-glass {
 
 html[data-theme='night'].no-blur .bg-surface-panel,
 html[data-theme='night'].no-blur .bg-surface-chrome,
-html[data-theme='night'].no-blur .bg-glass {
+html[data-theme='night'].no-blur .bg-glass,
+html[data-theme='dynamic'].no-blur .bg-surface-panel,
+html[data-theme='dynamic'].no-blur .bg-surface-chrome,
+html[data-theme='dynamic'].no-blur .bg-glass {
   background-color: rgba(20, 20, 24, 0.94) !important;
 }
 

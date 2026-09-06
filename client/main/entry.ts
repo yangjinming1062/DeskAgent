@@ -173,7 +173,8 @@ const configSync = createConfigSync({
   fetchImpl: (url, init) => electronNet.fetch(url, init),
   log: chunk => rememberLog(chunk),
   onHydrated: ({ companion, shortcuts, ui }) => {
-    const theme = normalizeUiTheme(ui.theme)
+    // 云端未写入主题时不广播，避免把各窗口本地缓存冲成默认档。
+    const theme = typeof ui.theme === 'string' && ui.theme.length > 0 ? normalizeUiTheme(ui.theme) : undefined
 
     const payload: DesktopPrefsHydrated = {
       companion,
@@ -753,10 +754,7 @@ registerSystemIpc({
   electron: { app },
   ipcMain
 })
-registerUiThemeIpc({
-  getMainWindow: () => mainWindow,
-  ipcMain
-})
+registerUiThemeIpc({ ipcMain })
 registerPrefsIpc({ ipcMain })
 
 surfaces = createSurfacesManager({
