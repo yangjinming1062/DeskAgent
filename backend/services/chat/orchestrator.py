@@ -55,6 +55,7 @@ async def run_chat_turn(
     track_task: TrackTask | None = None,
     *,
     session_settings: dict | None = None,
+    precursor_user_message_ids: list[int] | None = None,
 ) -> None:
     # 轮次起始是唯一的多读阶段，集中在一个短 session 内完成；之后每次 DB 访问都开新 session，避免跨多秒 LLM 等待持有连接。
     async with session_scope() as db:
@@ -64,7 +65,15 @@ async def run_chat_turn(
             return
         sid = str(conv.id)
 
-        await _persist_user_message(db, conv, req)
+        # 用户行先落库再跑 LLM：失败路径也要把 id 回给活路径，否则撤回/派生一直点不了。
+        user_message_id = await _persist_user_message(db, conv, req)
+        await emitter.send_json(
+            {
+                "type": "message.persisted",
+                "role": "user",
+                "message_ids": [*(precursor_user_message_ids or []), user_message_id],
+            },
+        )
 
         # 回合起点重读 user_settings：PUT /api/config（工具集开关、语言等）后无需重连 WS 下一回合即生效；
         # 入口侧传入的快照仅作签名兼容保留。会话级覆写再覆盖其上，仍仅构建一次并被注册表门控和工具派发共用。

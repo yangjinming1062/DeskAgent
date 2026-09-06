@@ -96,21 +96,27 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
     return _build_persisted_content_from_parts(text, attachments)
 
 
-async def persist_extra_user_messages(db: AsyncSession, conv_id: int, items: list[dict]) -> None:
-    """在运行最终消息轮次前，批量持久化前置 user 消息。"""
+async def persist_extra_user_messages(db: AsyncSession, conv_id: int, items: list[dict]) -> list[int]:
+    """在运行最终消息轮次前，批量持久化前置 user 消息，返回按插入序的行 id。"""
+    rows: list[Message] = []
     for item in items:
         text = item.get("text") or ""
         attachments = item.get("attachments") or []
         db_content, db_content_type = _build_persisted_content_from_parts(text, attachments)
-        db.add(Message(conversation_id=conv_id, role="user", content=db_content, content_type=db_content_type))
+        row = Message(conversation_id=conv_id, role="user", content=db_content, content_type=db_content_type)
+        db.add(row)
+        rows.append(row)
     await db.commit()
+    return [row.id for row in rows if isinstance(row.id, int)]
 
 
-async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatRequest) -> None:
-    """插入 user 角色 Message 行并提交。"""
+async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatRequest) -> int:
+    """插入 user 角色 Message 行并提交，返回行 id。"""
     db_content, db_content_type = _build_persisted_content(req)
-    db.add(Message(conversation_id=conv.id, role=req.message.role, content=db_content, content_type=db_content_type, tool_call_id=req.message.tool_call_id))
+    row = Message(conversation_id=conv.id, role=req.message.role, content=db_content, content_type=db_content_type, tool_call_id=req.message.tool_call_id)
+    db.add(row)
     await db.commit()
+    return row.id
 
 
 def _affect_trace_content(emotion: str | None, actions: list[str]) -> str:
@@ -147,35 +153,36 @@ async def _persist_assistant_no_tool_turn(
     media: list[dict[str, str]] | None = None,
 ) -> None:
     """终端路径：助手只产出文本（可附生成媒体）；持久化 Message、触发可选的标题生成与后台 review、发出 ``message.complete``。"""
+    assistant_message_id: int | None = None
     if turn_content or media:
         async with session_scope() as db:
-            db.add(
-                Message(
-                    conversation_id=conv.id,
-                    role="assistant",
-                    content=turn_content or None,
-                    media_json=json.dumps(media, ensure_ascii=False) if media else None,
-                    prompt_tokens=final_prompt_tokens,
-                    completion_tokens=final_completion_tokens,
-                    turn_duration_ms=turn_duration_ms,
-                ),
+            row = Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content=turn_content or None,
+                media_json=json.dumps(media, ensure_ascii=False) if media else None,
+                prompt_tokens=final_prompt_tokens,
+                completion_tokens=final_completion_tokens,
+                turn_duration_ms=turn_duration_ms,
             )
+            db.add(row)
             await db.commit()
+            assistant_message_id = row.id
     elif (emotion and emotion != "neutral") or actions:
         # 仅情绪反应：无文本，持久化轻量 assistant 行作为下一轮 LLM 上下文的反应痕迹，避免嘟嘴/动作在历史中消失。
         async with session_scope() as db:
-            db.add(
-                Message(
-                    conversation_id=conv.id,
-                    role="assistant",
-                    content=_affect_trace_content(emotion, actions or []),
-                    subtype=AFFECT_TRACE_SUBTYPE,
-                    prompt_tokens=final_prompt_tokens,
-                    completion_tokens=final_completion_tokens,
-                    turn_duration_ms=turn_duration_ms,
-                ),
+            row = Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content=_affect_trace_content(emotion, actions or []),
+                subtype=AFFECT_TRACE_SUBTYPE,
+                prompt_tokens=final_prompt_tokens,
+                completion_tokens=final_completion_tokens,
+                turn_duration_ms=turn_duration_ms,
             )
+            db.add(row)
             await db.commit()
+            assistant_message_id = row.id
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
         title_temp = parse_temperature(effective_settings.get("chat.title_generation_temperature"), TITLE_GENERATION_TEMPERATURE)
@@ -219,6 +226,7 @@ async def _persist_assistant_no_tool_turn(
             "affect": affect_payload,
             **({"media": media} if media else {}),
             **({"usage": final_usage_payload} if final_usage_payload else {}),
+            **({"message_id": assistant_message_id} if isinstance(assistant_message_id, int) else {}),
         },
     )
 

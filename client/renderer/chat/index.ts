@@ -16,6 +16,8 @@ export {
   $turnHadBubbleBreak,
   appendAssistantDelta,
   beginAssistantMessage,
+  bindTrailingAssistantMessageId,
+  bindTrailingUserMessageIds,
   clearExternalAttachment,
   clearPendingPrompts,
   finalizeAssistantMessage,

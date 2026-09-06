@@ -18,6 +18,8 @@ import {
   $turnHadBubbleBreak,
   appendAssistantDelta,
   beginAssistantMessage,
+  bindTrailingAssistantMessageId,
+  bindTrailingUserMessageIds,
   clearPendingPrompts,
   finalizeAssistantMessage,
   hydrateChatMessages,
@@ -196,7 +198,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
     pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
   }
 
-  // 聊天回合事件（message.start/delta/complete、tool.*、error）携带发出该事件的会话 session_id。
+  // 聊天回合事件（message.start/delta/complete/persisted、tool.*、error）携带发出该事件的会话 session_id。
   // 来自渲染层当前未查看会话的事件不应作用于可见聊天——
   // 例如 cron 的自动回合通过 cron 会话流式输出文本；没有这道门的话，
   // 用户会看到 cron 的回复，好像它回答了主会话上一条消息。
@@ -252,6 +254,16 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       break
     }
 
+    case 'message.persisted': {
+      const p = event.payload as { role?: string; message_ids?: unknown } | undefined
+
+      if (p?.role === 'user' && Array.isArray(p.message_ids)) {
+        bindTrailingUserMessageIds(p.message_ids.filter((id): id is number => typeof id === 'number'))
+      }
+
+      break
+    }
+
     case 'message.complete': {
       const payload = event.payload as
         | {
@@ -259,6 +271,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
             media?: ChatMediaItem[]
             affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string }
             usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+            message_id?: number
           }
         | undefined
 
@@ -291,6 +304,10 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       // payload.text 是整轮（包含两个气泡）的全文，会覆盖最后一个气泡。
       // 这种情况下保留 last.text。媒体与正文正交，始终挂到最后一格。
       finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text, payload?.media)
+
+      if (typeof payload?.message_id === 'number') {
+        bindTrailingAssistantMessageId(payload.message_id)
+      }
 
       // 媒体已送达但生活空间收起：气泡只做轻量提示，点击打开生活空间查看（富媒体统一在对话窗展示）。
       if (payload?.media?.length && $surfaceOpen.get() === null && !screenLocked) {

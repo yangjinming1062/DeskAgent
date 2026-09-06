@@ -1185,6 +1185,7 @@ def _register_session_handlers(
                 db.expire_all()
                 await db.commit()
 
+        precursor_user_message_ids: list[int] = []
         batch = params.get("batch")
         if batch is not None:
             if not isinstance(batch, list) or not batch:
@@ -1203,7 +1204,7 @@ def _register_session_handlers(
             precursor_items = validated_batch[:-1]
             if precursor_items:
                 async with SESSION_LOCAL() as db:
-                    await persist_extra_user_messages(db, runtime.conversation_id, precursor_items)
+                    precursor_user_message_ids = await persist_extra_user_messages(db, runtime.conversation_id, precursor_items)
         else:
             text = _require_str(params, "text")
             attachments = _validate_attachments(params, runtime.session_id)
@@ -1224,7 +1225,17 @@ def _register_session_handlers(
             _inflight_prompt.add(user_id)
             try:
                 try:
-                    await run_chat_turn(req, cur_cfg, cur_settings, user_id, emitter, session_client_context=cur_ctx, track_task=_track, session_settings=runtime.settings)
+                    await run_chat_turn(
+                        req,
+                        cur_cfg,
+                        cur_settings,
+                        user_id,
+                        emitter,
+                        session_client_context=cur_ctx,
+                        track_task=_track,
+                        session_settings=runtime.settings,
+                        precursor_user_message_ids=precursor_user_message_ids or None,
+                    )
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     raise
                 except Exception as e:

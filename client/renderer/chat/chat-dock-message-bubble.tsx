@@ -10,7 +10,7 @@ import { ChatMediaCard } from './chat-media-card'
 import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
-import { $chatMessageBodies, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
+import { $chatMessageBodies, $chatTurnInFlight, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
 import { ToolChipTimeline } from './tool-chip-timeline'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
@@ -46,13 +46,17 @@ function stripAttachmentDirectives(text: string): string {
 function MessageBubbleInner({ message, variant }: MessageBubbleProps): React.JSX.Element {
   // 仅订阅本 id 的 body，避免流式增量触发全局重渲染。
   const bodies = useStore($chatMessageBodies, { keys: [message.id], deps: [message.id] })
+  // 撤回在 in-flight 时会被服务端拒绝，必须订这个 atom，否则 memo 挡掉按钮显隐。
+  const turnInFlight = useStore($chatTurnInFlight)
   const body: ChatMessageBody | undefined = bodies[message.id]
 
   if (!body) {
     return <></>
   }
 
-  return <MessageBubbleWithBody body={body} message={message} variant={variant ?? 'living'} />
+  return (
+    <MessageBubbleWithBody body={body} message={message} turnInFlight={turnInFlight} variant={variant ?? 'living'} />
+  )
 }
 
 function formatBubbleTime(timestamp?: number): string {
@@ -68,10 +72,12 @@ function formatBubbleTime(timestamp?: number): string {
 function MessageBubbleWithBody({
   body,
   message,
+  turnInFlight,
   variant
 }: {
   body: ChatMessageBody
   message: ChatMessageListItem
+  turnInFlight: boolean
   variant: ConversationVariant
 }): React.JSX.Element {
   const subtype = message.subtype || ''
@@ -168,9 +174,14 @@ function MessageBubbleWithBody({
     !body.cancelled &&
     !body.toolName
 
-  // 操作按钮通用守卫：必须有后端 Message.id 才能回传；流式中/出错/已取消/正在调用工具时禁用避免歧义。
+  // 必须有后端 Message.id 才能回传；回合进行中服务端会拒绝撤回，按钮一并藏掉。
   const canOperate =
-    Boolean(message.backendMessageId) && !body.streaming && !body.error && !body.cancelled && !body.toolName
+    Boolean(message.backendMessageId) &&
+    !turnInFlight &&
+    !body.streaming &&
+    !body.error &&
+    !body.cancelled &&
+    !body.toolName
 
   // 生活空间只有唯一陪伴上下文，不允许派生。
   const canFork = variant === 'workbench' && canOperate
@@ -205,12 +216,7 @@ function MessageBubbleWithBody({
   }
 
   return (
-    <div
-      className={cn(
-        'group/message relative flex shrink-0 gap-2.5 overflow-visible',
-        isUser ? 'justify-end' : 'justify-start'
-      )}
-    >
+    <div className={cn('relative flex shrink-0 gap-2.5 overflow-visible', isUser ? 'justify-end' : 'justify-start')}>
       {!isUser && variant === 'workbench' && (
         <div className="size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm mt-0.5">
           {portraitUrl ? (
@@ -222,75 +228,80 @@ function MessageBubbleWithBody({
           )}
         </div>
       )}
-      <div className={cn('relative flex max-w-[80%] flex-col overflow-visible', isUser ? 'items-end' : 'items-start')}>
-        {body.attachments?.length ? (
-          <div className="flex flex-col gap-1">
-            {body.attachments.map(a => (
-              <ChatMediaCard item={{ type: a.type, url: a.url }} key={a.url} />
-            ))}
-          </div>
-        ) : null}
-        {showToolIndicator && variant === 'workbench' ? <ToolChipTimeline active={toolOnly} tools={tools} /> : null}
-        {!hideTextBubble && !toolOnly ? (
-          <div
-            className={cn(
-              'relative whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md',
-              isUser
-                ? variant === 'workbench'
-                  ? 'rounded-tr-sm border border-blue-400/35 bg-blue-950/60 text-white shadow-[0_4px_16px_rgba(20,35,70,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]'
-                  : 'rounded-br-sm border border-accent-line/40 text-strong'
-                : variant === 'workbench'
-                  ? 'rounded-tl-sm border border-white/10 bg-white/[0.05] text-white/95 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]'
-                  : 'rounded-bl-sm border border-line-hairline bg-surface-card/20 text-strong'
-            )}
-            style={
-              isUser && variant === 'living'
-                ? { backgroundColor: 'color-mix(in srgb, var(--ui-accent) 14%, transparent)' }
-                : undefined
-            }
-          >
-            {body.error ? (
-              <span className="text-amber-500">{body.error}</span>
-            ) : body.cancelled ? (
-              <span className="text-muted">已停止</span>
-            ) : visibleText ? (
-              <>
-                {visibleText}
-                {body.streaming && <span className="animate-caret-pulse" />}
-                {showPlayButton && (
-                  <span className="ml-1.5 inline-flex align-middle">
-                    <ChatMessagePlayButton messageId={message.id} text={body.text} />
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="animate-pulse text-faint">…</span>
-            )}
-            {variant === 'workbench' && message.timestamp ? (
-              <div
-                className={cn(
-                  'mt-1.5 flex items-center gap-1 text-[10px]',
-                  isUser ? 'justify-end text-blue-200/50' : 'justify-end text-white/35'
-                )}
-              >
-                <span>{formatBubbleTime(message.timestamp)}</span>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {body.media?.length ? (
-          <div className="mt-1 flex flex-col gap-1">
-            {body.media.map(m => (
-              <ChatMediaCard item={m} key={m.url} />
-            ))}
-          </div>
-        ) : null}
-        {/* 贴气泡旁纵向居中，避免工作台纵向 flex 把顶部浮层裁掉。 */}
+      <div
+        className={cn(
+          'group/message relative flex max-w-[80%] items-center gap-1.5 overflow-visible',
+          isUser ? 'flex-row-reverse' : 'flex-row'
+        )}
+      >
+        <div className={cn('flex min-w-0 flex-col', isUser ? 'items-end' : 'items-start')}>
+          {body.attachments?.length ? (
+            <div className="flex flex-col gap-1">
+              {body.attachments.map(a => (
+                <ChatMediaCard item={{ type: a.type, url: a.url }} key={a.url} />
+              ))}
+            </div>
+          ) : null}
+          {showToolIndicator && variant === 'workbench' ? <ToolChipTimeline active={toolOnly} tools={tools} /> : null}
+          {!hideTextBubble && !toolOnly ? (
+            <div
+              className={cn(
+                'relative whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md',
+                isUser
+                  ? variant === 'workbench'
+                    ? 'rounded-tr-sm border border-blue-400/35 bg-blue-950/60 text-white shadow-[0_4px_16px_rgba(20,35,70,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]'
+                    : 'rounded-br-sm border border-accent-line/40 text-strong'
+                  : variant === 'workbench'
+                    ? 'rounded-tl-sm border border-white/10 bg-white/[0.05] text-white/95 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]'
+                    : 'rounded-bl-sm border border-line-hairline bg-surface-card/20 text-strong'
+              )}
+              style={
+                isUser && variant === 'living'
+                  ? { backgroundColor: 'color-mix(in srgb, var(--ui-accent) 14%, transparent)' }
+                  : undefined
+              }
+            >
+              {body.error ? (
+                <span className="text-amber-500">{body.error}</span>
+              ) : body.cancelled ? (
+                <span className="text-muted">已停止</span>
+              ) : visibleText ? (
+                <>
+                  {visibleText}
+                  {body.streaming && <span className="animate-caret-pulse" />}
+                  {showPlayButton && (
+                    <span className="ml-1.5 inline-flex align-middle">
+                      <ChatMessagePlayButton messageId={message.id} text={body.text} />
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="animate-pulse text-faint">…</span>
+              )}
+              {variant === 'workbench' && message.timestamp ? (
+                <div
+                  className={cn(
+                    'mt-1.5 flex items-center gap-1 text-[10px]',
+                    isUser ? 'justify-end text-blue-200/50' : 'justify-end text-white/35'
+                  )}
+                >
+                  <span>{formatBubbleTime(message.timestamp)}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {body.media?.length ? (
+            <div className="mt-1 flex flex-col gap-1">
+              {body.media.map(m => (
+                <ChatMediaCard item={m} key={m.url} />
+              ))}
+            </div>
+          ) : null}
+        </div>
         {(canFork || canUndo) && (
           <MessageActionCluster
             canFork={canFork}
             canUndo={canUndo}
-            isUser={isUser}
             messageId={message.id}
             sourceMessageId={message.backendMessageId!}
             variant={variant}
@@ -304,14 +315,12 @@ function MessageBubbleWithBody({
 function MessageActionCluster({
   canFork,
   canUndo,
-  isUser,
   messageId,
   sourceMessageId,
   variant
 }: {
   canFork: boolean
   canUndo: boolean
-  isUser: boolean
   messageId: string
   sourceMessageId: number
   variant: ConversationVariant
@@ -319,12 +328,10 @@ function MessageActionCluster({
   return (
     <div
       className={cn(
-        'absolute top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 whitespace-nowrap',
-        'rounded-full border border-line-hairline/80 bg-surface-card/90 p-0.5 shadow-sm backdrop-blur-md',
+        'flex shrink-0 items-center gap-0.5 rounded-full border border-line-hairline/80 bg-surface-card/90 p-0.5 shadow-sm backdrop-blur-md',
         'transition-opacity duration-150',
         'focus-within:pointer-events-auto focus-within:opacity-100',
         'has-[[data-busy]]:pointer-events-auto has-[[data-busy]]:opacity-100',
-        isUser ? 'right-full mr-1.5' : 'left-full ml-1.5',
         variant === 'workbench'
           ? 'pointer-events-auto opacity-70 group-hover/message:opacity-100'
           : 'pointer-events-none opacity-0 group-hover/message:pointer-events-auto group-hover/message:opacity-100'

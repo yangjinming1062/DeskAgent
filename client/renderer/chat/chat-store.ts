@@ -15,7 +15,7 @@ export interface ChatMessageListItem {
   id: string
   role: 'user' | 'assistant'
   subtype?: string
-  /** 后端 Message.id——fork 按钮回传给后端的 source_message_id；仅 hydrate 的历史消息有值，活路径 push 出的消息为 undefined。 */
+  /** 后端 Message.id——fork/undo 回传 source_message_id；hydrate 历史行与活路径绑定后都有值。 */
   backendMessageId?: number
   timestamp?: number
 }
@@ -360,6 +360,79 @@ export function pushUserMessage(text: string, attachments?: ChatAttachment[]): s
   $chatMessageList.set([...$chatMessageList.get(), { id, role: 'user', timestamp: Date.now() }])
 
   return id
+}
+
+function isPositiveInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+export function bindTrailingUserMessageIds(ids: number[]): void {
+  // 活路径 push 时没有后端 id；按末尾未绑定用户行从旧到新填，避免覆盖 hydrate 已有的 id。
+  const validIds = ids.filter(isPositiveInt)
+
+  if (validIds.length === 0) {
+    return
+  }
+
+  const list = $chatMessageList.get()
+  const unboundIndexes: number[] = []
+
+  for (let i = list.length - 1; i >= 0 && unboundIndexes.length < validIds.length; i--) {
+    if (list[i]?.role === 'user' && list[i].backendMessageId === undefined) {
+      unboundIndexes.push(i)
+    }
+  }
+
+  if (unboundIndexes.length === 0) {
+    return
+  }
+
+  unboundIndexes.reverse()
+  const next = list.slice()
+  const count = Math.min(unboundIndexes.length, validIds.length)
+  const idOffset = validIds.length - count
+
+  for (let i = 0; i < count; i++) {
+    const idx = unboundIndexes[i]
+    next[idx] = { ...next[idx], backendMessageId: validIds[idOffset + i] }
+  }
+
+  $chatMessageList.set(next)
+}
+
+export function bindTrailingAssistantMessageId(messageId: number): void {
+  // bubble.break 会拆出多段助手气泡，但 DB 只有一行；同一 id 挂到上次用户之后所有未绑定的普通助手行。
+  if (!isPositiveInt(messageId)) {
+    return
+  }
+
+  const list = $chatMessageList.get()
+  let lastUserIndex = -1
+
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]?.role === 'user') {
+      lastUserIndex = i
+
+      break
+    }
+  }
+
+  let changed = false
+  const next = list.slice()
+
+  for (let i = lastUserIndex + 1; i < next.length; i++) {
+    const item = next[i]
+
+    // 压缩卡片 / 情绪痕迹等 subtype 行不是终端助手气泡，不能挂上同一条 message_id。
+    if (item.role === 'assistant' && item.backendMessageId === undefined && !item.subtype) {
+      next[i] = { ...item, backendMessageId: messageId }
+      changed = true
+    }
+  }
+
+  if (changed) {
+    $chatMessageList.set(next)
+  }
 }
 
 /**
