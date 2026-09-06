@@ -337,7 +337,6 @@ function MessageBubbleWithBody({
             copyText={displayText}
             messageId={message.id}
             sourceMessageId={message.backendMessageId}
-            variant={variant}
           />
         )}
       </div>
@@ -400,8 +399,7 @@ function MessageActionCluster({
   canUndo,
   copyText,
   messageId,
-  sourceMessageId,
-  variant
+  sourceMessageId
 }: {
   canCopy: boolean
   canFork: boolean
@@ -409,18 +407,15 @@ function MessageActionCluster({
   copyText?: string
   messageId: string
   sourceMessageId?: number
-  variant: ConversationVariant
 }): React.JSX.Element {
   return (
     <div
       className={cn(
         'flex shrink-0 items-center gap-0.5 rounded-full border border-line-hairline/80 bg-surface-card/90 p-0.5 shadow-sm backdrop-blur-md',
         'transition-opacity duration-150 select-none',
+        'pointer-events-none opacity-0 group-hover/message:pointer-events-auto group-hover/message:opacity-100',
         'focus-within:pointer-events-auto focus-within:opacity-100',
-        'has-[[data-busy]]:pointer-events-auto has-[[data-busy]]:opacity-100',
-        variant === 'workbench'
-          ? 'pointer-events-auto opacity-70 group-hover/message:opacity-100'
-          : 'pointer-events-none opacity-0 group-hover/message:pointer-events-auto group-hover/message:opacity-100'
+        'has-[[data-busy]]:pointer-events-auto has-[[data-busy]]:opacity-100'
       )}
     >
       {canCopy && copyText && <ChatMessageCopyButton text={copyText} />}
