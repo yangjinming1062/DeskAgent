@@ -296,7 +296,7 @@ function applyToCssVariables(skin: PersonaSkin): void {
   root.style.setProperty('--persona-highlight', skin.highlight)
   root.style.setProperty(
     '--persona-room-overlay',
-    `linear-gradient(180deg, ${skin.secondary}33 0%, rgba(8, 10, 16, 0.55) 100%)`
+    `linear-gradient(180deg, ${skin.secondary}0A 0%, rgba(8, 10, 16, 0.08) 100%)`
   )
 }
 

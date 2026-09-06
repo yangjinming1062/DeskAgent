@@ -1,15 +1,15 @@
 """房间图提示词组装。
 
-约束与开发计划 §6.2 一致：角色必须入画、禁止模型回忆五官、禁止工作台/终端/UI 文字。
-brief 是 LLM 给的房间文案（内部小模型便链），最终 prompt 由 brief + 模板拼出，不再二次 LLM 调用。
+发给生图模型的句子只描述它能看见的东西：参考图是像素，不是产品术语，也读不出性格。
+穿着来自当前外观的着装描述原文。
+brief 由内部小模型根据性格 / 意图写成房间陈设文案；最终 prompt 由 brief + 模板拼出，不再二次 LLM 调用。
 """
 
 from dataclasses import dataclass
 
 from modules.companion import BackdropIntent
 
-# 双参考图降级：若参考图未提供（无半身像 / 无服装图）则把第二参考降级为文字描述，由 prompt 内的 fallback 块承接。
-_HARD_RULES_ZH = "画面必须包含角色（全身或膝上，自然坐 / 靠窗 / 站在房间一侧），不要大头特写；禁止工作台 / IDE / 终端 / 屏幕 UI / 对话框 / 水印 / 可读文字 / 商标 / 第二个人。"
+_HARD_RULES_ZH = "画面必须包含这个人（全身或膝上，自然坐 / 靠窗 / 站在房间一侧），不要大头特写；禁止工作台 / IDE / 终端 / 屏幕 UI / 对话框 / 水印 / 可读文字 / 商标 / 第二个人。"
 
 # intent 决定光线与氛围关键词；不需要 LLM 二次装配。
 _INTENT_LIGHTING: dict[str, str] = {
@@ -24,32 +24,44 @@ _INTENT_LIGHTING: dict[str, str] = {
 class RoomPromptContext:
     species: str
     appearance: str
-    personality: str
-    style: str
     intent: BackdropIntent | str
-    has_outfit_ref: bool
+    has_identity_ref: bool
+    outfit_description: str = ""
     brief: str = ""
     notes: str = ""
 
 
+def _identity_block(ctx: RoomPromptContext) -> str:
+    species = (ctx.species or "人类").strip() or "人类"
+    appearance = (ctx.appearance or "").strip()
+    if ctx.has_identity_ref:
+        block = "参考图是这个人的正面半身像：只用来锁定五官、发型、肤色、物种与性别，必须画成同一个人，不要换成另一张脸。"
+        if appearance:
+            return f"{block}外形文字仅作补充，与参考图冲突时以参考图的外貌为准：{appearance}。"
+        return block
+    if appearance:
+        return f"按这段外形描述画出这个人：{appearance}。"
+    return f"画面中的人是{species}，外貌自然可信。"
+
+
 def build_room_prompt(ctx: RoomPromptContext) -> str:
-    """组装最终房间图生图 prompt；身份 / 服装 / 画风 / 氛围以参考图与文字块同传。"""
+    """组装最终房间图生图 prompt。参考图只锁定外貌；穿着用着装描述原文；性格不进本函数。"""
     intent_value = ctx.intent.value if isinstance(ctx.intent, BackdropIntent) else str(ctx.intent)
     lighting = _INTENT_LIGHTING.get(intent_value, _INTENT_LIGHTING["decorate"])
+    species = (ctx.species or "人类").strip() or "人类"
     parts = [
-        f"16:9 室内栖息场景，{ctx.species or '人类'}伙伴的私人房间。中远景构图，前后景分明，左右两侧留出玻璃栏前景暗部。",
+        f"16:9 室内中远景，写实摄影，{species}的私人起居房间。前后景分明。",
         _HARD_RULES_ZH,
-        f"画风：{ctx.style or 'cel_shading'}。",
-        f"角色外形：{ctx.appearance or '（以参考图为准）'}。",
-        f"角色性格气质：{ctx.personality or '（以参考图为准）'}。",
-        f"光线：{lighting}",
+        _identity_block(ctx),
     ]
+    outfit = (ctx.outfit_description or "").strip()
+    if outfit:
+        parts.append(outfit)
+    parts.append(f"光线：{lighting}")
     brief = (ctx.brief or "").strip()
     if brief:
-        parts.append(f"房间简述：{brief}")
+        parts.append(f"房间陈设：{brief}")
     notes = (ctx.notes or "").strip()
     if notes:
         parts.append(f"补充：{notes}")
-    if not ctx.has_outfit_ref:
-        parts.append("服装以角色默认穿着为准；无第二张服装参考图时按角色定义描述。")
     return " ".join(parts)

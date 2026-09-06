@@ -157,7 +157,7 @@ export function LivingRail(): React.JSX.Element {
               type="button"
             >
               <Icon className={styles.navItemIcon} />
-              <span>{entry.label}</span>
+              <span className={styles.navItemLabel}>{entry.label}</span>
             </button>
           )
         })}

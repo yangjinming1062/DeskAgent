@@ -4,6 +4,8 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { resolvePortraitUrl } from '@/companion'
+
 import { $moments, $momentsLoading, hydrateMoments } from './journal-store'
 import styles from './moments.module.css'
 
@@ -17,18 +19,45 @@ function formatDate(iso: string): string {
   }
 }
 
-const KIND_LABELS: Record<string, string> = {
+const KIND_LABELS = {
+  emotion: '心情',
   greeting: '问候',
-  image: '照片',
   milestone: '里程碑',
-  outfit_change: '换装',
-  room_redesign: '房间',
-  text: '文字',
-  video: '视频'
-}
+  scene: '房间',
+  together: '在一起',
+  user: '随笔'
+} as const
 
 function getKindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? '片刻'
+  return kind in KIND_LABELS ? KIND_LABELS[kind as keyof typeof KIND_LABELS] : '片刻'
+}
+
+function MomentPhoto({ alt, url }: { alt: string; url: string }): React.JSX.Element | null {
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void resolvePortraitUrl(url).then(resolved => {
+      if (!cancelled) {
+        setSrc(resolved)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+
+  if (!src) {
+    return null
+  }
+
+  return (
+    <div className={styles.media}>
+      <img alt={alt} className={styles.mediaImage} src={src} />
+    </div>
+  )
 }
 
 export function MomentsPage(): React.JSX.Element {
@@ -79,11 +108,7 @@ export function MomentsPage(): React.JSX.Element {
             {m.body && (
               <p className={`${styles.body} ${expanded ? styles.bodyExpanded : styles.bodyClamp}`}>{m.body}</p>
             )}
-            {m.mediaUrl && (
-              <div className="mt-1 overflow-hidden rounded-lg max-h-48 border border-white/10">
-                <img alt={m.title ?? ''} className="w-full object-cover" src={m.mediaUrl} />
-              </div>
-            )}
+            {m.mediaUrl ? <MomentPhoto alt={m.title ?? ''} url={m.mediaUrl} /> : null}
           </button>
         )
       })}

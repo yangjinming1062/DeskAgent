@@ -91,7 +91,7 @@
     --persona-primary: #8aa0c8;
     --persona-secondary: #5b6f8f;
     --persona-highlight: #d8c2a8;
-    --persona-room-overlay: linear-gradient(180deg, rgba(91, 111, 143, 0.2) 0%, rgba(8, 10, 16, 0.55) 100%);
+    --persona-room-overlay: linear-gradient(180deg, rgba(91, 111, 143, 0.03) 0%, rgba(8, 10, 16, 0.08) 100%);
     --persona-skin-transition: 0ms;
     --sprite-state-idle: rgba(226, 232, 240, 0.45);
     --sprite-state-listening: rgba(251, 113, 133, 0.55);

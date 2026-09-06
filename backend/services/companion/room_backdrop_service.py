@@ -21,7 +21,6 @@ from components import (
     get_logger,
     log_paid_call,
     parse_llm_json,
-    safe_json_loads,
     utc_now,
 )
 from modules.companion import (
@@ -501,20 +500,15 @@ async def _do_one_attempt(
     definition = load_persona_definition(persona) if persona else {}
     identity_uri: str | None = None
     if avatar is not None:
-        identity_uri = load_avatar_bytes_as_data_uri(avatar.asset_url) or load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or "")
-    outfit_uri: str | None = None
-    if outfit is not None:
-        outfit_uri = load_avatar_bytes_as_data_uri(outfit.fullbody_url)
-    elif avatar is not None and avatar.seed_front_2d_url:
-        outfit_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url)
+        identity_uri = load_avatar_bytes_as_data_uri(avatar.asset_url)
+    outfit_description = (outfit.description or "").strip() if outfit is not None else ""
     prompt = build_room_prompt(
         RoomPromptContext(
             species=definition.get("biological_type", ""),
             appearance=definition.get("appearance", ""),
-            personality=definition.get("personality", ""),
-            style=(safe_json_loads(avatar.prompt_json or "{}", default={}) or {}).get("fullbody_style", "cel_shading") if avatar else "cel_shading",
             intent=intent,
-            has_outfit_ref=bool(outfit_uri),
+            has_identity_ref=bool(identity_uri),
+            outfit_description=outfit_description,
             brief=brief,
             notes=notes or "",
         ),
@@ -525,7 +519,6 @@ async def _do_one_attempt(
         n=1,
         user_id=user_id,
         reference_image=identity_uri,
-        secondary_reference_image=outfit_uri,
     )
     await _emit_backdrop_event(user_id, "companion.room.progress", {"backdrop_id": backdrop_id, "stage": "store"})
     if not urls:
@@ -562,7 +555,7 @@ async def _do_one_attempt(
         row.prompt = prompt
         row.public_url = public_url
         row.media_path = storage_path
-        row.seed_portrait_media_id = (avatar.asset_url or avatar.seed_front_2d_url or "") if avatar else ""
+        row.seed_portrait_media_id = (avatar.asset_url or "") if avatar else ""
         row.seed_outfit_media_id = outfit.fullbody_url if outfit else (avatar.seed_front_2d_url if avatar else "")
         row.status = BackdropStatus.READY.value
         row.ready_at = utc_now()
