@@ -55,7 +55,7 @@
 | onboarding.get_state / onboarding.submit 与 GET /api/companion/onboarding/state | 查询/增量提交 onboarding 答案（断点恢复，支持 WS RPC 与 REST） | Backend 状态机 + Client 消费状态机 + DESIGN §5 流程 |
 | avatar.regenerate | 重生头像（不使模型失效） | Backend + Client 头像展示 |
 | tts.match_voice / tts.design_voice / tts.list_voices | 音色描述匹配 / 专属音色生成 / 目录枚举 | Backend TTS + Client 音色页 + 工具窗口 REST 镜像 |
-| companion.set_timezone | Client 每次连接上报本地 IANA 时区——系统提示词日期与消息时间戳前缀、夜间批处理与互动统计按用户本地日聚合的唯一时区来源；缺行时回落服务端 UTC，夜间流水线整段跳过 | Backend 持久化 + Client boot 上报 + DESIGN §6.2 |
+| companion.set_timezone | Client 每次连接上报本地 IANA 时区——系统提示词日期与陪伴对话时间感知、夜间批处理与互动统计按用户本地日聚合的唯一时区来源；缺行时回落服务端 UTC，夜间流水线整段跳过 | Backend 持久化 + Client boot 上报 + DESIGN §6.2 |
 | tools.sync | Client boot 与 Runner 重启时把 Runner 工具 schema 推送到后端网关；后端据此决定是否在系统提示词中提供文件工具（`read_file` / `list_directory`）。缺该调用时 LLM 不知有文件工具，对应 WS RPC 注册于 [backend/services/gateway/handlers.py](../backend/services/gateway/handlers.py) | Backend handlers + Client boot 上报 |
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳·摸头·眩晕反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认半身形象（幂等），解开正面全身立绘生成子阶段 | Backend 状态 + Client 流程 |

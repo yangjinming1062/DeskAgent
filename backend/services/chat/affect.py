@@ -1,6 +1,12 @@
 import re
 
-from components import DEFAULT_LANGUAGE, get_logger, resolve_prompt_text
+from components import (
+    DEFAULT_LANGUAGE,
+    TIME_NOTE_EN_HEAD,
+    TIME_NOTE_ZH_HEAD,
+    get_logger,
+    resolve_prompt_text,
+)
 from modules.companion import CompanionExpression
 
 from services.companion import BUILTIN_EMOTIONS
@@ -22,6 +28,14 @@ _PARTIAL_ACTION_RE = re.compile(r"^\s*\*[^*]*$")
 # 结构化动作 tag：[action:slug] 由 LLM 命名具体肢体动作，客户端映射到动画 clip 并在缺失时回退到情绪 valence。
 _ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)\]\n?", re.IGNORECASE)
 _PARTIAL_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)?", re.IGNORECASE)
+
+# 防御性剥离：模型偶尔会把系统时间提示当成回复前缀输出。
+_SYS_TIME_RE = re.compile(rf"^\s*{re.escape(TIME_NOTE_ZH_HEAD)}[^）]*）\s*")
+_SYS_TIME_EN_RE = re.compile(rf"^\s*{re.escape(TIME_NOTE_EN_HEAD)}[^)]*\)\s*", re.IGNORECASE)
+_PARTIAL_TIME_META_RE = re.compile(
+    r"^\s*(?:" + re.escape(TIME_NOTE_ZH_HEAD.rstrip("：")) + r"[^）]*|" + re.escape(TIME_NOTE_EN_HEAD.rstrip(":")) + r"[^)]*)$",
+    re.IGNORECASE,
+)
 
 # 合理上限：含长 app 名的真实 tag 远小于 256 字符；超出视为不可解析输入，由 scrubber 丢弃并以文本形式下传。
 _MAX_TAG_LEN: int = 256
@@ -129,15 +143,19 @@ def build_affect_guidance(
 
 
 def _is_potential_prefix(buf: str) -> bool:
-    """缓冲区可能仍是尚未到达的 tag 或动作旁白前缀。"""
+    """缓冲区可能仍是尚未到达的 tag / 时间提示 / 动作旁白前缀。"""
     s = buf.lstrip()
     if s.startswith("[") and "]" not in s:
         return True
-    return s.startswith("*") and "*" not in s[1:]
+    if s.startswith("*") and "*" not in s[1:]:
+        return True
+    if s.startswith(TIME_NOTE_ZH_HEAD.rstrip("：")) and "）" not in s:
+        return True
+    return s[:12].lower() == TIME_NOTE_EN_HEAD[:12].lower() and ")" not in s
 
 
 class AffectScrubber:
-    """从 LLM 流中剥离开头的 ``[affect:...]``/``[spatial:...]`` 标记与星号动作旁白，并向外暴露解析值。"""
+    """从 LLM 流中剥离开头的 具身 tag、星号动作旁白与溢出的时间提示。"""
 
     # 单回合动作序列上限：更多动作在 2.5s 级情绪瞬态内播不完，且 LLM 有堆叠倾向。
     MAX_ACTIONS_PER_TURN: int = 3
@@ -150,6 +168,7 @@ class AffectScrubber:
         self._actions: list[str] = []
         self._allowed: frozenset[str] = allowed_emotions if allowed_emotions is not None else BUILTIN_EMOTIONS
         self._allowed_actions: frozenset[str] | None = allowed_actions
+        self._just_consumed_tag: bool = False
 
     @property
     def emotion(self) -> str | None:
@@ -171,6 +190,10 @@ class AffectScrubber:
         if not text:
             return text
         self._buf += text
+        if self._just_consumed_tag:
+            self._buf = self._buf.lstrip()
+            if self._buf:
+                self._just_consumed_tag = False
         return self._try_resolve()
 
     def flush(self) -> str:
@@ -194,6 +217,10 @@ class AffectScrubber:
         m_act = _PARTIAL_ACTION_RE.match(self._buf)
         if m_act:
             self._consume(m_act)
+        m_time = _PARTIAL_TIME_META_RE.match(self._buf)
+        if m_time:
+            logger.warning("scrubbed partial time prefix from LLM response: %s", m_time.group(0).strip())
+            self._consume(m_time, strip_bracket=True)
         out, self._buf = self._buf, ""
         return out
 
@@ -226,7 +253,14 @@ class AffectScrubber:
             if m_act:
                 self._consume(m_act)
                 continue
-            return
+            for ts_re in (_SYS_TIME_RE, _SYS_TIME_EN_RE):
+                m_ts = ts_re.match(self._buf)
+                if m_ts:
+                    logger.warning("scrubbed hallucinated time prefix from LLM response: %s", m_ts.group(0).strip())
+                    self._consume(m_ts)
+                    break
+            else:
+                return
 
     def _set_emotion(self, token: str | None) -> None:
         if token is None:
@@ -258,3 +292,5 @@ class AffectScrubber:
         self._buf = self._buf[m.end() :]
         if strip_bracket and self._buf.startswith("]"):
             self._buf = self._buf[1:]
+        self._buf = self._buf.lstrip()
+        self._just_consumed_tag = not bool(self._buf)

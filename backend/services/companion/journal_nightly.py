@@ -20,14 +20,14 @@ from services.llm import MissingLlmConfigError, call_llm_once, resolve_user_llm_
 
 from .journal_service import upsert_diary
 from .memory_bootstrap import resolve_user_timezone
-from .nightly_helpers import get_local_day_utc_bounds, prefilter_messages_for_nightly
+from .nightly_helpers import get_local_day_utc_bounds, is_injected_time_item, prefilter_messages_for_nightly
 
 logger = get_logger(__name__)
 
 _DIARY_SYSTEM = (
     "你是桌面伙伴的私人日记撰写助手。"
     "根据用户今日的陪伴对话，写一段第一人称中文日记（≤ 600 字），语气自然、私密、不浮夸。"
-    "不写工作代码细节；不引用未经证实的记忆；不复读问候/工具输出。"
+    "不写工作代码细节；不引用未经证实的记忆；不复读问候/工具输出。日期分界与系统时间提示是元数据，不是用户台词。"
     '只输出一个 JSON：{"title": "不超过 12 字", "body": "..."}。'
 )
 
@@ -100,7 +100,7 @@ async def project_today(
             .all()
         )
 
-    if not any(m["role"] == "user" for m in clean):
+    if not any(m["role"] == "user" and not is_injected_time_item(m) for m in clean):
         logger.info("journal_nightly: no user messages today", extra={"user_id": user_id})
         return False
 
@@ -150,7 +150,7 @@ async def _compose_diary(
 
 
 def _fallback_diary(clean_messages: list[dict[str, str]]) -> tuple[str, str]:
-    user_count = sum(1 for m in clean_messages if m["role"] == "user")
+    user_count = sum(1 for m in clean_messages if m["role"] == "user" and not is_injected_time_item(m))
     if user_count >= 4:
         return "今天的小事", _FALLBACK_DIARY_TEMPLATES["active"]
     return "今天的小事", _FALLBACK_DIARY_TEMPLATES["default"]

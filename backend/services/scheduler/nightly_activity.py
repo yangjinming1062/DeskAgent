@@ -34,6 +34,7 @@ from services.companion import (
     RECALL_TAGS,
     backfill_memory_embeddings,
     get_local_day_utc_bounds,
+    is_injected_time_item,
     list_memories,
     prefilter_messages_for_nightly,
     project_today,
@@ -63,11 +64,13 @@ Today's conversations are split into two keys:
 - "today_companion_conversations": Everyday companion conversation with the user — your main source for understanding user emotions, relationships, and preferences.
 - "today_work_conversations": Work/task conversations — extract user technical interests, work habits, and schedule, but do NOT infer relationship/emotional state from work tasks.
 
-Each turn in both keys is prefixed with `[HH:MM]` (user-local time). Use the timestamps to:
+Calendar date appears only in dividers before the first message of each local day (`--- Weekday, Month DD, YYYY ---`).
+Each user message is followed by a separate clock/interval note, not the date. These are read-only metadata, not user speech.
+Use dividers for calendar day and clock notes for time of day:
 - Distinguish late-night vs daytime emotional context (e.g., user vents at 02:30 vs asks light questions at 14:00).
 - Detect patterns like "user usually vents after midnight" or "user responds most actively in the evening".
 - Correlate interaction intensity with time-of-day when updating `auto_inject:interaction_pattern` and `inferred_profile:work_schedule`.
-Do NOT mistake a timestamp for the speaker — the `role` field tells you who spoke.
+Identify speakers by the `role` field; never treat time notes or date dividers as user utterances.
 
 Instructions:
 1. ONLY extract facts that are grounded in today's conversations or today's interaction statistics. Do NOT invent or assume facts.
@@ -155,6 +158,7 @@ Guidelines:
 - Tone: Natural, reflective, caring, with emotional continuity.
 - Content: What you learned about the user today, moments shared, thoughts on your relationship, or what you look forward to.
 - Length: Keep it under 1000 characters.
+- Date dividers and system time notes in the conversation log are metadata, not user speech.
 
 Output valid JSON only:
 {
@@ -485,7 +489,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         clean_work_messages = prefilter_messages_for_nightly(work_msgs, user_tz=tz_str)
         # 跨两类按时间顺序——日记和创作 prompt 把这一天的对话视为整体，简单拼接会凭空造出从未发生的顺序。
         clean_messages = prefilter_messages_for_nightly([m for m, _ in all_today_tuples], user_tz=tz_str)
-        if not any(m["role"] == "user" for m in clean_messages):
+        if not any(m["role"] == "user" and not is_injected_time_item(m) for m in clean_messages):
             logger.info("nightly_activity: no clean user messages today", extra={"user_id": user_id})
             return False
 
@@ -535,7 +539,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
                 ),
             )
         ).scalar_one()
-        today_msg_count = sum(1 for m in clean_main_messages if m["role"] == "user")
+        today_msg_count = sum(1 for m in clean_main_messages if m["role"] == "user" and not is_injected_time_item(m))
         seven_day_avg = round(past_7_count / 7.0, 2)
 
         # 日期推算

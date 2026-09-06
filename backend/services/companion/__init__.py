@@ -126,6 +126,7 @@ from .mesh2d import (
 from .model_service import generate_companion_model, request_model_download_retry
 from .nightly_helpers import (
     get_local_day_utc_bounds,
+    is_injected_time_item,
     prefilter_messages_for_nightly,
 )
 from .outfit_service import (
@@ -312,6 +313,7 @@ __all__ = [
     "get_companion_model_sha256",
     "get_diary_by_date",
     "get_local_day_utc_bounds",
+    "is_injected_time_item",
     "get_onboarding_state",
     "get_or_create_persona",
     "get_pending_backdrop",

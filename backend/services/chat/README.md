@@ -31,6 +31,7 @@ chat/
 - **影响 scrubber 在流式阶段就解析**：scrubber 在 chunk 层面拆情绪标签，orchestrator 拿到完整情绪在回合结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到对话完成事件时情绪字段已就位，TTS/EMOTIONAL 切换一次到位。
 - **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES = {"input_image"}` 是 Responses API 输入图片 part 唯一类型；`persistence._build_persisted_content_from_parts` 写入与 `_input_part` 读取两侧一致。
 - **生成媒体在回合收口提取、随终端助手行落库**：`persistence.extract_turn_media` 只认图像/视频生成工具的成功结果（pending 与失败跳过），媒体列与正文正交且不进 LLM 上下文（URL 已在工具结果/摘要行内）；多气泡回合媒体挂最后一格。为什么不信任正文贴 URL：模型会漏贴或夹带 markdown，结构化提取是渲染端唯一可靠通道。跨模块契约见 [PROTOCOL.md §1.3](../../../docs/PROTOCOL.md)。
+- **陪伴对话的时间感知不写进消息正文**：时间元数据不落库，跨轮按发送时刻重建以保留 prefix cache。陪伴预设的系统提示词不放当前日期。scrubber 仍会剥掉溢出的时间提示。
 - **流式 chunk 批处理**：在 5–10 ms 批窗口内合并连续 chunk 事件为单个 chunk 载荷；break 与 message.start 立即发出。
 
 ## 已知限制

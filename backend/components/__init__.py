@@ -73,6 +73,8 @@ from .constants import (
 from .correlation import REQUEST_ID_HEADER, adopt_inbound, begin_local_scope, correlated_exception_response, correlation_id_middleware, new_request_id
 from .database import ENGINE, SESSION_LOCAL, DbSession, get_db, session_scope
 from .functions import (
+    TIME_NOTE_EN_HEAD,
+    TIME_NOTE_ZH_HEAD,
     apply_partial,
     approx_text_tokens,
     coerce_hour_0_23,
@@ -82,7 +84,7 @@ from .functions import (
     ensure_utc,
     format_day_marker,
     format_local_date_str,
-    format_message_timestamp,
+    format_time_anchor,
     parse_llm_json,
     resolve_language,
     resolve_prompt_text,
@@ -175,6 +177,8 @@ __all__ = [
     "SUPPORTED_LANGUAGES",
     "TEMPERATURE_MAX",
     "TEMPERATURE_MIN",
+    "TIME_NOTE_EN_HEAD",
+    "TIME_NOTE_ZH_HEAD",
     "TITLE_GENERATION_MAX_TOKENS",
     "TITLE_GENERATION_TEMPERATURE",
     "TITLE_MAX_CHARS",
@@ -204,7 +208,7 @@ __all__ = [
     "ensure_utc",
     "format_day_marker",
     "format_local_date_str",
-    "format_message_timestamp",
+    "format_time_anchor",
     "get_db",
     "get_file_path",
     "get_logger",

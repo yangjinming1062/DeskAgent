@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from components import (
@@ -8,10 +9,11 @@ from components import (
     TEMPERATURE_MIN,
     format_day_marker,
     format_local_date_str,
-    format_message_timestamp,
+    format_time_anchor,
     get_logger,
     resolve_language,
     safe_json_loads,
+    utc_now,
 )
 from modules.auth import ChatRequestClientContext
 from modules.companion import Persona
@@ -108,18 +110,8 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
-def db_message_to_response_items(
-    msg: Message,
-    *,
-    user_local_tz: str | None = None,
-    inject_message_timestamps: bool = True,
-) -> list[dict[str, Any]]:
-    """DB Message → Responses API input items。多模态 JSON、UI 过滤、工具帧与消息时间戳统一处理。
-
-    时间戳前缀仅 user / assistant 注入：tool 是 JSON 负载不能前缀；system 已自带日期；
-    空 assistant + 无 tool_calls 直接跳过避免幽灵 ``[HH:MM]`` 文本输出。
-    ``inject_message_timestamps=False`` 时所有 role 都不加前缀（工作预设不需要 per-message 时间戳）。
-    """
+def db_message_to_response_items(msg: Message) -> list[dict[str, Any]]:
+    """DB Message -> Responses API input items. 正文保持入库原文，不拼接时间标记。"""
     if msg.subtype in UI_ONLY_SUBTYPES:
         return []
 
@@ -132,28 +124,7 @@ def db_message_to_response_items(
     if msg.role == "system":
         return [{"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]}]
 
-    ts_prefix = format_message_timestamp(msg.created_at, user_local_tz) if inject_message_timestamps and msg.role in ("user", "assistant") else None
-
-    if ts_prefix is not None:
-        if is_multimodal:
-            parts = [dict(p) if isinstance(p, dict) else p for p in (content_val or [])]
-            inserted = False
-            for part in parts:
-                if isinstance(part, dict) and part.get("type") in ("input_text", "text"):
-                    existing = part.get("text") or ""
-                    part["text"] = f"{ts_prefix} {existing}".rstrip()
-                    inserted = True
-                    break
-            if not inserted:
-                parts = [{"type": "input_text", "text": ts_prefix}] + parts
-            content_val = parts
-        elif stripped := (content_val or "").strip():
-            content_val = f"{ts_prefix} {stripped}"
-        else:
-            ts_prefix = None
-
-    # 空 assistant + 无 tool_calls：跳过整条（防幽灵 [HH:MM] 文本输出）
-    if ts_prefix is None and msg.role == "assistant":
+    if msg.role == "assistant":
         has_tool_calls = bool((msg.tool_calls or "").strip())
         if not has_tool_calls and not is_multimodal and not (content_val or "").strip():
             return []
@@ -177,43 +148,62 @@ def _user_row_has_video_part(msg: Message) -> bool:
     return isinstance(parsed, list) and any(isinstance(p, dict) and p.get("type") == "input_video" for p in parsed)
 
 
+def _user_time_item(text: str) -> dict[str, Any]:
+    return {"role": "user", "content": [{"type": "input_text", "text": text}]}
+
+
+def _maybe_append_day_marker(
+    items: list[dict[str, Any]],
+    dt: datetime | None,
+    prev_date_key: str | None,
+    user_local_tz: str | None,
+    lang: str,
+) -> str | None:
+    if dt is None:
+        return prev_date_key
+    cur_date_key = format_local_date_str(dt, user_local_tz, lang)
+    if cur_date_key and cur_date_key != prev_date_key:
+        marker_text = format_day_marker(dt, user_local_tz, lang)
+        if marker_text:
+            items.append(_user_time_item(marker_text))
+    return cur_date_key or prev_date_key
+
+
 def _history_to_responses_context(
     db_msgs: list[Message],
     system_prompt: str,
     *,
     user_local_tz: str | None = None,
     lang: str = DEFAULT_LANGUAGE,
-    inject_message_timestamps: bool = True,
+    inject_time_perception: bool = True,
 ) -> dict[str, Any]:
-    """DB 消息列表转换为 Responses API 上下文。完整保留所有会话中的原始 call/result 工具帧。
+    """DB 消息列表转为 Responses API 上下文。完整保留所有会话中的原始 call/result 工具帧。
 
-    跨天时插一条 ``role=user`` 的日期标记，让 LLM 能区分 ``[23:50] → [08:00]`` 是「昨夜到今晨」还是「倒流」。
-    ``inject_message_timestamps=False`` 时跳过跨天分界（工作预设不需要）。
+    陪伴预设把日期分界与用户时刻作为独立输入项插入，不写入消息正文；工作预设跳过。
     """
     context: dict[str, Any] = {"instructions": system_prompt, "input": []}
     prev_date_key: str | None = None
-    for msg in db_msgs:
-        if msg.subtype in UI_ONLY_SUBTYPES:
-            continue
-        if inject_message_timestamps and msg.created_at is not None and msg.role in ("user", "assistant"):
-            cur_date_key = format_local_date_str(msg.created_at, user_local_tz, lang)
-            if cur_date_key and prev_date_key is not None and cur_date_key != prev_date_key and msg.role == "user":
-                marker_text = format_day_marker(msg.created_at, user_local_tz, lang)
-                if marker_text:
-                    context["input"].append(
-                        {
-                            "role": "user",
-                            "content": [{"type": "input_text", "text": marker_text}],
-                        },
-                    )
-            prev_date_key = cur_date_key or prev_date_key
-        context["input"].extend(
-            db_message_to_response_items(
-                msg,
-                user_local_tz=user_local_tz,
-                inject_message_timestamps=inject_message_timestamps,
-            ),
-        )
+    last_user_at: datetime | None = None
+
+    valid_msgs = [m for m in db_msgs if getattr(m, "subtype", None) not in UI_ONLY_SUBTYPES]
+
+    for msg in valid_msgs:
+        if inject_time_perception:
+            prev_date_key = _maybe_append_day_marker(context["input"], msg.created_at, prev_date_key, user_local_tz, lang)
+        context["input"].extend(db_message_to_response_items(msg))
+        if inject_time_perception and msg.role == "user" and msg.created_at is not None:
+            clock = format_time_anchor(msg.created_at, last_user_at, user_local_tz, lang)
+            if clock:
+                context["input"].append(_user_time_item(clock))
+            last_user_at = msg.created_at
+
+    if inject_time_perception and (not valid_msgs or valid_msgs[-1].role != "user"):
+        now = utc_now()
+        prev_date_key = _maybe_append_day_marker(context["input"], now, prev_date_key, user_local_tz, lang)
+        clock = format_time_anchor(now, None, user_local_tz, lang)
+        if clock:
+            context["input"].append(_user_time_item(clock))
+
     return context
 
 
@@ -319,9 +309,9 @@ async def build_turn_inputs(
         # 本地物理/交互触发动作不进 LLM 清单：脱离触发上下文播放是悬空姿态。
         available_actions = sorted(set(DEFAULT_ACTIONS) - NON_LLM_ACTIONS)
     resolved_preset = resolve_preset(conv.system_preset_id)
-    # 仅 companion 预设（含 cron 主动消息）注入 per-message [HH:MM] 前缀与跨天分界；
-    # 工作预设只让 volatile header 的日期保持准确即可。
-    inject_message_timestamps = resolved_preset.id == DEFAULT_PRESET_ID
+    # 仅陪伴预设（生活空间 / cron）插入时间提示与跨日分界；
+    # 工作台预设只保留 volatile header 的日期。
+    inject_time_perception = resolved_preset.id == DEFAULT_PRESET_ID
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -344,7 +334,7 @@ async def build_turn_inputs(
         build_system_prompt(agent_config, preset=resolved_preset),
         user_local_tz=user_local_tz,
         lang=session_lang,
-        inject_message_timestamps=inject_message_timestamps,
+        inject_time_perception=inject_time_perception,
     )
 
     # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
@@ -356,15 +346,7 @@ async def build_turn_inputs(
     full_context_tokens = approx_responses_tokens(context["instructions"], context["input"])
     baseline, subsequent_msgs = _find_authoritative_token_baseline(history)
     if baseline is not None:
-        delta_items = [
-            item
-            for m in subsequent_msgs
-            for item in db_message_to_response_items(
-                m,
-                user_local_tz=user_local_tz,
-                inject_message_timestamps=inject_message_timestamps,
-            )
-        ]
+        delta_items = [item for m in subsequent_msgs for item in db_message_to_response_items(m)]
         delta_tokens = approx_responses_tokens("", delta_items)
         baseline_tokens = baseline + delta_tokens
         # 提示词与 Schema 漂移保护：若基线估算与当前全量装配的上下文差异过大（>20% 且 >200 tokens），采用全量估算

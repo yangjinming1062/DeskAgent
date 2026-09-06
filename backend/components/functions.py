@@ -70,7 +70,10 @@ def ensure_utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 
-# ---------- 时间格式化（陪伴对话消息时间戳感知）----------
+# ---------- 时间格式化（陪伴对话时间感知）----------
+
+TIME_NOTE_ZH_HEAD = "（系统时间："
+TIME_NOTE_EN_HEAD = "(System time:"
 
 
 def _safe_localize(dt: datetime | None, tz_str: str | None) -> datetime | None:
@@ -84,9 +87,18 @@ def _safe_localize(dt: datetime | None, tz_str: str | None) -> datetime | None:
     return dt.astimezone(zone)
 
 
-def format_message_timestamp(dt: datetime | None, tz_str: str | None) -> str | None:
-    localized = _safe_localize(dt, tz_str)
-    return f"[{localized.hour:02d}:{localized.minute:02d}]" if localized is not None else None
+def _zh_period(hour: int) -> str:
+    if hour < 6:
+        return "凌晨"
+    if hour < 9:
+        return "清晨"
+    if hour < 12:
+        return "上午"
+    if hour < 14:
+        return "中午"
+    if hour < 18:
+        return "下午"
+    return "晚上"
 
 
 def format_local_date_str(dt: datetime | None, tz_str: str | None, lang: str = "zh") -> str | None:
@@ -105,6 +117,56 @@ def format_day_marker(dt: datetime | None, tz_str: str | None, lang: str = "zh")
         wd = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][localized.weekday()]
         return f"--- {localized.year}年{localized.month}月{localized.day}日 {wd} ---"
     return f"--- {localized.strftime('%A, %B %d, %Y')} ---"
+
+
+def format_elapsed_duration(delta_seconds: float, lang: str = "zh") -> str:
+    s = max(0, int(delta_seconds))
+    is_zh = (lang or "").strip().lower() == "zh"
+    if s < 60:
+        return "刚刚" if is_zh else "just now"
+    if s < 3600:
+        mins = s // 60
+        return f"{mins}分钟" if is_zh else f"{mins} min"
+    if s < 86400:
+        hours = s // 3600
+        mins = (s % 3600) // 60
+        if is_zh:
+            return f"{hours}小时{mins}分钟" if mins > 0 else f"{hours}小时"
+        return f"{hours}h {mins}m" if mins > 0 else f"{hours}h"
+    days = s // 86400
+    hours = (s % 86400) // 3600
+    if is_zh:
+        return f"{days}天{hours}小时" if hours > 0 else f"{days}天"
+    return f"{days}d {hours}h" if hours > 0 else f"{days}d"
+
+
+def format_time_anchor(
+    dt: datetime | None,
+    prev_dt: datetime | None,
+    tz_str: str | None,
+    lang: str = "zh",
+) -> str | None:
+    localized = _safe_localize(dt, tz_str)
+    if localized is None:
+        return None
+    is_zh = (lang or "").strip().lower() == "zh"
+    time_str = f"{_zh_period(localized.hour)} {localized.hour:02d}:{localized.minute:02d}" if is_zh else f"{localized.hour:02d}:{localized.minute:02d}"
+
+    elapsed_str = None
+    if prev_dt is not None:
+        prev_localized = _safe_localize(prev_dt, tz_str)
+        if prev_localized is not None:
+            delta = (localized - prev_localized).total_seconds()
+            if delta >= 0:
+                elapsed_str = format_elapsed_duration(delta, lang)
+
+    if is_zh:
+        if elapsed_str:
+            return f"{TIME_NOTE_ZH_HEAD}{time_str}，距上次对话 {elapsed_str}）"
+        return f"{TIME_NOTE_ZH_HEAD}{time_str}）"
+    if elapsed_str:
+        return f"{TIME_NOTE_EN_HEAD} {time_str}, {elapsed_str} since last message)"
+    return f"{TIME_NOTE_EN_HEAD} {time_str})"
 
 
 def resolve_language(language: str | None) -> str:

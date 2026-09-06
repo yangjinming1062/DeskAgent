@@ -80,7 +80,7 @@ class AgentPromptConfig(BaseModel):
     custom_expressions: list[Any] | None = None
     available_actions: list[str] = Field(default_factory=list)
     language: str = DEFAULT_LANGUAGE
-    # 用户本地 IANA tz（如 "Asia/Shanghai"）；用于 volatile header 日期和 per-message [HH:MM] 前缀走本地时区。
+    # 用户本地 IANA tz（如 "Asia/Shanghai"）；用于 volatile header 日期与陪伴对话时间提示走本地时区。
     # None 表示用户未设置，回落到服务端 UTC。
     user_local_tz: str | None = None
 
