@@ -57,6 +57,7 @@ export {
   IconSquare as Square,
   IconSquareFilled as SquareFilled,
   IconTerminal2 as Terminal,
+  IconTemperature as Thermometer,
   IconTrash as Trash2,
   IconUsers as Users,
   IconVideo as Video,

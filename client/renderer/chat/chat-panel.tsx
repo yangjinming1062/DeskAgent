@@ -4,7 +4,7 @@ import { type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import { attachVideoFile } from '@/chat/chat-attach-picker'
 import type { ConversationVariant } from '@/chat/chat-dock-message-bubble'
-import { ChatParamsPanel } from '@/chat/chat-params-panel'
+import { ChatParamsPanel, type ChatParamsTab } from '@/chat/chat-params-panel'
 import {
   $chatDraftFromUndo,
   $chatSessionId,
@@ -14,14 +14,18 @@ import {
   $pendingPromptBatch,
   clearExternalAttachment
 } from '@/chat/chat-store'
-import { ChatContextAmbientLine, ChatContextCapsule } from '@/chat/context-progress-bar'
+import {
+  ChatContextAmbientLine,
+  ChatContextCapsule,
+  ChatReasoningCapsule,
+  ChatTemperatureCapsule
+} from '@/chat/context-progress-bar'
 import { useChatSubmit } from '@/chat/use-chat-submit'
 import { $persona } from '@/companion'
 import { useVoiceRecorder } from '@/companion/hooks/use-voice-recorder'
 import { useAtomListen } from '@/shared/hooks/use-atom-listen'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
-import { SlidersHorizontal } from '@/shared/lib/icons'
 import { fetchSlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
 import { notify } from '@/shared/store/notifications'
@@ -77,7 +81,7 @@ export function ChatPanel({
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [externalPaths, setExternalPaths] = useState<string[]>([])
   const [paramsPanelOpen, setParamsPanelOpen] = useState(false)
-  const [paramsPanelTab, setParamsPanelTab] = useState<'context' | 'params'>('context')
+  const [paramsPanelTab, setParamsPanelTab] = useState<ChatParamsTab>('context')
   const paramsPanelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -182,7 +186,13 @@ export function ChatPanel({
       : 'border-line-hairline/40 px-3.5 py-2 bg-transparent'
   )
 
-  const openParamsPanel = (tab: 'context' | 'params'): void => {
+  const openParamsPanel = (tab: ChatParamsTab): void => {
+    if (paramsPanelOpen && paramsPanelTab === tab) {
+      setParamsPanelOpen(false)
+
+      return
+    }
+
     setParamsPanelTab(tab)
     setParamsPanelOpen(true)
   }
@@ -223,27 +233,32 @@ export function ChatPanel({
             e.stopPropagation()
           }}
         >
-          <ChatContextCapsule onClick={() => openParamsPanel('context')} />
-          <button
-            aria-label="对话参数"
-            className={cn(
-              'inline-flex h-6 items-center justify-center rounded-full border border-line-hairline bg-fill-faint px-1.5 text-body transition hover:border-line-standard hover:bg-fill-hover hover:text-strong cursor-pointer',
-              paramsPanelOpen && paramsPanelTab === 'params' && 'bg-fill-hover text-accent border-line-standard',
-              variant === 'living' && 'h-5 px-1'
-            )}
-            onClick={() => openParamsPanel('params')}
-            title="对话与推理参数"
-            type="button"
-          >
-            <SlidersHorizontal className="size-3.5" />
-          </button>
+          <ChatContextCapsule
+            active={paramsPanelOpen && paramsPanelTab === 'context'}
+            onClick={() => openParamsPanel('context')}
+            variant={variant}
+          />
+          <ChatTemperatureCapsule
+            active={paramsPanelOpen && paramsPanelTab === 'temperature'}
+            onClick={() => openParamsPanel('temperature')}
+            variant={variant}
+          />
+          <ChatReasoningCapsule
+            active={paramsPanelOpen && paramsPanelTab === 'reasoning'}
+            onClick={() => openParamsPanel('reasoning')}
+            variant={variant}
+          />
         </div>
         {paramsPanelOpen && (
           <div
             className="absolute right-3 top-11 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
             ref={paramsPanelRef}
           >
-            <ChatParamsPanel defaultTab={paramsPanelTab} onClose={() => setParamsPanelOpen(false)} />
+            <ChatParamsPanel
+              activeTab={paramsPanelTab}
+              onClose={() => setParamsPanelOpen(false)}
+              onTabChange={setParamsPanelTab}
+            />
           </div>
         )}
       </div>

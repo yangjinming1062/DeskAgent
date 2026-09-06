@@ -1,7 +1,7 @@
 export { type ConversationVariant } from './chat-dock-message-bubble'
 export { useResolvedMediaSrc } from './chat-media-src'
 export { ChatPanel } from './chat-panel'
-export { ChatParamsPanel } from './chat-params-panel'
+export { ChatParamsPanel, type ChatParamsTab } from './chat-params-panel'
 export {
   $chatDraftFromUndo,
   $chatMessageBodies,
@@ -43,6 +43,8 @@ export {
 export {
   ChatContextAmbientLine,
   ChatContextCapsule,
+  ChatReasoningCapsule,
+  ChatTemperatureCapsule,
   ContextProgressBar,
   formatTokenNumber,
   useContextStatus
