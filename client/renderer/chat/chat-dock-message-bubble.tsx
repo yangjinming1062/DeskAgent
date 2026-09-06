@@ -7,6 +7,7 @@ import { ChevronDown } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
 import { ChatMediaCard } from './chat-media-card'
+import { ChatMessageCopyButton } from './chat-message-copy-button'
 import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
@@ -192,9 +193,11 @@ function MessageBubbleWithBody({
   // 用户附件渲染为可点击图片卡（data URL 或本地路径，媒体源通道负责取图）；
   // 正文剔除 @file: 指令行，纯图片消息不渲染空气泡。
   const visibleText = isUser ? stripAttachmentDirectives(body.text) : body.text
-  const hideTextBubble = isUser && !visibleText.trim() && Boolean(body.attachments?.length)
+  // 规整展示文本：流式追加时去除前导空行防撑大气泡上方，非流式时去除首尾多余空白，保留内部段落与换行。
+  const displayText = body.streaming ? visibleText.trimStart() : visibleText.trim()
+  const hideTextBubble = isUser && !displayText && Boolean(body.attachments?.length)
   const tools = body.tools?.length ? body.tools : body.toolName ? [body.toolName] : []
-  const toolOnly = tools.length > 0 && !visibleText.trim() && !body.error && !body.cancelled
+  const toolOnly = tools.length > 0 && !displayText && !body.error && !body.cancelled
   const showToolIndicator = !isUser && tools.length > 0
 
   // 纯工具中间帧在生活空间不占位渲染
@@ -205,7 +208,7 @@ function MessageBubbleWithBody({
   // 非流式、非错误且无任何可见文本与媒体的空消息不渲染
   if (
     !isUser &&
-    !visibleText.trim() &&
+    !displayText &&
     !body.streaming &&
     !body.attachments?.length &&
     !body.media?.length &&
@@ -214,6 +217,10 @@ function MessageBubbleWithBody({
   ) {
     return <></>
   }
+
+  // 只要消息具有非空可见正文且非流式传输中，即允许一键复制
+  const canCopy = Boolean(displayText) && !body.streaming
+  const hasActions = canFork || canUndo || canCopy
 
   return (
     <div className={cn('relative flex shrink-0 gap-2.5 overflow-visible', isUser ? 'justify-end' : 'justify-start')}>
@@ -246,14 +253,14 @@ function MessageBubbleWithBody({
           {!hideTextBubble && !toolOnly ? (
             <div
               className={cn(
-                'relative whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md',
+                'relative select-text cursor-text whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md',
                 isUser
                   ? variant === 'workbench'
-                    ? 'rounded-tr-sm border border-blue-400/35 bg-blue-950/60 text-white shadow-[0_4px_16px_rgba(20,35,70,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]'
-                    : 'rounded-br-sm border border-accent-line/40 text-strong'
+                    ? 'border border-blue-400/35 bg-blue-950/60 text-white shadow-[0_4px_16px_rgba(20,35,70,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]'
+                    : 'border border-accent-line/40 text-strong'
                   : variant === 'workbench'
-                    ? 'rounded-tl-sm border border-white/10 bg-white/[0.05] text-white/95 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]'
-                    : 'rounded-bl-sm border border-line-hairline bg-surface-card/20 text-strong'
+                    ? 'border border-white/10 bg-white/[0.05] text-white/95 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]'
+                    : 'border border-line-hairline bg-surface-card/20 text-strong'
               )}
               style={
                 isUser && variant === 'living'
@@ -265,12 +272,12 @@ function MessageBubbleWithBody({
                 <span className="text-amber-500">{body.error}</span>
               ) : body.cancelled ? (
                 <span className="text-muted">已停止</span>
-              ) : visibleText ? (
+              ) : displayText ? (
                 <>
-                  {visibleText}
+                  {displayText}
                   {body.streaming && <span className="animate-caret-pulse" />}
                   {showPlayButton && (
-                    <span className="ml-1.5 inline-flex align-middle">
+                    <span className="ml-1.5 inline-flex align-middle select-none">
                       <ChatMessagePlayButton messageId={message.id} text={body.text} />
                     </span>
                   )}
@@ -281,7 +288,7 @@ function MessageBubbleWithBody({
               {variant === 'workbench' && message.timestamp ? (
                 <div
                   className={cn(
-                    'mt-1.5 flex items-center gap-1 text-[10px]',
+                    'mt-1.5 flex items-center gap-1 text-[10px] select-none',
                     isUser ? 'justify-end text-blue-200/50' : 'justify-end text-white/35'
                   )}
                 >
@@ -298,12 +305,14 @@ function MessageBubbleWithBody({
             </div>
           ) : null}
         </div>
-        {(canFork || canUndo) && (
+        {hasActions && (
           <MessageActionCluster
+            canCopy={canCopy}
             canFork={canFork}
             canUndo={canUndo}
+            copyText={displayText}
             messageId={message.id}
-            sourceMessageId={message.backendMessageId!}
+            sourceMessageId={message.backendMessageId}
             variant={variant}
           />
         )}
@@ -313,23 +322,27 @@ function MessageBubbleWithBody({
 }
 
 function MessageActionCluster({
+  canCopy,
   canFork,
   canUndo,
+  copyText,
   messageId,
   sourceMessageId,
   variant
 }: {
+  canCopy: boolean
   canFork: boolean
   canUndo: boolean
+  copyText?: string
   messageId: string
-  sourceMessageId: number
+  sourceMessageId?: number
   variant: ConversationVariant
 }): React.JSX.Element {
   return (
     <div
       className={cn(
         'flex shrink-0 items-center gap-0.5 rounded-full border border-line-hairline/80 bg-surface-card/90 p-0.5 shadow-sm backdrop-blur-md',
-        'transition-opacity duration-150',
+        'transition-opacity duration-150 select-none',
         'focus-within:pointer-events-auto focus-within:opacity-100',
         'has-[[data-busy]]:pointer-events-auto has-[[data-busy]]:opacity-100',
         variant === 'workbench'
@@ -337,8 +350,13 @@ function MessageActionCluster({
           : 'pointer-events-none opacity-0 group-hover/message:pointer-events-auto group-hover/message:opacity-100'
       )}
     >
-      {canFork && <ChatMessageForkButton messageId={messageId} sourceMessageId={sourceMessageId} />}
-      {canUndo && <ChatMessageUndoButton messageId={messageId} sourceMessageId={sourceMessageId} />}
+      {canCopy && copyText && <ChatMessageCopyButton text={copyText} />}
+      {canFork && sourceMessageId !== undefined && (
+        <ChatMessageForkButton messageId={messageId} sourceMessageId={sourceMessageId} />
+      )}
+      {canUndo && sourceMessageId !== undefined && (
+        <ChatMessageUndoButton messageId={messageId} sourceMessageId={sourceMessageId} />
+      )}
     </div>
   )
 }

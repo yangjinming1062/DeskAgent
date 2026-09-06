@@ -248,7 +248,7 @@ function extractText(m: SessionMessage): string {
   }
 
   if (!Array.isArray(parsed)) {
-    return m.content
+    return m.content.trim()
   }
 
   return parsed
@@ -256,6 +256,7 @@ function extractText(m: SessionMessage): string {
     .filter(p => p.type === 'input_text' && typeof p.text === 'string')
     .map(p => p.text as string)
     .join('\n')
+    .trim()
 }
 
 // 多模态用户行里的 input_image/input_video parts 还原为类型化附件列表，
@@ -663,8 +664,9 @@ export function appendAssistantDelta(text: string): void {
     return
   }
 
-  // 仅更新当前流式消息 body，不改动 list 引用。
-  $chatMessageBodies.setKey(lastItem.id, { ...body, text: body.text + text })
+  // 仅更新当前流式消息 body，不改动 list 引用；首个 delta 过滤前导空行，避免撑大气泡上方
+  const nextText = !body.text ? text.trimStart() : body.text + text
+  $chatMessageBodies.setKey(lastItem.id, { ...body, text: nextText })
   $chatStreamingTick.set($chatStreamingTick.get() + 1)
 }
 
@@ -702,7 +704,8 @@ export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[])
     return
   }
 
-  const finalStr = typeof text === 'string' ? text : body.text
+  const rawStr = typeof text === 'string' ? text : body.text
+  const finalStr = rawStr.trim()
   const finalMedia = media ?? body.media
 
   // 助手消息为空且无工具/错误/取消/媒体时剪掉，避免空白气泡。

@@ -184,7 +184,9 @@ async def _stream_llm_response(
                 await _flush_chunk_batch()
                 # --- 分隔符仅作传输用：发 break 帧给渲染端，但不要合并到 turn_content（持久化文本会被 TTS 朗读，不能漏出 ---）。
                 if bubble_parts:
-                    turn_parts.append("".join(bubble_parts))
+                    segment = "".join(bubble_parts).strip()
+                    if segment:
+                        turn_parts.append(segment)
                     bubble_parts.clear()
                 await emitter.send_json({"type": "bubble.break"})
                 # 连续气泡间的视觉节奏：让上一个气泡先稳态再开始下一个的流式输出。
@@ -237,7 +239,9 @@ async def _stream_llm_response(
 
     # 收尾最后气泡：若 break 后立即结束，bubble_parts 为空则不追加，turn_parts 已持有前面气泡。
     if bubble_parts:
-        turn_parts.append("".join(bubble_parts))
+        segment = "".join(bubble_parts).strip()
+        if segment:
+            turn_parts.append(segment)
 
     turn_duration_ms = int((time.monotonic() - turn_start_time) * 1000)
 

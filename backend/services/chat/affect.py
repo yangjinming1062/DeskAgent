@@ -14,8 +14,8 @@ from services.companion import BUILTIN_EMOTIONS
 ALLOWED_LOCALES: frozenset[str] = frozenset({"home", "perch", "roam"})
 
 # 锚定缓冲区开头的 tag 正则；target 允许非 ]/非换行字符，以容纳本地化应用名（如「微信」）与空格（如「Visual Studio Code」）。
-_AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)\]\n?", re.IGNORECASE)
-_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)(?:,target:([^\]\n]+))?\]\n?", re.IGNORECASE)
+_AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)\]\s*", re.IGNORECASE)
+_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)(?:,target:([^\]\n]+))?\]\s*", re.IGNORECASE)
 
 # 部分匹配正则：flush() 时抢救流中断前的解析结果，避免把半截标签（如 [affect:foo）暴露给用户。
 _PARTIAL_AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)?", re.IGNORECASE)
@@ -26,7 +26,7 @@ _ACTION_NARRATION_RE = re.compile(r"^\s*\*[^*]*\*\s*")
 _PARTIAL_ACTION_RE = re.compile(r"^\s*\*[^*]*$")
 
 # 结构化动作 tag：[action:slug] 由 LLM 命名具体肢体动作，客户端映射到动画 clip 并在缺失时回退到情绪 valence。
-_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)\]\n?", re.IGNORECASE)
+_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)\]\s*", re.IGNORECASE)
 _PARTIAL_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)?", re.IGNORECASE)
 
 # 防御性剥离：模型偶尔会把系统时间提示当成回复前缀输出。

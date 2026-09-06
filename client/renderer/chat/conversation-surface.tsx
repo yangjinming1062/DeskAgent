@@ -90,8 +90,8 @@ export function ConversationSurface({
           <div
             className={
               variant === 'workbench'
-                ? 'flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-white/10 bg-white/[0.05] px-4 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md'
-                : 'rounded-2xl rounded-bl-sm border border-line-hairline bg-surface-card px-3.5 py-2.5 text-faint'
+                ? 'flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md'
+                : 'rounded-2xl border border-line-hairline bg-surface-card px-3.5 py-2.5 text-faint'
             }
           >
             {variant === 'workbench' ? (
