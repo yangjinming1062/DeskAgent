@@ -445,7 +445,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         }
       | null
       | undefined
-  ): Promise<{ avatar: string | null; id: number | null }> => {
+  ): Promise<{ assetUrl: string | null; avatar: string | null; id: number | null }> => {
     const { avatar } = await applyPortrait({
       id: response?.id,
       assetUrl: response?.asset_url
@@ -455,7 +455,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setPortraitUrl(avatar)
     }
 
-    return { avatar, id: response?.id ?? null }
+    return { assetUrl: response?.asset_url ?? null, avatar, id: response?.id ?? null }
   }
 
   const [voice, setVoice] = useState<VoiceOption | null>(null)
@@ -846,6 +846,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
       if (url) {
         pushPortraitEntry({
+          assetUrl: applied.assetUrl,
           avatarId: applied.id ?? activeAvatarId,
           portraitUrl: url
         })
@@ -1199,6 +1200,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
       if (applied.avatar) {
         pushPortraitEntry({
+          assetUrl: applied.assetUrl,
           avatarId: applied.id ?? activeAvatarId,
           portraitUrl: applied.avatar
         })

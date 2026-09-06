@@ -16,7 +16,7 @@ import {
   $lastAssistantStreaming,
   $pendingPromptBatch
 } from '@/chat/chat-store'
-import { $portraitUrl } from '@/companion'
+import { $activeAvatarId, $portraitUrl } from '@/companion'
 import { useAtomListen } from '@/shared/hooks/use-atom-listen'
 import { cn } from '@/shared/lib/utils'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -63,6 +63,7 @@ export function ConversationSurface({
   }, [list.length, scrollRef])
 
   const portraitUrl = useStore($portraitUrl)
+  const activeAvatarId = useStore($activeAvatarId)
 
   return (
     <div
@@ -80,11 +81,11 @@ export function ConversationSurface({
             <div className="mt-0.5 size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm">
               {portraitUrl ? (
                 <img alt="Companion" className="size-full object-cover" src={portraitUrl} />
-              ) : (
+              ) : activeAvatarId == null ? (
                 <div className="flex size-full items-center justify-center bg-gradient-to-tr from-blue-600 to-indigo-500 text-[11px] font-bold text-white">
                   S
                 </div>
-              )}
+              ) : null}
             </div>
           )}
           <div

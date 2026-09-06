@@ -35,6 +35,7 @@ interface EnsureCachedOptions {
 }
 
 export interface ModelDiskCache {
+  clear: () => Promise<void>
   ensureCached: (opts: EnsureCachedOptions) => Promise<{ contentHash: string; filePath: string; fromCache: boolean }>
   getGlbPath: (hash: string) => string
   getPartialPath: (hash: string) => string
@@ -55,6 +56,7 @@ export function createModelDiskCache({
 
   const cacheDir = path.resolve(spiritagentHome, 'cache', 'models')
   const inFlightDownloads = new Map<string, Promise<{ contentHash: string; filePath: string; fromCache: boolean }>>()
+  let epoch = 0
 
   async function ensureDir(): Promise<void> {
     await fsp.mkdir(cacheDir, { recursive: true })
@@ -147,6 +149,7 @@ export function createModelDiskCache({
   }: EnsureCachedOptions): Promise<{ contentHash: string; filePath: string; fromCache: boolean }> {
     await ensureDir()
 
+    const downloadEpoch = epoch
     const raw = String(url || '')
 
     if (!raw) {
@@ -286,6 +289,11 @@ export function createModelDiskCache({
     const resolvedHash = contentHash || headerSha || finalHash
     const finalGlbPath = getGlbPath(resolvedHash)
 
+    if (downloadEpoch !== epoch) {
+      await fsp.unlink(partialPath).catch(() => {})
+      throw new Error('model cache cleared')
+    }
+
     await fsp.rename(partialPath, finalGlbPath)
     sweep().catch(() => {})
 
@@ -315,7 +323,15 @@ export function createModelDiskCache({
     return await promise
   }
 
+  async function clear(): Promise<void> {
+    epoch += 1
+    inFlightDownloads.clear()
+    await fsp.rm(cacheDir, { recursive: true, force: true })
+    await ensureDir()
+  }
+
   return {
+    clear,
     ensureCached,
     getGlbPath,
     getPartialPath,

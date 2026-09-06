@@ -63,6 +63,7 @@ function captureSpriteSnapshot(): CharacterSnapshot {
 export function Companion3D(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const engineReadyRef = useRef<Promise<Engine | null> | null>(null)
+  const loadedIdentityRef = useRef<string | null>(null)
   const modelInfo = useStore($modelInfo)
 
   // 启动引擎，接好订阅，并触发首次模型加载。
@@ -258,8 +259,24 @@ export function Companion3D(): React.JSX.Element {
             return
           }
 
-          log.warn('companion-3d', 'GLB fetch failed, using procedural fallback:', err)
+          log.warn('companion-3d', 'GLB fetch failed:', err)
         }
+      }
+
+      let identity: string | null = modelInfo.content_hash || null
+
+      if (!identity && url) {
+        try {
+          identity = new URL(url, 'http://127.0.0.1').pathname
+        } catch {
+          identity = url
+        }
+      }
+
+      if (url && !bytes && identity && loadedIdentityRef.current === identity) {
+        log.warn('companion-3d', 'GLB fetch failed; preserving currently rendered character model')
+
+        return
       }
 
       try {
@@ -271,6 +288,10 @@ export function Companion3D(): React.JSX.Element {
 
         if (cancelled) {
           return
+        }
+
+        if (!info.procedural) {
+          loadedIdentityRef.current = identity
         }
 
         // 发布引擎是否回退到了程序化的"蛋" —— 静态模式等的不是 model.ready，而是这个，

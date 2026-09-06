@@ -52,7 +52,8 @@ function subscribe<C extends IpcEventChannel>(
 contextBridge.exposeInMainWorld('spiritagent', {
   activate: (payload: DesktopActivatePayload) => ipcRenderer.invoke(IPC.invoke.authActivate, payload),
   api: (request: SpiritAgentApiRequest) => ipcRenderer.invoke(IPC.invoke.api, request),
-  apiAsset: (request: { url: string }) => ipcRenderer.invoke(IPC.invoke.apiAsset, request),
+  apiAsset: (request: { cacheOnly?: boolean; contentHash?: string; url: string }) =>
+    ipcRenderer.invoke(IPC.invoke.apiAsset, request),
   apiAssetBuffer: (request: { contentHash?: string; url: string }) =>
     ipcRenderer.invoke(IPC.invoke.apiAssetBuffer, request),
   apiAssetModelUrl: (request: { contentHash?: string; url: string }) =>

@@ -35,6 +35,7 @@ import log from 'electron-log/main'
 
 import { createBackendHttp } from './backend/http'
 import { createBackendSession, type SessionSnapshot } from './backend/session'
+import { createAssetDiskCache } from './ipc/asset-disk-cache'
 import { registerAuthIpc } from './ipc/auth'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerConnectionIpc } from './ipc/connection'
@@ -812,7 +813,13 @@ const modelDiskCache = createModelDiskCache({
   spiritagentHome: SPIRITAGENT_HOME
 })
 
+const assetDiskCache = createAssetDiskCache({
+  defaultFetchFn: electronFetch,
+  spiritagentHome: SPIRITAGENT_HOME
+})
+
 registerConnectionIpc({
+  assetDiskCache,
   defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS,
   ensureBackend,
   fetchImpl: electronFetch,
@@ -885,7 +892,15 @@ const autoUpdater = createAutoUpdater({
   spiritagentHome: SPIRITAGENT_HOME
 })
 
-registerAuthIpc({ deps: bridgeDeps, ipcMain })
+registerAuthIpc({
+  deps: {
+    ...bridgeDeps,
+    clearLocalAssetCaches: async () => {
+      await Promise.all([assetDiskCache.clear(), modelDiskCache.clear()])
+    }
+  },
+  ipcMain
+})
 registerRunnerIpc({ deps: bridgeDeps, ipcMain })
 registerRunnerConfigIpc({ ipcMain })
 registerSkillsIpc({ spiritagentHome: SPIRITAGENT_HOME, getRunnerBridge: () => bridgeDeps.runnerBridge, ipcMain })

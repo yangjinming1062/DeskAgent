@@ -2,16 +2,86 @@ import { atom } from 'nanostores'
 
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
+import { currentClearEpoch, definePersistedAtom, registerStorageClearHandler } from '@/shared/lib/storage'
 
 import { resolvePortraitUrl } from './avatar-image'
 
-// 伙伴 2D 头像的解析后 data URL。启动时从 GET /api/companion/avatar 水合，
-// 每次重生后刷新。3D 模型独立；这里管的是聊天头部和「形象」区的可见身份。
+interface PersistedPortrait {
+  assetUrl: string | null
+  avatarId: number | null
+}
+
+const DEFAULT_PORTRAIT: PersistedPortrait = {
+  assetUrl: null,
+  avatarId: null
+}
+
+function isPersistablePortrait(val: unknown): val is PersistedPortrait {
+  if (typeof val !== 'object' || val === null) {
+    return false
+  }
+
+  const v = val as Partial<PersistedPortrait>
+
+  return typeof v.assetUrl === 'string' && Boolean(v.assetUrl)
+}
+
+function portraitAssetIdentity(url: string | null | undefined): string {
+  if (!url) {
+    return ''
+  }
+
+  try {
+    return new URL(url, 'http://127.0.0.1').pathname
+  } catch {
+    return url
+  }
+}
+
+const portraitPersisted = definePersistedAtom<PersistedPortrait>({
+  fallback: DEFAULT_PORTRAIT,
+  isPersistable: isPersistablePortrait,
+  key: 'da.companion.portrait'
+})
+
+const initialPersisted = portraitPersisted.get()
+
 export const $portraitUrl = atom<string | null>(null)
 
 // 当前 avatar 行 id——由 hydrate 与每次创建新行的重生写入。
 // 3D 流水线是在服务端读取当前 avatar 行，所以这里只是为画廊选择做镜像。
-export const $activeAvatarId = atom<number | null>(null)
+export const $activeAvatarId = atom<number | null>(initialPersisted.avatarId)
+
+registerStorageClearHandler(() => {
+  $portraitUrl.set(null)
+  $activeAvatarId.set(null)
+  $portraitHistory.set([])
+  $portraitSelectedIdx.set(0)
+})
+
+function persistPortrait(next: PersistedPortrait): void {
+  $activeAvatarId.set(next.avatarId)
+  portraitPersisted.reset()
+  portraitPersisted.set({ assetUrl: next.assetUrl, avatarId: next.avatarId })
+}
+
+if ('portraitDataUrl' in (initialPersisted as object)) {
+  persistPortrait({ assetUrl: initialPersisted.assetUrl, avatarId: initialPersisted.avatarId })
+}
+
+async function restorePortraitFromDisk(assetUrl: string, epoch: number): Promise<void> {
+  const restored = await resolvePortraitUrl(assetUrl, { cacheOnly: true })
+
+  if (!restored || currentClearEpoch() !== epoch || $portraitUrl.get()) {
+    return
+  }
+
+  $portraitUrl.set(restored)
+}
+
+if (initialPersisted.assetUrl) {
+  void restorePortraitFromDisk(initialPersisted.assetUrl, currentClearEpoch())
+}
 
 interface PortraitUrls {
   assetUrl?: string | null
@@ -20,40 +90,83 @@ interface PortraitUrls {
   id?: number | null
 }
 
-// 把新拿到的 asset_url 与正面/背面种子解析成 data URL；asset_url 写入全局 $portraitUrl。
 export async function applyPortrait(
   urls: PortraitUrls
 ): Promise<{ avatar: string | null; seedBack: string | null; seedFront: string | null }> {
+  const epoch = currentClearEpoch()
   const avatar = urls.assetUrl === undefined ? null : await resolvePortraitUrl(urls.assetUrl)
   const seedFront = urls.seedFrontUrl === undefined ? null : await resolvePortraitUrl(urls.seedFrontUrl)
   const seedBack = urls.seedBackUrl === undefined ? null : await resolvePortraitUrl(urls.seedBackUrl)
 
-  if (avatar) {
-    $portraitUrl.set(avatar)
+  if (currentClearEpoch() !== epoch) {
+    return { avatar: null, seedBack: null, seedFront: null }
   }
 
-  if (urls.id != null) {
+  if (avatar) {
+    $portraitUrl.set(avatar)
+    persistPortrait({
+      assetUrl: urls.assetUrl ?? portraitPersisted.get().assetUrl,
+      avatarId: urls.id ?? $activeAvatarId.get()
+    })
+  } else if (urls.id != null) {
     $activeAvatarId.set(urls.id)
   }
 
   return { avatar, seedBack, seedFront }
 }
 
-// 应用启动时从后端拉当前头像。由 root.tsx 在用户鉴权通过后触发；
-// 404（onboarding 还没头像）是预期情况，让 atom 保持 null 即可。
 export async function hydratePortrait(): Promise<void> {
+  const epoch = currentClearEpoch()
+
   try {
     const res = await window.spiritagent.api<{
-      id?: number
       asset_url?: string
+      id?: number
     }>({
       path: '/api/companion/avatar'
     })
 
-    await applyPortrait({
-      id: res?.id,
-      assetUrl: res?.asset_url
-    })
+    if (currentClearEpoch() !== epoch) {
+      return
+    }
+
+    if (!res || !res.asset_url) {
+      return
+    }
+
+    const currentCached = portraitPersisted.get()
+
+    const sameIdentity =
+      currentCached.avatarId === res.id &&
+      portraitAssetIdentity(currentCached.assetUrl) === portraitAssetIdentity(res.asset_url)
+
+    if (sameIdentity) {
+      if (!$portraitUrl.get() && currentCached.assetUrl) {
+        await restorePortraitFromDisk(currentCached.assetUrl, epoch)
+      }
+
+      if (res.id != null && $activeAvatarId.get() !== res.id) {
+        $activeAvatarId.set(res.id)
+      }
+
+      return
+    }
+
+    const newAvatar = await resolvePortraitUrl(res.asset_url)
+
+    if (currentClearEpoch() !== epoch) {
+      return
+    }
+
+    if (newAvatar) {
+      $portraitUrl.set(newAvatar)
+      persistPortrait({
+        assetUrl: res.asset_url,
+        avatarId: res.id ?? null
+      })
+    } else {
+      log.warn('portrait', 'hydratePortrait failed to resolve new avatar; keeping existing portrait')
+    }
   } catch (error) {
     if (!isClientErrorIpc(error)) {
       log.warn('portrait', 'hydratePortrait failed', error)
@@ -61,42 +174,51 @@ export async function hydratePortrait(): Promise<void> {
   }
 }
 
-// 应用启动时从后端拉头像历史。不拉的话每次重启后画廊缩略图都空的——
-// 用户只能看到当前 avatar，想看别的样图只能重新生成。
-//
-// 客户端按追加顺序展示（最早在前），后端按 desc 返回；反转过来
-// 让 pushPortraitEntry 能按时间顺序追加。
 export async function hydratePortraitHistory(): Promise<void> {
+  const epoch = currentClearEpoch()
+
   try {
     const res = await window.spiritagent.api<{
       history: Array<{
-        id: number
         asset_url: string
+        id: number
       }>
     }>({
       path: '/api/companion/avatar/history'
     })
 
+    if (currentClearEpoch() !== epoch) {
+      return
+    }
+
     const items = [...(res?.history ?? [])].reverse()
+    const previousById = new Map($portraitHistory.get().map(entry => [entry.avatarId, entry]))
 
-    // 重新填充前先清掉本地残留——否则一次部分 hydrate 会让用户看到的条目
-    // 比服务端实际持有的还少。
-    $portraitHistory.set([])
-    $portraitSelectedIdx.set(0)
+    const entries = await Promise.all(
+      items.map(async item => {
+        const portraitUrl = await resolvePortraitUrl(item.asset_url)
+        const previous = previousById.get(item.id)
 
-    for (const item of items) {
-      const portraitUrl = await resolvePortraitUrl(item.asset_url)
-
-      pushPortraitEntry({
-        portraitUrl,
-        avatarId: item.id
+        return {
+          assetUrl: item.asset_url,
+          avatarId: item.id,
+          portraitUrl: portraitUrl ?? previous?.portraitUrl ?? null
+        }
       })
+    )
+
+    if (currentClearEpoch() !== epoch) {
+      return
+    }
+
+    if (entries.some(entry => entry.portraitUrl) || $portraitHistory.get().length === 0) {
+      $portraitHistory.set(entries)
     }
 
     const activeId = $activeAvatarId.get()
 
     if (activeId != null) {
-      const activeIdx = $portraitHistory.get().findIndex(e => e.avatarId === activeId)
+      const activeIdx = entries.findIndex(entry => entry.avatarId === activeId)
 
       if (activeIdx >= 0) {
         $portraitSelectedIdx.set(activeIdx)
@@ -110,12 +232,29 @@ export async function hydratePortraitHistory(): Promise<void> {
 }
 
 export async function selectAvatar(avatarId: number): Promise<boolean> {
+  const epoch = currentClearEpoch()
+
   try {
     await window.spiritagent.api({
-      path: `/api/companion/avatar/${avatarId}/select`,
-      method: 'PUT'
+      method: 'PUT',
+      path: `/api/companion/avatar/${avatarId}/select`
     })
+
+    if (currentClearEpoch() !== epoch) {
+      return false
+    }
+
     $activeAvatarId.set(avatarId)
+
+    const target = $portraitHistory.get().find(entry => entry.avatarId === avatarId)
+
+    if (target?.portraitUrl) {
+      $portraitUrl.set(target.portraitUrl)
+      persistPortrait({
+        assetUrl: target.assetUrl ?? portraitPersisted.get().assetUrl,
+        avatarId
+      })
+    }
 
     return true
   } catch (error) {
@@ -134,8 +273,9 @@ export async function selectAvatar(avatarId: number): Promise<boolean> {
 export const $regenFeedback = atom<string>('')
 
 export interface PortraitEntry {
-  portraitUrl: string | null
+  assetUrl?: string | null
   avatarId: number | null
+  portraitUrl: string | null
 }
 
 const MAX_HISTORY = 5

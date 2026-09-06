@@ -3,7 +3,7 @@ import type React from 'react'
 
 import { $spriteEmotion, $spriteState } from '@/companion/companion-store'
 import { $persona } from '@/companion/persona-store'
-import { $portraitUrl } from '@/companion/portrait-store'
+import { $activeAvatarId, $portraitUrl } from '@/companion/portrait-store'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import {
   CalendarPlus,
@@ -115,6 +115,7 @@ function emotionLabel(emotion: string): string {
 export function LivingRail(): React.JSX.Element {
   const persona = useStore($persona)
   const portrait = useStore($portraitUrl)
+  const activeAvatarId = useStore($activeAvatarId)
   const view = useStore($livingView)
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)
@@ -134,9 +135,9 @@ export function LivingRail(): React.JSX.Element {
         >
           {portrait ? (
             <img alt={displayName} className={styles.avatarImage} src={portrait} />
-          ) : (
+          ) : activeAvatarId == null ? (
             <span className={styles.avatarFallback}>{displayName.slice(0, 1)}</span>
-          )}
+          ) : null}
         </button>
         <div className={styles.identityText}>
           <p className={styles.displayName}>{displayName}</p>

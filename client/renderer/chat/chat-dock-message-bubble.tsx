@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { memo, useState } from 'react'
 
-import { $portraitUrl } from '@/companion'
+import { $activeAvatarId, $portraitUrl } from '@/companion'
 import { ChevronDown, Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
@@ -84,6 +84,7 @@ function MessageBubbleWithBody({
   const subtype = message.subtype || ''
   const isUser = message.role === 'user'
   const portraitUrl = useStore($portraitUrl)
+  const activeAvatarId = useStore($activeAvatarId)
 
   // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
   const [compressExpanded, setCompressExpanded] = useState(false)
@@ -231,11 +232,11 @@ function MessageBubbleWithBody({
         <div className="size-8 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/10 shadow-sm mt-0.5">
           {portraitUrl ? (
             <img alt="Companion" className="size-full object-cover" src={portraitUrl} />
-          ) : (
+          ) : activeAvatarId == null ? (
             <div className="flex size-full items-center justify-center bg-gradient-to-tr from-blue-600 to-indigo-500 text-[11px] font-bold text-white">
               S
             </div>
-          )}
+          ) : null}
         </div>
       )}
       <div

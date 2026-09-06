@@ -37,13 +37,19 @@ export async function pickAvatarImage(title: string): Promise<{ image: PickedIma
 }
 
 /** `null` on failure — the raw URL is the thing the renderer can't reach, so returning it would render a broken image. */
-export async function resolvePortraitUrl(assetUrl: string | null | undefined): Promise<string | null> {
+export async function resolvePortraitUrl(
+  assetUrl: string | null | undefined,
+  options?: { cacheOnly?: boolean }
+): Promise<string | null> {
   if (!assetUrl) {
     return null
   }
 
   try {
-    return await window.spiritagent.apiAsset({ url: assetUrl })
+    return await window.spiritagent.apiAsset({
+      cacheOnly: options?.cacheOnly,
+      url: assetUrl
+    })
   } catch {
     return null
   }

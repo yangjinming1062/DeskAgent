@@ -6,12 +6,41 @@ import type { IpcMain, WebContents } from 'electron'
 import { dataUrlFromBuffer } from '../shared/mime'
 import { errorMessage, sendToSender } from '../shared/utils'
 
+import type { AssetDiskCache } from './asset-disk-cache'
 import type { ModelDiskCache } from './model-disk-cache'
 
 // 在异常消息前缀匹配 `401 ` 且带 token 时广播会话过期事件；api / apiAssetModelUrl 复用。
 function notifyAuthExpiredOn401(message: string, connection: SpiritAgentConnection, sender: WebContents): void {
   if (message.startsWith('401 ') && connection.token) {
     sendToSender(sender, IPC.event.authSessionExpired)
+  }
+}
+
+function isCompanionIdentityAsset(rawUrl: string, baseUrl: string): boolean {
+  try {
+    const { pathname } = new URL(rawUrl, baseUrl)
+
+    return (
+      pathname.includes('/api/companion/avatar/') ||
+      pathname.includes('/api/companion/asset/') ||
+      pathname.includes('/companion-avatars/')
+    )
+  } catch {
+    return false
+  }
+}
+
+async function runCachedAsset<T>(
+  sender: WebContents,
+  connection: SpiritAgentConnection,
+  run: () => Promise<T>
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error: unknown) {
+    notifyAuthExpiredOn401(errorMessage(error), connection, sender)
+
+    throw error
   }
 }
 
@@ -51,6 +80,7 @@ async function fetchFromBackend({
 }
 
 interface ConnectionIpcDeps {
+  assetDiskCache?: null | AssetDiskCache
   defaultFetchTimeoutMs?: number
   ensureBackend: () => Promise<SpiritAgentConnection>
   fetchImpl?: typeof globalThis.fetch
@@ -69,6 +99,7 @@ interface ConnectionIpcDeps {
 }
 
 export function registerConnectionIpc({
+  assetDiskCache,
   defaultFetchTimeoutMs = 15_000,
   ensureBackend,
   fetchImpl,
@@ -122,26 +153,61 @@ export function registerConnectionIpc({
     }
   })
 
-  ipcMain.handle(IPC.invoke.apiAsset, async (_event, request?: { url?: string }) => {
-    const connection = await ensureBackend()
-    const raw = String(request?.url || '')
+  ipcMain.handle(
+    IPC.invoke.apiAsset,
+    async (_event, request?: { cacheOnly?: boolean; contentHash?: string; url?: string }) => {
+      const raw = String(request?.url || '')
 
-    if (!raw) {
-      throw new Error('asset url is required')
+      if (!raw) {
+        throw new Error('asset url is required')
+      }
+
+      if (request?.cacheOnly) {
+        if (!assetDiskCache) {
+          throw new Error('asset cache is unavailable')
+        }
+
+        const cached = await assetDiskCache.get(raw, request?.contentHash)
+
+        if (!cached) {
+          throw new Error('asset cache miss')
+        }
+
+        return cached.dataUrl
+      }
+
+      const connection = await ensureBackend()
+
+      const identityCache = assetDiskCache
+
+      if (identityCache && isCompanionIdentityAsset(raw, connection.baseUrl)) {
+        return await runCachedAsset(_event.sender, connection, async () => {
+          const cached = await identityCache.ensureCached({
+            baseUrl: connection.baseUrl,
+            contentHash: request?.contentHash,
+            fetchFn: fetchImpl,
+            rawUrl: raw,
+            timeoutMs: defaultFetchTimeoutMs,
+            token: connection.token || undefined
+          })
+
+          return cached.dataUrl
+        })
+      }
+
+      const res = await fetchFromBackend({
+        rawUrl: raw,
+        connection,
+        fetchImpl,
+        sender: _event.sender,
+        timeoutMs: defaultFetchTimeoutMs
+      })
+
+      const mime = res.headers.get('content-type') || 'application/octet-stream'
+
+      return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
     }
-
-    const res = await fetchFromBackend({
-      rawUrl: raw,
-      connection,
-      fetchImpl,
-      sender: _event.sender,
-      timeoutMs: defaultFetchTimeoutMs
-    })
-
-    const mime = res.headers.get('content-type') || 'application/octet-stream'
-
-    return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
-  })
+  )
 
   ipcMain.handle(
     IPC.invoke.apiAssetModelUrl,
@@ -191,8 +257,7 @@ export function registerConnectionIpc({
 
     const { pathname } = new URL(raw, connection.baseUrl)
 
-    const isModel =
-      pathname.includes('/model/file/') || pathname.includes('/companion-models/') || Boolean(request?.contentHash)
+    const isModel = pathname.includes('/model/file/') || pathname.includes('/companion-models/')
 
     if (modelDiskCache && isModel) {
       const cached = await modelDiskCache.ensureCached({
@@ -204,6 +269,23 @@ export function registerConnectionIpc({
       })
 
       return await fsp.readFile(cached.filePath)
+    }
+
+    const identityCache = assetDiskCache
+
+    if (identityCache && isCompanionIdentityAsset(raw, connection.baseUrl)) {
+      return await runCachedAsset(_event.sender, connection, async () => {
+        const cached = await identityCache.ensureCached({
+          baseUrl: connection.baseUrl,
+          contentHash: request?.contentHash,
+          fetchFn: fetchImpl,
+          rawUrl: raw,
+          timeoutMs: defaultFetchTimeoutMs,
+          token: connection.token || undefined
+        })
+
+        return cached.buffer
+      })
     }
 
     const res = await fetchFromBackend({

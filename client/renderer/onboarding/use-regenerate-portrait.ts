@@ -77,8 +77,9 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
       setBusy(true)
 
-      const onApplied = () => {
+      const onApplied = (assetUrl?: string | null) => {
         pushPortraitEntry({
+          assetUrl,
           avatarId: $activeAvatarId.get(),
           portraitUrl: $portraitUrl.get()
         })
@@ -120,7 +121,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
             })
 
             onRegenerated?.({ ...applied, id: res.id ?? null })
-            onApplied()
+            onApplied(res.asset_url)
 
             return
           }
@@ -147,7 +148,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           })
 
           onRegenerated?.({ ...applied, id: settled.id ?? null })
-          onApplied()
+          onApplied(settled.asset_url)
         }
       } catch {
       } finally {

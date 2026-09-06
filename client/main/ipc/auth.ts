@@ -20,6 +20,7 @@ interface AuthIpcDeps {
   resetBackendCache?: () => void
   resolveSpiritAgentVersion: () => string
   safeStorage?: null | SafeStorageApi
+  clearLocalAssetCaches?: () => Promise<void>
 }
 
 export function ensureBackendSession(deps: AuthIpcDeps): BackendSession {
@@ -88,6 +89,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
   ipcMain.handle(IPC.invoke.authLogout, async () => {
     const session = ensureBackendSession(deps)
     const result = await session.logout()
+    await deps.clearLocalAssetCaches?.().catch(() => {})
     deps.resetBackendCache?.()
     deps.rebuildTrayMenu?.()
     deps.broadcastAuthChanged?.(session.getSession())

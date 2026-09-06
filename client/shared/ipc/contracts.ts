@@ -339,7 +339,11 @@ export interface IpcInvokeContract {
 
   // 后端 API 代理
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
-  'spiritagent:api:asset': (request: { url: string }) => Promise<string> | string
+  'spiritagent:api:asset': (request: {
+    cacheOnly?: boolean
+    contentHash?: string
+    url: string
+  }) => Promise<string> | string
   'spiritagent:api:asset-buffer': (request: { contentHash?: string; url: string }) => Promise<Uint8Array> | Uint8Array
   'spiritagent:api:asset-model-url': (request: { contentHash?: string; url: string }) => string | Promise<string>
 
