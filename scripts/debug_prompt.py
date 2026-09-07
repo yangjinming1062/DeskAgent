@@ -218,18 +218,21 @@ def assemble_debug_prompt(
 
     estimated_tokens = approx_responses_tokens(instructions, input_items)
 
+    active_tools = [s for s in tools if schema_name(s) == "search_tools"] if enable_tools else []
+
     return {
         "model": model,
         "instructions": instructions,
         "input": input_items,
-        "tools": tools,
+        "tools": active_tools,
         "metadata": {
             "estimated_tokens": estimated_tokens,
             "language": language,
             "platform": platform,
             "allowed_emotions": sorted(allowed_emotions),
             "allowed_actions": sorted(actions),
-            "active_tool_names": valid_tool_names,
+            "active_tool_names": [schema_name(s) for s in active_tools],
+            "available_tool_names": valid_tool_names,
             "persona_name": persona_dict.get("name", ""),
             "preset_id": preset_id,
             "preset_name": BUILTIN_PRESETS[resolve_preset(preset_id).id].name,

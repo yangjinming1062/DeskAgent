@@ -67,6 +67,7 @@ _VOLATILE_LABELS: dict[str, str] = {
 _MEMORY_TOOL_GUIDANCES: dict[str, str] = {
     "zh": (
         "# 长期记忆系统\n"
+        "若尚未解锁记忆工具，先调用 `search_tools(query='memory')`。"
         "你可以通过记忆工具在会话间保留持久记忆。有两类——写入时选对类型。"
         "类型写入后不可更改；要改成另一种类型只能重新写入一行。\n\n"
         "## 按事实「出现方式」分类\n"
@@ -106,6 +107,7 @@ _MEMORY_TOOL_GUIDANCES: dict[str, str] = {
     ),
     "en": (
         "# Long-Term Memory System\n"
+        "If memory tools are not yet unlocked, call `search_tools(query='memory')` first. "
         "You have persistent memory across sessions via the memory tool. There are TWO kinds — "
         "pick the right one at write time. The kind cannot be changed later; rewriting a fact "
         "to a different kind means writing a new row.\n\n"
@@ -168,6 +170,7 @@ _SESSION_SEARCH_GUIDANCES: dict[str, str] = {
 _MEDIA_GUIDANCES: dict[str, str] = {
     "zh": (
         "# 媒体生成与交付\n"
+        "若尚未解锁媒体工具，先调用 `search_tools(query='media')`。"
         "你生成的图片与视频会自动以预览卡片形式随回复一起交给用户——不要在文本里粘贴原始媒体 URL 或 Markdown 图片语法；改为简要描述结果。\n"
         "当你为「你自己」（伙伴）生成图片或视频时，传 subject='self'：平台会把你的规范种子图作为身份参考（图片）或第一帧（视频）注入。"
         "不要凭记忆描述自己的外貌——把提示词集中在场景、姿态与动作上。\n"
@@ -175,6 +178,7 @@ _MEDIA_GUIDANCES: dict[str, str] = {
     ),
     "en": (
         "# Media Generation & Delivery\n"
+        "If media tools are not yet unlocked, call `search_tools(query='media')` first. "
         "Images and videos you generate are delivered to the user automatically as preview "
         "cards attached to your reply — do NOT paste raw media URLs or markdown image "
         "syntax into your text; describe the result briefly instead.\n"
@@ -189,11 +193,13 @@ _MEDIA_GUIDANCES: dict[str, str] = {
 
 _SKILLS_GUIDANCES: dict[str, str] = {
     "zh": (
+        "若尚未解锁技能工具，先调用 `search_tools(query='skills')`。"
         "完成一个复杂任务（5 次以上工具调用）、修了一个棘手的错误、或发现一个非平凡的工作流后，把这个做法存为 skill 并用 skill_manage 管理，下次可直接复用。\n"
         "使用某个 skill 时发现它已过期、不完整或错了，立刻用 skill_manage(action='patch') 修补它——不要等被告知。"
         "不维护的 skill 会变成负担。"
     ),
     "en": (
+        "If skill tools are not yet unlocked, call `search_tools(query='skills')` first. "
         "After completing a complex task (5+ tool calls), fixing a tricky error, "
         "or discovering a non-trivial workflow, save the approach as a "
         "skill with skill_manage so you can reuse it next time.\n"
@@ -231,13 +237,14 @@ _ATTACHMENT_GUIDANCES: dict[str, str] = {
     "zh": (
         "# 文件与目录附件\n"
         "用户消息里可能含内联附件指令——`@file:<路径>` 指本地文件，`@folder:<路径>` 指本地目录。"
-        "把每条视为直接指令：在回答前用你的文件工具（如 `read_file` 或 `list_directory`）检查该资源。"
+        "把每条视为直接指令：在回答前用你的文件工具（如 `read_file` 或 `list_directory`）检查该资源；"
+        "若尚未解锁文件工具，请先调用 `search_tools(query='files')` 解锁。"
         "路径按原样使用，保留原生 OS 分隔符。\n"
         "若文件工具不可用，说明本地 Runner 未连接——告诉用户而不是编造文件内容。"
     ),
     "en": (
         "# File & Folder Attachments\n"
-        "User messages may include inline attachment directives — `@file:<path>` for a local file, `@folder:<path>` for a local directory. Treat each one as a direct instruction to inspect that resource with your file tools (such as `read_file` or `list_directory`) before answering. Use the path verbatim with native OS separators.\n"
+        "User messages may include inline attachment directives — `@file:<path>` for a local file, `@folder:<path>` for a local directory. Treat each one as a direct instruction to inspect that resource with your file tools (such as `read_file` or `list_directory`) before answering; if file tools are not yet unlocked, call `search_tools(query='files')` first. Use the path verbatim with native OS separators.\n"
         "If file tools are not available, the local Runner is not connected — inform the user rather than fabricating file contents."
     ),
 }
@@ -245,6 +252,7 @@ _ATTACHMENT_GUIDANCES: dict[str, str] = {
 _TOOL_USE_ENFORCEMENTS: dict[str, str] = {
     "zh": (
         "# 行动与工具纪律\n"
+        "- **渐进式工具解锁**：初始仅持有业务域索引与 `search_tools`。当你需要调用某个业务域的能力时，先调用 `search_tools(query='业务域名称或意图')` 检索并就地解锁具体工具；若在当前会话中已经解锁过所需工具，直接调用即可。\n"
         "- **立刻行动，不要叙述**：当你决定执行某个动作（读文件、跑代码、搜网页、生成媒体）时，在同一回合直接发起相应工具调用。"
         "永远不要以「稍后再做」的空头承诺结束回合。\n"
         "- **依赖工具而非猜测**：绝不要猜测、推断或臆造可用工具核实的事实（系统状态、确切日期/时间、数学计算、文件内容、代码结构、网页搜索）。调用合适的工具查询。\n"
@@ -256,6 +264,7 @@ _TOOL_USE_ENFORCEMENTS: dict[str, str] = {
     ),
     "en": (
         "# Action & Tool Discipline\n"
+        "- **Progressive tool unlock**: The initial context contains only domain summaries and `search_tools`. When you need capabilities from a domain, call `search_tools(query='domain or intent')` to unlock the corresponding tools; if the required tool is already unlocked in the conversation, invoke it directly.\n"
         "- **Act immediately, don't narrate**: When you decide to perform an action (read files, execute code, search the web, generate media), make the corresponding tool call in the same turn. Never end your turn with an empty promise of future action.\n"
         "- **Grounding over guessing**: NEVER guess, extrapolate, or hallucinate facts that can be verified with tools (system state, exact date/time, mathematical calculations, file contents, code structure, web search). Query the appropriate tool.\n"
         "- **Prerequisites & persistence**: Look up necessary context via tools before modifying files or executing commands. If a tool returns partial results, refine your query and retry. Verify correctness before concluding.\n"

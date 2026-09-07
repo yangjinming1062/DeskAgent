@@ -45,6 +45,27 @@ from .types import IterationBudget, TrackTask
 logger = get_logger(__name__)
 
 
+def _extract_unlocked_tool_names_from_context(input_items: list[dict]) -> set[str]:
+    unlocked: set[str] = set()
+    for item in input_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "function_call" and (name := item.get("name")):
+            unlocked.add(str(name))
+        elif isinstance(item.get("tool_calls"), list):
+            for tc in item["tool_calls"]:
+                if isinstance(tc, dict) and (t_name := tc.get("name")):
+                    unlocked.add(str(t_name))
+        if item.get("type") == "function_call_output":
+            raw_output = item.get("output", "")
+            parsed = safe_json_loads(raw_output) if isinstance(raw_output, str) else raw_output
+            if isinstance(parsed, dict) and isinstance(parsed.get("matched_tools"), list):
+                for t in parsed["matched_tools"]:
+                    if isinstance(t, dict) and (t_name := t.get("name")):
+                        unlocked.add(str(t_name))
+    return unlocked
+
+
 async def run_chat_turn(
     req: ChatRequest,
     llm_config: dict,
@@ -129,9 +150,11 @@ async def run_chat_turn(
 
     guardrails = ToolCallGuardrailController()
     budget = IterationBudget(max_total=AGENT_MAX_LOOP_TURNS)
-    # 初始来自注册表过滤集合；search_tools 在运行时同时增扩名称与 schema，保持 active_schemas 同步。
-    active_tool_names: set[str] = {schema_name(s) for s in inputs.all_schemas}
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
+    # 继承看压缩/截断前的历史，避免摘要窗口丢掉已解锁工具。
+    raw_items = inputs.context.get("input") or []
+    history_unlocked = _extract_unlocked_tool_names_from_context(raw_items if isinstance(raw_items, list) else [])
+    active_tool_names: set[str] = {"search_tools"} | (history_unlocked & set(schemas_by_name))
     # 本轮所有工具批次产出的生成媒体，随终端 assistant 行落库并在 message.complete 下发。
     turn_media: list[dict[str, str]] = []
     turn_reasoning_parts: list[str] = []

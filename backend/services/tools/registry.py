@@ -5,6 +5,7 @@ from typing import Any
 
 from components import get_logger, tool_error
 
+from .domains import apply_search_tools_catalog
 from .toolsets import disabled_backend_tool_names
 
 logger = get_logger(__name__)
@@ -63,7 +64,7 @@ class ToolsRegistry:
                 logger.warning("availability_check raised; hiding tool", extra={"tool_name": schema_name(entry["schema"]), "error_msg": str(e)})
         schemas.extend(s for s in self._memory_tools.values() if schema_name(s) not in excluded)
         schemas.extend(self._runner_tools.get(user_id, {}).values())
-        return schemas
+        return apply_search_tools_catalog(schemas)
 
     def _lookup(self, user_id: int, tool_name: str) -> tuple[str, dict[str, Any]] | None:
         if (entry := self._backend_tools.get(tool_name)) is not None:
@@ -71,7 +72,7 @@ class ToolsRegistry:
         if (schema := self._memory_tools.get(tool_name)) is not None:
             return "memory", {"schema": schema}
         if (entry := self._runner_tools.get(user_id, {}).get(tool_name)) is not None:
-            return "runner", entry
+            return "runner", {"schema": entry}
         return None
 
     def get_schema(self, user_id: int, tool_name: str) -> dict[str, Any] | None:
