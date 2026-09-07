@@ -357,20 +357,42 @@ registerStorageClearHandler(() => {
   cancelVoiceBar()
 })
 
+export function estimateVoiceDuration(text: string): number {
+  const trimmed = text.trim()
+
+  if (!trimmed) {
+    return 1
+  }
+
+  const clean = trimmed.replace(/\s+/g, ' ')
+  const cjkMatches = clean.match(/[\u4e00-\u9fa5]/g)
+  const cjkCount = cjkMatches ? cjkMatches.length : 0
+  const nonCjk = clean.replace(/[\u4e00-\u9fa5]/g, '').trim()
+  const wordCount = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0
+
+  const estimatedSeconds = cjkCount / 3.8 + wordCount / 2.5
+
+  return Math.max(1, Math.min(60, Math.round(estimatedSeconds)))
+}
+
 interface ChatVoiceBarProps {
   duration?: number
   messageId: string
+  text?: string
 }
 
-export function ChatVoiceBar({ duration, messageId }: ChatVoiceBarProps): React.JSX.Element {
+export function ChatVoiceBar({ duration, messageId, text }: ChatVoiceBarProps): React.JSX.Element {
   const playingId = useStore($voiceBarPlayingId)
   const loadingId = useStore($voiceBarLoadingId)
 
   const isPlaying = playingId === messageId
   const isLoading = loadingId === messageId
 
-  const sec = duration ? Math.max(1, Math.min(60, duration)) : 1
-  const widthPx = duration ? 72 + Math.round(((sec - 1) / 59) * (220 - 72)) : 72
+  const effectiveDuration =
+    typeof duration === 'number' && duration > 0 ? duration : text ? estimateVoiceDuration(text) : 1
+
+  const sec = Math.max(1, Math.min(60, effectiveDuration))
+  const widthPx = 76 + Math.round(((sec - 1) / 59) * (220 - 76))
 
   const handleClick = (e: React.MouseEvent): void => {
     e.stopPropagation()
@@ -398,16 +420,14 @@ export function ChatVoiceBar({ duration, messageId }: ChatVoiceBarProps): React.
           <Volume2 className="size-3.5 shrink-0 text-strong/70 group-hover/voicebar:text-strong transition-colors" />
         )}
       </div>
-      {typeof duration === 'number' && duration > 0 ? (
-        <span
-          className={cn(
-            'text-[11px] font-medium tracking-tight',
-            isPlaying ? 'text-accent font-semibold' : 'text-faint'
-          )}
-        >
-          {duration}″
-        </span>
-      ) : null}
+      <span
+        className={cn(
+          'ml-2 text-[11px] font-medium tracking-tight',
+          isPlaying ? 'text-accent font-semibold' : 'text-faint'
+        )}
+      >
+        {sec}″
+      </span>
     </button>
   )
 }
@@ -425,30 +445,29 @@ export function TranscriptBlock({ text }: TranscriptBlockProps): React.JSX.Eleme
   }
 
   return (
-    <div className="mt-1.5 flex max-w-full flex-col select-none">
+    <div className="mt-1 flex max-w-full flex-col select-none">
       <button
         aria-expanded={expanded}
         className={cn(
-          'group/transcript inline-flex items-center gap-1.5 rounded-lg border border-line-hairline/60 bg-surface-card/20 px-2.5 py-1 text-[11px] text-faint backdrop-blur-xs transition-all duration-150',
-          'hover:border-line-standard hover:bg-surface-card/40 hover:text-strong cursor-pointer text-left'
+          'group/transcript inline-flex items-center gap-1 rounded-md border border-line-hairline/50 bg-surface-card/15 px-2 py-0.5 text-[10px] text-faint backdrop-blur-xs transition-all duration-150',
+          'hover:border-line-standard hover:bg-surface-card/35 hover:text-strong cursor-pointer text-left'
         )}
         onClick={() => setExpanded(prev => !prev)}
         type="button"
       >
-        <FileText className="size-3 shrink-0 text-faint group-hover/transcript:text-strong transition-colors" />
-        <span className="font-medium text-strong/80">文字稿</span>
-        <span className="text-[10px] text-faint group-hover/transcript:text-strong/70 transition-colors ml-0.5">
-          {expanded ? '收起' : '展开查看'}
+        <FileText className="size-2.5 shrink-0 text-faint group-hover/transcript:text-strong transition-colors" />
+        <span className="font-normal text-muted group-hover/transcript:text-strong transition-colors">
+          {expanded ? '收起' : '查看文本'}
         </span>
         <ChevronDown
           className={cn(
-            'size-3 shrink-0 text-faint transition-transform duration-200 group-hover/transcript:text-strong',
+            'size-2.5 shrink-0 text-faint transition-transform duration-150 group-hover/transcript:text-strong',
             expanded ? 'rotate-180' : '-rotate-90'
           )}
         />
       </button>
       {expanded ? (
-        <div className="mt-1.5 max-h-60 max-w-full overflow-y-auto rounded-xl border border-line-hairline bg-surface-card/30 p-3 text-xs leading-relaxed text-strong shadow-inner backdrop-blur-md select-text cursor-text whitespace-pre-wrap break-words font-sans">
+        <div className="mt-1 max-h-60 max-w-full overflow-y-auto rounded-lg border border-line-hairline bg-surface-card/30 p-2.5 text-xs leading-relaxed text-strong shadow-inner backdrop-blur-md select-text cursor-text whitespace-pre-wrap break-words font-sans">
           {trimmed}
         </div>
       ) : null}

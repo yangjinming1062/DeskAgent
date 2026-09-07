@@ -17,11 +17,11 @@ import { formatConversationTime } from './conversation-time'
 import { ToolChipTimeline } from './tool-chip-timeline'
 
 // 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
-const SYSTEM_PILL_SUBTYPES = new Set(['hint', 'daily_summary', 'status_cleared', 'status_command_result'])
+const SYSTEM_PILL_SUBTYPES = new Set(['status_cleared', 'status_command_result'])
 
-// 上下文压缩检查点：居中的分界线式可折叠卡片，默认折叠、点击展开摘要全文。
+// 对话摘要与上下文压缩检查点：居中的分界线式可折叠卡片，默认折叠、点击展开摘要全文。
 // 走独立分支而不是 pill —— 视觉权重要让用户意识到这是个有信息量的节点。
-const COMPRESS_CARD_SUBTYPES = new Set(['compress_summary'])
+const SUMMARY_CARD_SUBTYPES = new Set(['compress_summary', 'daily_summary'])
 
 export type ConversationVariant = 'living' | 'workbench'
 
@@ -101,8 +101,8 @@ function MessageBubbleWithBody({
   const activeAvatarId = useStore($activeAvatarId)
   const responseMode = useStore($responseMode)
 
-  // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
-  const [compressExpanded, setCompressExpanded] = useState(false)
+  // 摘要/压缩卡片折叠态：组件局部 useState，默认折叠，不持久化、不入 store；多窗口各自独立展开。
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
 
   const timeLabel = showTimeLabel ? formatConversationTime(message.timestamp) : ''
 
@@ -112,38 +112,62 @@ function MessageBubbleWithBody({
     </div>
   ) : null
 
-  if (COMPRESS_CARD_SUBTYPES.has(subtype)) {
-    // 解析 content：第一行 "[🗜️ 对话压缩 — N 条早期消息已压缩]" 是胶囊标题，剩余为摘要 body。
+  const isSummaryCard =
+    SUMMARY_CARD_SUBTYPES.has(subtype) ||
+    (!subtype && (body.text.startsWith('[📝 截至') || body.text.startsWith('[🗜️ 对话压缩')))
+
+  if (isSummaryCard) {
+    // 解析 content：第一行（如 "[📝 截至 ...]" 或 "[🗜️ 对话压缩 — ...]"）是胶囊标题，剩余为摘要 body。
     const rawText = body.text
     const newlineIdx = rawText.indexOf('\n')
-    const title = newlineIdx === -1 ? rawText : rawText.slice(0, newlineIdx)
-    const summary = newlineIdx === -1 ? '' : rawText.slice(newlineIdx + 1)
-    const cardId = `compress-card-${message.id}`
+    let title = ''
+    let summary = ''
+
+    if (newlineIdx !== -1) {
+      title = rawText.slice(0, newlineIdx).trim()
+      summary = rawText.slice(newlineIdx + 1).trim()
+    } else {
+      const bracketMatch = rawText.match(/^(\[[^\]]+\])\s*([\s\S]*)$/)
+
+      if (bracketMatch) {
+        title = bracketMatch[1].trim()
+        summary = bracketMatch[2].trim()
+      } else {
+        title = rawText.length > 30 ? `${rawText.slice(0, 30)}...` : rawText
+        summary = rawText
+      }
+    }
+
+    const cardId = `summary-card-${message.id}`
 
     return wrapWithTimeDivider(
       timeDivider,
-      <div className="relative my-3 flex items-center gap-3 px-1">
-        <div className="h-px flex-1 bg-line-strong" />
-        <button
-          aria-controls={cardId}
-          aria-expanded={compressExpanded}
-          className={cn(
-            'group inline-flex max-w-[60%] items-center gap-1.5 truncate rounded-full border border-line-standard bg-surface-card/80 px-3 py-1 text-xs text-muted backdrop-blur-glass transition hover:bg-fill-hover hover:text-strong',
-            'animate-in fade-in zoom-in-95 duration-150'
-          )}
-          onClick={() => setCompressExpanded(o => !o)}
-          type="button"
-        >
-          <span className="truncate">{title}</span>
-          <ChevronDown className={cn('size-3 shrink-0 transition-transform', compressExpanded && 'rotate-180')} />
-        </button>
-        <div className="h-px flex-1 bg-line-strong" />
-        {compressExpanded && (
+      <div className="relative my-3 flex flex-col items-center gap-2 px-1">
+        <div className="flex w-full items-center gap-3">
+          <div className="h-px flex-1 bg-line-strong" />
+          <button
+            aria-controls={cardId}
+            aria-expanded={summaryExpanded}
+            className={cn(
+              'group inline-flex max-w-[80%] items-center gap-1.5 truncate rounded-full border border-line-standard bg-surface-card/80 px-3.5 py-1 text-xs text-muted backdrop-blur-glass transition hover:bg-fill-hover hover:text-strong cursor-pointer',
+              'animate-in fade-in zoom-in-95 duration-150'
+            )}
+            onClick={() => setSummaryExpanded(o => !o)}
+            type="button"
+          >
+            <span className="truncate">{title}</span>
+            <ChevronDown
+              className={cn('size-3 shrink-0 transition-transform duration-200', summaryExpanded && 'rotate-180')}
+            />
+          </button>
+          <div className="h-px flex-1 bg-line-strong" />
+        </div>
+        {summaryExpanded && (
           <div
-            className="absolute left-1/2 top-full z-10 mt-2 w-[min(560px,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-line-standard bg-surface-card/95 p-3.5 text-[13px] leading-relaxed text-body shadow-lg backdrop-blur-glass"
+            className="w-[min(560px,calc(100%-2rem))] max-h-80 overflow-y-auto rounded-2xl border border-line-standard bg-surface-card/95 p-3.5 text-[13px] leading-relaxed text-body shadow-lg backdrop-blur-glass animate-in fade-in slide-in-from-top-1 duration-150"
             id={cardId}
           >
-            <div className="whitespace-pre-wrap break-words">
+            <div className="whitespace-pre-wrap break-words select-text cursor-text">
               {summary || <span className="text-faint">（无摘要内容）</span>}
             </div>
           </div>
@@ -302,7 +326,7 @@ function MessageBubbleWithBody({
               </div>
             ) : (
               <>
-                <ChatVoiceBar duration={body.voiceDuration} messageId={message.id} />
+                <ChatVoiceBar duration={body.voiceDuration} messageId={message.id} text={displayText} />
                 <TranscriptBlock text={displayText} />
               </>
             )

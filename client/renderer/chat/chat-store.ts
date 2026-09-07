@@ -11,7 +11,7 @@ import {
 import { $gateway } from '@/shared/store/gateway'
 import type { ChatAttachment, ChatMediaItem, SessionMessage, SessionRuntimeInfo } from '@/shared/types/spiritagent'
 
-import { cancelVoiceBar, isLivingVoiceBarActive, synthesizeVoiceBar } from './chat-voice-bar'
+import { cancelVoiceBar, estimateVoiceDuration, isLivingVoiceBarActive, synthesizeVoiceBar } from './chat-voice-bar'
 
 export interface ChatMessageListItem {
   id: string
@@ -244,6 +244,7 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
       toolName: m.tool_name ?? null,
       tools: m.tool_name ? [m.tool_name] : undefined,
       streaming: false,
+      voiceDuration: m.role === 'assistant' && textContent ? estimateVoiceDuration(textContent) : undefined,
       ...(m.role === 'user' ? omitUndefined(extractUserAttachments(m)) : {}),
       ...(m.media?.length ? { media: m.media } : {})
     }
@@ -793,6 +794,7 @@ export function finalizeAssistantMessage(
     media: finalMedia,
     streaming: false,
     toolName: null,
+    voiceDuration: body.voiceDuration ?? (finalStr ? estimateVoiceDuration(finalStr) : undefined),
     voiceStatus: nextVoiceStatus
   })
   $lastAssistantStreaming.set(false)
