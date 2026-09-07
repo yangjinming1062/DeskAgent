@@ -19,7 +19,7 @@ import type { GatewayEvent } from '@/shared/lib/gateway-protocol'
 import { IpcGatewayProxy } from '@/shared/lib/ipc-gateway-proxy'
 import { $auth } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway } from '@/shared/store/gateway'
-import { hydrateSurfaces } from '@/shared/store/surfaces'
+import { hydrateSurfaces, setSurfaceRole } from '@/shared/store/surfaces'
 import { initUiThemeSync } from '@/shared/store/theme'
 
 function SurfaceGatewayBootstrap(): null {
@@ -85,6 +85,12 @@ function SurfaceAuthBootstrap(): null {
 }
 
 export function bootstrapSurface(label: string, RootComponent: React.ComponentType): void {
+  if (label.includes('living')) {
+    setSurfaceRole('living')
+  } else if (label.includes('workbench')) {
+    setSurfaceRole('workbench')
+  }
+
   installClipboardShim()
   applyNoBlurIfNeeded()
   initUiThemeSync()

@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { memo, useState } from 'react'
 
-import { $activeAvatarId, $portraitUrl } from '@/companion'
+import { $activeAvatarId, $portraitUrl, $responseMode } from '@/companion'
 import { ChevronDown, Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
@@ -12,6 +12,7 @@ import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { ChatMessageUndoButton } from './chat-message-undo-button'
 import { $chatMessageBodies, $chatTurnInFlight, type ChatMessageBody, type ChatMessageListItem } from './chat-store'
+import { ChatVoiceBar, TranscriptBlock } from './chat-voice-bar'
 import { formatConversationTime } from './conversation-time'
 import { ToolChipTimeline } from './tool-chip-timeline'
 
@@ -98,6 +99,7 @@ function MessageBubbleWithBody({
   const isUser = message.role === 'user'
   const portraitUrl = useStore($portraitUrl)
   const activeAvatarId = useStore($activeAvatarId)
+  const responseMode = useStore($responseMode)
 
   // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
   const [compressExpanded, setCompressExpanded] = useState(false)
@@ -192,10 +194,22 @@ function MessageBubbleWithBody({
     )
   }
 
-  // 仅在生活空间、已完成、非错误、非取消且有文本的助手消息上显示播放按钮。工作台侧重干活直接看文本。
+  const isVoiceBarMode =
+    variant === 'living' &&
+    !isUser &&
+    responseMode === 'voice' &&
+    !body.error &&
+    !body.cancelled &&
+    !body.toolName &&
+    body.voiceStatus !== 'failed'
+
+  const isVoicePendingOrStreaming = isVoiceBarMode && (body.streaming || body.voiceStatus === 'pending')
+
+  // 仅在生活空间、默认文字模式、已完成、非错误、非取消且有文本的助手消息上显示播放按钮。工作台侧重干活直接看文本。
   const showPlayButton =
     variant === 'living' &&
     !isUser &&
+    !isVoiceBarMode &&
     !body.streaming &&
     Boolean(body.text) &&
     !body.error &&
@@ -249,7 +263,7 @@ function MessageBubbleWithBody({
   }
 
   // 只要消息具有非空可见正文且非流式传输中，即允许一键复制
-  const canCopy = Boolean(displayText) && !body.streaming
+  const canCopy = Boolean(displayText) && !body.streaming && !isVoicePendingOrStreaming
   const hasActions = canFork || canUndo || canCopy
 
   return wrapWithTimeDivider(
@@ -281,7 +295,18 @@ function MessageBubbleWithBody({
             </div>
           ) : null}
           {showToolIndicator && variant === 'workbench' ? <ToolChipTimeline active={toolOnly} tools={tools} /> : null}
-          {!hideTextBubble && !toolOnly ? (
+          {isVoiceBarMode ? (
+            isVoicePendingOrStreaming ? (
+              <div className="relative select-text cursor-text whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md border border-line-hairline bg-surface-card/20 text-strong">
+                <span className="animate-pulse text-faint">…</span>
+              </div>
+            ) : (
+              <>
+                <ChatVoiceBar duration={body.voiceDuration} messageId={message.id} />
+                <TranscriptBlock text={displayText} />
+              </>
+            )
+          ) : !hideTextBubble && !toolOnly ? (
             <div
               className={cn(
                 'relative select-text cursor-text whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm backdrop-blur-md',

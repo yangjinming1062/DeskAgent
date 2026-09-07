@@ -13,10 +13,30 @@ export const $lastSurface = atom<SurfaceId>('living')
 // 工作台窗口外侧栖息坐标，由主进程合帧广播
 export const $surfaceBounds = atom<DesktopSurfaceBounds | null>(null)
 
+export type SurfaceRole = 'living' | 'workbench' | 'sprite'
+export const $surfaceRole = atom<SurfaceRole | null>(null)
+
+export function setSurfaceRole(role: SurfaceRole): void {
+  $surfaceRole.set(role)
+}
+
+export function isLivingProxyWindow(): boolean {
+  if ($surfaceRole.get() === 'living') {
+    return true
+  }
+
+  if (typeof window !== 'undefined' && window.location.pathname.includes('living.html')) {
+    return true
+  }
+
+  return false
+}
+
 registerStorageClearHandler(() => {
   $surfaceOpen.set(null)
   $lastSurface.set('living')
   $surfaceBounds.set(null)
+  $surfaceRole.set(null)
 })
 
 export interface OpenSurfaceOptions {

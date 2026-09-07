@@ -8,12 +8,7 @@ export function stopSpeaking(): void {
   stopAudio()
 }
 
-async function requestSynth(
-  text: string,
-  voice: string | undefined,
-  context: string | undefined,
-  persist: boolean
-): Promise<string> {
+export async function requestSynth(text: string, voice?: string, context?: string, persist = false): Promise<string> {
   const res = await window.spiritagent.media.tts({
     text,
     voice: voice ?? $companionVoiceId.get(),

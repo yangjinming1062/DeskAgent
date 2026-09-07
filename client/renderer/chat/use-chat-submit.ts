@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 
-import { cancelAutoVoice, setSpriteState } from '@/companion'
+import { setSpriteState } from '@/companion'
 import { useGatewayRequest } from '@/shared'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
 import { log } from '@/shared/lib/log'
@@ -24,6 +24,7 @@ import {
   schedulePendingFlush,
   submitPendingBatch
 } from './chat-store'
+import { cancelVoiceBar } from './chat-voice-bar'
 import { ensureChatSession } from './session-list-store'
 
 interface UseChatSubmitOptions {
@@ -137,6 +138,7 @@ export function useChatSubmit({
     }
 
     setSending(true)
+    cancelVoiceBar()
 
     try {
       const id = await ensureChatSession()
@@ -245,7 +247,7 @@ export function useChatSubmit({
   }, [externalPathsRef, gatewayState, isReadOnlySession, onClearExternalPaths, onPreCheckFail, requestGateway])
 
   const handleStop = useCallback(async () => {
-    cancelAutoVoice()
+    cancelVoiceBar()
     cancelPendingFlush()
     $chatTurnInFlight.set(false)
     const sid = $chatSessionId.get()
@@ -266,7 +268,7 @@ export function useChatSubmit({
     const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
 
     if (lastItem?.role === 'assistant' && lastBody?.streaming && lastBody.text.trim()) {
-      finalizeAssistantMessage()
+      finalizeAssistantMessage(undefined, undefined, undefined, { synthesize: false })
     } else {
       markAssistantTerminal({ cancelled: true })
     }

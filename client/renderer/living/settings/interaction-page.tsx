@@ -99,6 +99,7 @@ export function InteractionPage(): React.ReactElement {
 
       <section>
         <h3 className="text-xs font-medium text-strong">对话回应方式</h3>
+        <p className={cn(HINT_TEXT, 'mt-1')}>此选项只控制生活空间陪伴对话，工作台始终文字。</p>
         <div className="mt-2.5 max-w-xs">
           <Segmented<ResponseMode>
             onChange={setResponseMode}

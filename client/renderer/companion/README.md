@@ -9,8 +9,8 @@
 | `disconnected` | 100 | Backend WS 断连 | 持续；恢复需 WS 重连 |
 | `interacting` | 80 | 用户戳 / 拖 / 悬停 | 瞬态 0.5–3.0s（按交互类型定长），回到 `previousState` |
 | `working` | 70 | 用户活动 ≥ 6 次/10s | 持续；10s 无活动 `force: true` 回 `idle` |
-| `speaking` | 60 | 伙伴发起的 TTS 播放（响应朗读/自动语音按句流式、主动消息、重连台词）；用户点播历史消息不进入此状态，口型由音频振幅直驱 | 与 TTS 音频等长 |
-| `thinking` | 50 | LLM 流式响应开始 | 持续至 `message.complete` |
+| `speaking` | 60 | 伙伴发起的 TTS 播放（生活空间语音条自动或点按播放、主动消息、重连台词）；默认文字模式的尾随播放按钮不进入此状态，口型由音频振幅直驱 | 与 TTS 音频等长 |
+| `thinking` | 50 | LLM 流式响应开始 | 持续至 `message.complete`（始终语音模式下持续至语音条就绪） |
 | `listening` | 40 | 用户开始输入 | 持续至用户停止输入或后端响应 |
 | `emotional` | 35 | `affect` cue 到达 | 瞬态 2.5s，回到 `previousState`（**叠加非抢占**） |
 | `idle` | 10 | 默认 | 持续；10–25s 随机切 IDLE 变体 |
@@ -21,15 +21,14 @@
 - **`emotional` / `interacting` 是叠加而非抢占**：进入前若当前不是这两个状态，原子 `$previousState` 记录原态；瞬态 timer 结束后回到 `previousState`（若 prev 也是 emotional/interacting，则回 `idle`）。
 - **crossfade ~250ms**：clip 切换通过 sprite-stage 的 fade 层处理，避免硬切。
 
-### 1.2 自动语音流式与 EMOTIONAL 叠加
+### 1.2 生活空间语音条与 EMOTIONAL 叠加
 
-在「始终语音」模式下，回复文本在增量生成阶段由切分器按句切分，逐句发起合成并预取下一句。首句音频实际起播时进入 speaking 状态；多气泡断点与对话完成帧排干收尾残句；遇到停止、异常、提交新消息或锁屏即刻中止并守卫复位。
+在生活空间「始终语音」模式下，流式生成阶段气泡仅展示省略号；气泡收尾后对整段正文一次性发起 TTS 合成并落盘缓存，等待期间保持 thinking 状态（左栏同步「在想事情」）。语音条就绪后展示并自动起播，起播时进入 speaking 状态（左栏同步「在说话」）；多气泡连发按到达顺序接播；遇到停止、异常、提交新消息或锁屏即刻中止并守卫复位。
 
 对话完成帧内联情绪字段。当情绪存在且 ≠ `neutral`：
 
-1. 进入 emotional 状态，作为瞬态（2.5s）叠加于当前状态（speaking 或 idle）之上
-2. emotional 倒计时结束后自动恢复至原状态（若语音仍在播则保持 speaking，播毕守卫复位至 idle）
-3. 若为文字模式，直接渲染文本，不进入 speaking 状态
+1. 若处于语音条播放流程，待播放完毕后进入 emotional 状态（作为瞬态 2.5s 叠加），动作序列结束后回 idle；若播放被用户打断或发生异常，立即复位回 idle
+2. 若为默认文字模式，气泡收尾时直接触发 emotional 状态并叠加动作序列，不进入 speaking 状态
 
 `emotion === 'neutral'` 不触发 EMOTIONAL 状态，直接回 `idle`。这是 LLM 的"无特定情绪"答案，不是"中性情绪"。
 

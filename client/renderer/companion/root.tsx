@@ -23,7 +23,7 @@ import { $auth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
-import { $lastSurface, $surfaceOpen, requestOpenSurface } from '@/shared/store/surfaces'
+import { $lastSurface, $surfaceOpen, requestOpenSurface, setSurfaceRole } from '@/shared/store/surfaces'
 import { strings } from '@/shared/strings'
 
 import { DeveloperOverlay } from './developer-overlay'
@@ -37,6 +37,8 @@ import { SpriteContextMenu } from './sprite/context-menu'
 import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
 import { checkCompanionVoiceValidity } from './voice-validity'
+
+setSurfaceRole('sprite')
 
 // 3D / 2D 渲染管线：把这两个组件连同其 three + draco wasm + GLTF loader 全家桶
 // 从启动关键路径挪走。Onboarding 期间 (showOnboarding 为 true) 本来就不挂载它们，

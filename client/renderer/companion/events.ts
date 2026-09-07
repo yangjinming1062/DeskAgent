@@ -21,9 +21,11 @@ import {
   beginAssistantMessage,
   bindTrailingAssistantMessageId,
   bindTrailingUserMessageIds,
+  cancelVoiceBar,
   clearPendingPrompts,
   finalizeAssistantMessage,
   hydrateChatMessages,
+  isLivingVoiceBarActive,
   markAssistantTerminal,
   pushAffectTraceMessage,
   pushMediaMessage,
@@ -32,19 +34,12 @@ import {
   setAssistantTool,
   setSessionContextUsage,
   setTurnHadBubbleBreak,
+  setTurnPendingEmotion,
   showMediaHint,
   submitPendingBatch,
   switchSession
 } from '@/chat'
 import { $screenLocked, reportInteractionStat } from '@/companion/activity'
-import {
-  beginAutoVoiceTurn,
-  cancelAutoVoice,
-  endAutoVoiceTurn,
-  feedAutoVoiceDelta,
-  flushAutoVoiceSegments,
-  isAutoVoiceActive
-} from '@/companion/auto-voice-stream'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   $effectiveTier,
@@ -54,9 +49,7 @@ import {
   setSpriteState,
   type SpriteEmotion
 } from '@/companion/companion-store'
-import { $responseMode } from '@/companion/prefs'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
-import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
 import { onBackdropEvent, onJournalEvent } from '@/living'
@@ -223,20 +216,12 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       setTurnHadBubbleBreak(false)
       setSpriteState('thinking')
 
-      if (shouldPlayAudio && $responseMode.get() === 'voice' && !$screenLocked.get()) {
-        beginAutoVoiceTurn()
-      }
-
       break
     case 'message.delta': {
       const text = (event.payload as { text?: string } | undefined)?.text ?? ''
 
       if (text) {
         appendAssistantDelta(text)
-
-        if (shouldPlayAudio && $responseMode.get() === 'voice' && !$screenLocked.get()) {
-          feedAutoVoiceDelta(text)
-        }
       }
 
       break
@@ -258,10 +243,6 @@ export function handleCompanionEvent(event: GatewayEvent): void {
       setTurnHadBubbleBreak(true)
       finalizeAssistantMessage()
 
-      if (shouldPlayAudio) {
-        flushAutoVoiceSegments()
-      }
-
       break
     }
 
@@ -278,12 +259,12 @@ export function handleCompanionEvent(event: GatewayEvent): void {
     case 'message.complete': {
       const payload = event.payload as
         | {
-            text?: string
-            reasoning?: string
+            affect?: { actions?: string[]; emotion?: string; locale?: string; target?: string }
             media?: ChatMediaItem[]
-            affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string }
-            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
             message_id?: number
+            reasoning?: string
+            text?: string
+            usage?: { completion_tokens?: number; prompt_tokens?: number; total_tokens?: number }
           }
         | undefined
 
@@ -295,8 +276,8 @@ export function handleCompanionEvent(event: GatewayEvent): void {
 
       if (payload?.usage) {
         setSessionContextUsage({
-          promptTokens: payload.usage.prompt_tokens,
           completionTokens: payload.usage.completion_tokens,
+          promptTokens: payload.usage.prompt_tokens,
           totalTokens:
             payload.usage.total_tokens ??
             (payload.usage.prompt_tokens && payload.usage.completion_tokens
@@ -343,10 +324,24 @@ export function handleCompanionEvent(event: GatewayEvent): void {
 
       if (hasEmotion) {
         maybeEmotionVfx(emotion)
-        setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action: actions[0] })
-        playSpriteActionSequence(actions)
+      }
+
+      const livingVoiceActive = isLivingVoiceBarActive()
+
+      if (livingVoiceActive && text.trim()) {
+        // TTS 等待保持「在想事情」；条开始播放进入「在说话」（左栏头像同步）；播完/打断回 idle（完成帧情绪叠加规则不变）。
+        if (hasEmotion) {
+          setTurnPendingEmotion({ actions, emotion: emotion as SpriteEmotion })
+        } else {
+          setTurnPendingEmotion(null)
+        }
       } else {
-        setSpriteState('idle', { force: true })
+        if (hasEmotion) {
+          setSpriteState('emotional', { action: actions[0], emotion: emotion as SpriteEmotion })
+          playSpriteActionSequence(actions)
+        } else {
+          setSpriteState('idle', { force: true })
+        }
       }
 
       triggerFootGlowPulse('completed', 1200)
@@ -355,25 +350,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
         applySpatialCue(locale, target)
       }
 
-      // 在「始终语音」模式下，流式语音队列在 message.complete 时收尾并排干残句；
-      // 若中途切为语音模式或队列未启动且有文本，走 speak() 兜底。非语音模式或锁屏时中止。
-      if (shouldPlayAudio && $responseMode.get() === 'voice' && !screenLocked) {
-        if (isAutoVoiceActive()) {
-          endAutoVoiceTurn()
-        } else if (text.trim()) {
-          setSpriteState('speaking')
-          void speak(text).then(() => {
-            if ($spriteState.get() === 'speaking') {
-              setSpriteState('idle', { force: true })
-            }
-          })
-        }
-      } else if (shouldPlayAudio) {
-        cancelAutoVoice()
-      }
-
       // 每日互动统计——chat_turn 仅在确有文本可统计时计数
-      // （与上面的 TTS 门控一致）。fire-and-forget RPC 由 activity.ts 中的公共助手负责。
       if (!isProxy && text.trim()) {
         reportInteractionStat('chat_turn')
       }
@@ -715,7 +692,7 @@ export function handleCompanionEvent(event: GatewayEvent): void {
     }
 
     case 'error': {
-      cancelAutoVoice()
+      cancelVoiceBar()
       $chatTurnInFlight.set(false)
       clearPendingPrompts()
       // 强制重置为 idle——精灵在 'thinking' / 'working' 时，

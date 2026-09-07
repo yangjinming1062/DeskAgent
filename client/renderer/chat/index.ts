@@ -40,6 +40,7 @@ export {
   showMediaHint,
   submitPendingBatch
 } from './chat-store'
+export { cancelVoiceBar, isLivingVoiceBarActive, setTurnPendingEmotion } from './chat-voice-bar'
 export {
   ChatContextAmbientLine,
   ChatContextCapsule,

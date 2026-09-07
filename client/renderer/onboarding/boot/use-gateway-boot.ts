@@ -1,18 +1,25 @@
 import type { SpiritAgentConnection } from '@ipc/contracts'
 import { useEffect, useRef } from 'react'
 
-import { $chatMessageList, $chatSessionId, hydrateChatMessages, openMainSession, setChatSession } from '@/chat'
+import {
+  $chatMessageList,
+  $chatSessionId,
+  cancelVoiceBar,
+  hydrateChatMessages,
+  openMainSession,
+  setChatSession
+} from '@/chat'
 import {
   $effectiveTier,
   $spriteState,
-  cancelAutoVoice,
   clearVfx,
   emitVfx,
   pushEffectiveDisturbanceTier,
   setSpriteState,
   speakScripted,
   startAutonomyProvision,
-  stopAutonomyProvision
+  stopAutonomyProvision,
+  stopSpeaking
 } from '@/companion'
 import { type GatewayEvent } from '@/shared/lib/gateway-protocol'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
@@ -332,9 +339,9 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           void openMainSession(syncMountSeq)
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {
-        // 断连的回合不会再收到 complete/error——流式语音队列若不在此中止，
-        // 会永远挂在 idle 等待：徽标卡「回复中」、语音准备引用不释放。
-        cancelAutoVoice()
+        // 断连的回合不会再收到 complete/error——正在合成/播放的语音条在此中止并释放。
+        cancelVoiceBar()
+        stopSpeaking()
 
         if (st === 'closed' && gateway.lastCloseCode === WS_CLOSE_POLICY_VIOLATION) {
           void logout()

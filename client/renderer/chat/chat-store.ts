@@ -11,6 +11,8 @@ import {
 import { $gateway } from '@/shared/store/gateway'
 import type { ChatAttachment, ChatMediaItem, SessionMessage, SessionRuntimeInfo } from '@/shared/types/spiritagent'
 
+import { cancelVoiceBar, isLivingVoiceBarActive, synthesizeVoiceBar } from './chat-voice-bar'
+
 export interface ChatMessageListItem {
   id: string
   role: 'user' | 'assistant'
@@ -30,6 +32,8 @@ export interface ChatMessageBody {
   cancelled?: boolean
   attachments?: ChatAttachment[]
   media?: ChatMediaItem[]
+  voiceStatus?: 'pending' | 'ready' | 'failed'
+  voiceDuration?: number
 }
 
 const DEFAULT_CONTEXT_LIMIT = 1_000_000
@@ -163,6 +167,7 @@ export function clearExternalAttachment(): void {
 }
 
 export function setChatSession(id: string | null): void {
+  cancelVoiceBar()
   clearPendingPrompts()
   cancelPendingFlush()
   $chatTurnInFlight.set(false)
@@ -526,6 +531,7 @@ interface ChatUndoDraft {
 export const $chatDraftFromUndo = atom<ChatUndoDraft | null>(null)
 
 registerStorageClearHandler(() => {
+  cancelVoiceBar()
   $chatSessionId.set(null)
   $chatMessageList.set([])
   $chatMessageBodies.set({})
@@ -642,32 +648,24 @@ export function beginAssistantMessage(): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
   const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
+  const initialVoiceStatus = isLivingVoiceBarActive() ? 'pending' : undefined
 
   // 复用无内容的流式气泡，避免出现空白占位。
   if (lastItem?.role === 'assistant' && lastBody?.streaming) {
     if (!lastBody.text.trim() && !lastBody.toolName && !lastBody.error && !lastBody.cancelled) {
+      if (initialVoiceStatus && lastBody.voiceStatus !== initialVoiceStatus) {
+        $chatMessageBodies.setKey(lastItem.id, { ...lastBody, voiceStatus: initialVoiceStatus })
+      }
+
       return
     }
 
-    // 多气泡 break：结束上一段并开启新段。
-    const finalizedBody: ChatMessageBody = {
-      ...lastBody,
-      streaming: false,
-      toolName: null
-    }
-
-    const newId = nextId()
-    $chatMessageBodies.setKey(lastItem.id, finalizedBody)
-    $chatMessageBodies.setKey(newId, { text: '', streaming: true, toolName: null })
-    $chatMessageList.set([...list, { id: newId, role: 'assistant', timestamp: Date.now() }])
-    $lastAssistantStreaming.set(true)
-
-    return
+    finalizeAssistantMessage()
   }
 
   const id = nextId()
-  $chatMessageBodies.setKey(id, { text: '', streaming: true, toolName: null })
-  $chatMessageList.set([...list, { id, role: 'assistant', timestamp: Date.now() }])
+  $chatMessageBodies.setKey(id, { text: '', streaming: true, toolName: null, voiceStatus: initialVoiceStatus })
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', timestamp: Date.now() }])
   $lastAssistantStreaming.set(true)
 }
 
@@ -734,7 +732,12 @@ export function setAssistantTool(name: string | null): void {
   $chatMessageBodies.setKey(lastItem.id, { ...body, toolName: name, tools })
 }
 
-export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[], reasoning?: string): void {
+export function finalizeAssistantMessage(
+  text?: string,
+  media?: ChatMediaItem[],
+  reasoning?: string,
+  options?: { synthesize?: boolean }
+): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
 
@@ -773,18 +776,35 @@ export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[],
     return
   }
 
+  const shouldSynth = (options?.synthesize ?? true) && isLivingVoiceBarActive() && Boolean(finalStr)
+
+  const nextVoiceStatus = shouldSynth
+    ? 'pending'
+    : options?.synthesize === false
+      ? 'failed'
+      : body.voiceStatus === 'pending'
+        ? undefined
+        : body.voiceStatus
+
   $chatMessageBodies.setKey(lastItem.id, {
     ...body,
     text: finalStr,
     reasoning: finalReasoning,
     media: finalMedia,
     streaming: false,
-    toolName: null
+    toolName: null,
+    voiceStatus: nextVoiceStatus
   })
   $lastAssistantStreaming.set(false)
+
+  if (shouldSynth) {
+    void synthesizeVoiceBar(lastItem.id, finalStr, { autoPlay: true })
+  }
 }
 
 export function markAssistantTerminal({ error, cancelled }: { error?: string; cancelled?: boolean } = {}): void {
+  cancelVoiceBar()
+
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
   const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
@@ -811,6 +831,7 @@ export function markAssistantTerminal({ error, cancelled }: { error?: string; ca
 
 // 重置消息列表与 bodies，不触碰 $chatSessionId 与 pending batch。
 export function resetChatMessages(): void {
+  cancelVoiceBar()
   $chatMessageList.set([])
   $chatMessageBodies.set({})
   $lastAssistantStreaming.set(false)

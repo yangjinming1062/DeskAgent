@@ -1,6 +1,5 @@
 export { $focusContext, $screenLocked, reportInteractionStat } from './activity'
-export { isLatestGen, nextGen, playDataUrl, registerAmplitudeSink, warmAudioContext } from './audio-track'
-export { cancelAutoVoice } from './auto-voice-stream'
+export { isLatestGen, nextGen, playDataUrl, registerAmplitudeSink, stopAudio, warmAudioContext } from './audio-track'
 export { startAutonomyProvision, stopAutonomyProvision } from './autonomy'
 export {
   clearDraftRefImage,
@@ -23,6 +22,7 @@ export {
   $userPreferredTier,
   type DisturbanceTier,
   ensureCompanionHydrated,
+  playSpriteActionSequence,
   pushEffectiveDisturbanceTier,
   reportUserActivity,
   resolveCompanionRenderLayer,
@@ -106,7 +106,7 @@ export {
 } from './spatial'
 export { $contextMenuOpen, openContextMenu } from './sprite/context-menu-store'
 export { FootGlow } from './sprite/foot-glow'
-export { speakChatMessage, speakScripted, stopSpeaking } from './tts'
+export { requestSynth, speakChatMessage, speakScripted, stopSpeaking } from './tts'
 export { clearVfx, emitVfx, Mesh2DVfxOverlay } from './vfx'
 export {
   designVoice,
